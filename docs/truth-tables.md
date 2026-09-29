@@ -31,6 +31,31 @@ The second profile is an evaluation optimisation, not a replacement for the
 strict assessment. The profile, diagnostics and skipped branches must be
 recorded in a replayable result.
 
+### Why strict is canonical
+
+Strict semantics is the canonical object-level profile because it prevents a
+determining branch from laundering an invalid category. It preserves
+compositionality, diagnostics and replay: the result describes the whole AST,
+not only the part that happened to determine a Boolean answer.
+
+Example:
+
+```text
+A = Existed(grandfather, reconstructed_past)       -> T
+B = WasAbsolutely(grandfather)                     -> C
+A ∨ B                                               -> C   (strict)
+```
+
+The `T` branch does not make the malformed `B` disappear. A determining
+evaluator may use `T ∨ X = T` to answer a bounded query without evaluating `X`,
+but it must return an operational projection carrying the skipped branch and
+the strict diagnostic. This is useful for query resolution, search, and
+candidate selection; it is not a replacement for the canonical assessment.
+
+Candidate selection is a meta-level operation. Given `F1 -> T` and `F2 -> C`,
+the statement “at least one admissible formalization exists” may select `F1`;
+it must not be represented as the object-level formula `F1 ∨ F2`.
+
 ## Negation
 
 ```text

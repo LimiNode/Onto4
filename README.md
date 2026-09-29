@@ -199,6 +199,53 @@ checking; it is not required to be an additional logical operator. A checked
 formalization should retain its ontology, assumptions, normalized expression,
 diagnostics and context revision.
 
+### Canonical strict semantics and determining projections
+
+The canonical Onto4 profile is **strict**: a compound proposition is assessed
+as a whole, and a category error in any required operand remains visible:
+
+```text
+¬C = C
+C ∧ X = C
+C ∨ X = C
+C → X = C
+X → C = C
+```
+
+This choice is deliberate. It prevents a true or false branch from silently
+erasing an invalid ontology or hidden presupposition, keeps assessment
+compositional, and makes proofs, diagnostics, replay and safety review
+conservative. Strict semantics answers: *is this complete formal proposition
+admissible and what verdict follows from it?*
+
+For example, let `A` be a well-formed claim that a grandfather existed in a
+reconstructed past (`A = T`) and let `B` assert an absolute, model-independent
+property `WasAbsolutely(grandfather)` that the selected ontology does not
+define (`B = C`). The object-level formula `A ∨ B` is `C` under strict
+semantics. Returning `T` would hide the invalid second formalization.
+
+An operational **determining/short-circuit projection** can still be useful:
+`T ∨ X` may determine a query result without evaluating `X`, and `F ∧ X` may
+determine a result without evaluating `X`. That projection belongs to query
+resolution, search, decision policy and candidate selection—not to canonical
+truth semantics. It must retain the skipped branch, its context and its
+diagnostic, and it must never replace the strict result in a proof, audit or
+replay.
+
+The same distinction applies to alternative formalizations. If candidates are
+`F1 -> T` (causal continuity) and `F2 -> C` (an undefined persistent-substance
+predicate), a meta-level query may report *at least one admissible
+formalization* and continue with `F1`. It must not encode that selection as the
+object-level formula `F1 ∨ F2`, because strict Onto4 would correctly return
+`C` for that malformed compound.
+
+A second example is identity across time. A relation such as
+`Continuity(me_child, me_now)` may be `T`, while a stronger predicate
+`SamePersistentSubstance(me_child, me_now)` may be `C` because the selected
+ontology has no persistent-substance category. Strict evaluation keeps that
+distinction visible; a determining query may still select the valid relational
+formalization without asserting the undefined one.
+
 ---
 
 ## Comparison of Onto4 with other logics
