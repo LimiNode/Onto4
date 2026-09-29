@@ -294,31 +294,54 @@ separate verdict `C`.
 ## The one-bit world and the outside view
 
 The thought experiment [“One-bit world”](thought-experiments/one-bit-world.md)
-helps make this intuition concrete. Imagine an isolated world containing only
-one bit `b`:
+helps make this intuition concrete. Imagine an ontology in which only one bit
+`b` is given:
 
 ```text
 b ∈ {0, 1}
 ```
 
-If an outside describer with comparison context `K` records states `0` and `1`
-at times `t1` and `t2`, it can write:
+We normally write immediately:
 
 ```text
-b(t1) = 0
-b(t2) = 1
-D(b(t1), b(t2) | K)
+b(t0) = 0
+b(t1) = 1
 ```
 
-But the current state `1` does not itself contain the statement “I was `0`
-before.” Establishing a change requires additional state, relation or history.
-The imagined outside observer exposes this dependence, but does not create a
-real external position: in reality every observer is part of a wider system.
+But this has already introduced time, memory and order `t0 < t1`, none of which
+was present in the stipulation. In fact, the observer has two of its own states:
 
-If a second bit is added to store the first bit's past state, that bit becomes a
-privileged carrier of another state. A new question appears: what makes its
-`0` the past value of `b`, rather than merely the second bit's own state? The
-answer is another representation relation.
+```text
+N0 := “observed 0”
+N1 := “observed 1”
+D(N0, N1 | K_observer)
+```
+
+The statement “the one-bit world changed” is an interpretation of the
+difference between `N0` and `N1`. It may be reasonable in an extended system,
+but it does not follow automatically from the bit's state alone.
+
+For an internal claim `Changed(b)` to be meaningful, the ontology must provide
+two distinguishable states, an order between them, a carrier of that order and
+a criterion that both belong to one object. If all of this belongs only to the
+observer, the question concerns the system “bit plus observer”, not the bit by
+itself.
+
+The contextual form is therefore:
+
+```text
+Changed(b | K)
+```
+
+rather than context-free `Changed(b)`. If `Changed(b)` is declared to be a
+question about a world containing only `b`, the observer's structure has been
+imported into that world. In the selected ontology this may yield:
+
+```text
+Changed(b) -> C
+```
+
+The separate note develops this deconstruction in full.
 
 ## The ideal flash drive and physical meaning
 
