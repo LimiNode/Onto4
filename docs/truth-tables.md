@@ -116,22 +116,25 @@ from this derived form and test the difference.
 The following is not a second truth table. It records useful operational
 projections while the canonical strict result remains unchanged:
 
-| Expression | Determining projection | Canonical strict |
+| Expression at short-circuit time | Operational projection | After complete semantic check |
 | --- | --- | --- |
-| `T ∨ C` | `T` if the right branch is not semantically checked yet | `C` |
-| `F ∧ C` | `F` if the right branch is not semantically checked yet | `C` |
+| `T ∨ X` | `T` before `X` is evaluated | `C` if `X` checks as `C`; otherwise the ordinary strict result |
+| `F ∧ X` | `F` before `X` is evaluated | `C` if `X` checks as `C`; otherwise the ordinary strict result |
 | `T ∨ U` | `T` | `T` |
 | `F ∧ U` | `F` | `F` |
 
-The first two rows must carry the skipped branch and its deferred or completed
-semantic diagnostic; they are not permission to reinterpret the strict result.
+The first two rows describe an as-yet unchecked branch, not a branch already
+known to be `C`. If the later semantic check returns `C`, the canonical result
+is `C`; if it returns a meaningful verdict, the corresponding strict table
+applies. The operational result must carry the skipped branch and its deferred
+or completed semantic diagnostic.
 
 ## Open algebraic obligations
 
-The ordinary `T/F/U` fragment has the expected commutativity, associativity,
-De Morgan and distributive behaviour. Once `C` is included as a propagated
-semantic failure, absorption is not a law of the whole four-valued profile; for
-example:
+For the current strict profile, `∧` and `∨` remain commutative and associative
+over all four values; both De Morgan laws and both distributive laws hold.
+Once `C` is included as a propagated semantic failure, absorption is not a law
+of the whole four-valued profile; for example:
 
 ```text
 A ∧ (A ∨ C) = C, not A
