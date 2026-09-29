@@ -1,186 +1,352 @@
 # Onto4
 
-**Onto4** is a context-bound four-valued logic. It distinguishes not only
-true, false and unresolved propositions, but also the case where the checked
-formulation has no admissible meaning in the selected ontology or semantic
-profile.
+[Русская версия](README-RU.md)
 
-In ordinary reasoning we ask:
+**Onto4** is a context-dependent four-valued logic in which a proposition is
+checked for semantic admissibility before its truth value is assessed.
 
-- Is this true?
-- Is this false?
+The name **Onto4** comes from **ontology**: the study of *what exists*, *in
+what sense it exists*, and *which categories and relations are available when
+we describe the world*.
+
+The central idea of Onto4 is simple:
+
+> Not every reasoning error comes from choosing the wrong answer. Sometimes the
+> conceptual space in which the question was asked is itself inappropriate.
+
+Ordinary reasoning usually asks:
+
+- Is it true?
+- Is it false?
 - Or do we not know yet?
 
-There is a prior question that is easy to miss: **can this proposition be
-meaningfully formulated in the adopted system of concepts?** Sometimes the
-problem is not a wrong answer but the conceptual space in which the question
-was posed.
+But there is an earlier question:
 
-> Not every assertion has meaning in every context. Before asking whether it is
-> true or false, ask whether it is admissible as a proposition at all.
+> **Can the proposition itself be meaningfully formulated within the adopted
+> ontology and semantics?**
 
-## Four verdicts
+For example, one may ask where the past is “now”, or whether exactly the same
+self persists through time, without noticing that words such as `where`, `past`,
+or `the same self` already presuppose a particular ontology.
+
+Onto4 makes this hidden assumption part of the logical assessment itself.
+
+## Ontological admissibility
+
+Onto4 does not discard ordinary truth and falsity. It adds a prior check:
+
+> **Is this proposition admissible in the selected conceptual framework?**
+
+If the formulation is meaningful, it can then be assessed as true, false, or
+unresolved.
+
+If the formulation itself relies on a category, relation or presupposition that
+does not apply in the selected context, Onto4 returns a separate verdict: `C`.
+
+Conceptually:
+
+```text
+Is the formulation meaningful?
+        |
+        +-- no  -> C
+        |
+        `-- yes
+             |
+             +-- is T/F determined? -- no -> U
+             |
+             +-- true --------------------> T
+             |
+             `-- false -------------------> F
+```
+
+This yields four verdicts:
 
 | Verdict | Meaning |
-| --- | --- |
-| `T` | the formulation is well formed and true in the selected context |
-| `F` | the formulation is well formed and false in the selected context |
-| `U` | the formulation is meaningful, but `T`/`F` is not established here |
-| `C` | the checked formulation is not semantically admissible here (category error) |
+|---|---|
+| `T` | the proposition is meaningful and true in the selected context |
+| `F` | the proposition is meaningful and false |
+| `U` | the proposition is meaningful, but no determinate `T/F` verdict has been established |
+| `C` | the selected formulation has no valid interpretation in the current ontology or semantics |
 
-The central distinction is:
-
-```text
-U: the question has meaning, but its answer is not established.
-C: the adopted ontology or semantic profile does not admit this formulation.
-```
-
-`C` is not a synonym for missing data, an absent object or an ordinary false
-claim. A proposition about a non-existent object can still be `F` when its term,
-predicate and domain are well typed. `C` records a failure of semantic
-admissibility: undefined references, incompatible sorts, missing categories,
-unsupported presuppositions or an inapplicable predicate.
-
-## Why the fourth verdict matters
-
-Consider two ways to talk about a grandfather in a reconstructed past:
+The key distinction is:
 
 ```text
-ExistsAt(grandfather, t)                 -> T, F or U
-WasAbsolutely(grandfather)               -> C
+U: the question makes sense, but its answer is unresolved.
+
+C: the problem may lie in the question itself or in the categories
+   used to formulate it.
 ```
 
-The first relation can be interpreted over a time model and assessed with
-available evidence. The second asks for an absolute, model-independent
-property that the selected ontology may not define. Its problem is not that the
-grandfather did not exist; the problem is that this way of posing the question
-has no admissible interpretation in the chosen ontology.
+`C` does not mean that an object simply does not exist, and it is not a stronger
+form of `F`.
 
-The same distinction appears in identity across time:
+For example:
 
 ```text
-Continuity(me_child, me_now)             -> T, F or U
-SamePersistentSubstance(me_child, me_now)-> C  (if that category is absent)
+UnicornExists() -> F
 ```
 
-Onto4 can therefore put the category used to formulate a question under review,
-not only the answer obtained from it.
+can be an ordinary false proposition if the concept of a unicorn is properly
+defined.
 
-## Context-bound meaning
-
-The same text can receive different verdicts under different contexts. A
-context fixes an ontology, language, semantic conventions, evidence policy and
-perspective:
+By contrast:
 
 ```text
-meaning : Statement × Context -> Onto4Verdict
+Mass(integer_7)
 ```
 
-A conceptual representation may look like:
-
-```cpp
-struct ContextFrame {
-    OntologyProfile ontology;
-    SemanticProfile semantics;
-    EpistemicProfile epistemics;
-    InferenceProfile inference;
-    Perspective perspective;
-};
-```
-
-For example, `InternetExists` can be `C` in a profile where the term is
-undefined, while a profile that explicitly interprets the term retrospectively
-may yield `F` or `U`. The difference is semantic definition, not merely lack of
-evidence.
-
-## Onto4 and Evidence4
-
-Onto4 describes semantic status. Evidence is tracked on a separate
-Belnap–Dunn-like axis:
+with
 
 ```text
-Neither | TrueOnly | FalseOnly | Both
+Mass : PhysicalObject -> MassValue
+integer_7 : Integer
 ```
 
-Thus `Onto4 = U` with `Evidence4 = Neither` and `Onto4 = U` with
-`Evidence4 = Both` are different evidence situations, but both propositions can
-remain meaningful. `Both` is not `C`, and evidence conflict must not be encoded
-by silently changing `U` into `C`.
+receives `C`, because the predicate does not apply to that sort of object.
 
-## Canonical strict semantics
+## Formal structure
 
-The canonical Onto4 profile is **strict**. Semantic checking covers the whole
-AST before truth evaluation, so a category error in any required operand remains
-visible:
+The four states can be described using three features:
+
+| Feature | Symbol | Values | Meaning |
+|---|---|---|---|
+| Semantic sense | `S` (Sensible) | `1 / 0` | whether the formulation has an admissible meaning in this context |
+| Determination | `D` (Determinate) | `1 / 0` | whether a definite `T/F` verdict has been established |
+| Truth value | `V` (Value) | `1 / 0 / –` | true, false, or not applicable |
+
+Thus:
+
+| Onto4 | `S` | `D` | `V` | Meaning |
+|---|---:|---:|---:|---|
+| `T` | 1 | 1 | 1 | meaningful and true |
+| `F` | 1 | 1 | 0 | meaningful and false |
+| `U` | 1 | 0 | – | meaningful, but `T/F` is unresolved |
+| `C` | 0 | – | – | the formulation is semantically inadmissible |
+
+> An Onto4 verdict is therefore not merely another label beside `True` and
+> `False`. It combines semantic admissibility with logical assessment.
+
+An early version of Onto4 used `E` (`Evaluable`) instead of `D`. That wording
+proved ambiguous: a meaningful proposition may be perfectly evaluable in
+principle while its actual truth value is still unresolved. The current
+formulation therefore uses `D` for determination.
+
+## Context
+
+An Onto4 verdict belongs not to an isolated text string but to a **proposition in
+context**.
+
+Conceptually:
+
+```text
+V(P | ontology, semantics, epistemics, inference, perspective)
+```
+
+A context may determine:
+
+- which entities and categories exist in the model;
+- which predicates apply to which entities;
+- how terms and symbols are interpreted;
+- which presuppositions are admissible;
+- which evidence is available;
+- from which perspective the assessment is made.
+
+The same natural-language sentence can therefore receive different verdicts
+under different formalizations.
+
+## Example: time
+
+Consider:
+
+> “My grandfather really was.”
+
+One possible formulation interprets `was` relationally:
+
+```text
+ExistsAt(grandfather, t)
+EarlierThan(t, now)
+```
+
+This is meaningful and may receive `T`, `F`, or `U`.
+
+But another interpretation may implicitly ask for a stronger property:
+
+```text
+WasAbsolutely(grandfather)
+```
+
+as though past existence were an absolute, model-independent mode of being.
+
+If the selected ontology contains no such property, the result is not `F` but
+`C`.
+
+This does not mean:
+
+> “My grandfather did not exist.”
+
+It means:
+
+> “This way of formulating the question has no interpretation in the selected
+> model of time.”
+
+Meaning returns once the relation is made explicit:
+
+```text
+existed earlier relative to the current state
+```
+
+rather than treating “was” as an absolute property of an object.
+
+## Example: identity
+
+Likewise, consider:
+
+> “Am I now the same self that I was as a child?”
+
+If identity is defined through a continuity relation:
+
+```text
+Continuity(me_child, me_now)
+```
+
+the proposition is meaningful and may receive `T`, `F`, or `U`.
+
+But a stronger formulation:
+
+```text
+SamePersistentSubstance(me_child, me_now)
+```
+
+assumes a separate persistent entity that remains numerically identical through
+time.
+
+If the selected ontology models memory, bodily states, experience and causal
+continuity but contains no such persistent substance, this formulation receives
+`C`.
+
+Again, the problem lies not in answering yes or no, but in a category silently
+introduced by the question.
+
+This is the main purpose of Onto4's fourth verdict:
+
+> **It allows a reasoning system to question not only an answer, but also the
+> conceptual space in which the answer is being sought.**
+
+## `C` and `U`
+
+It is important not to conflate `C` with `U`.
+
+`U` means:
+
+```text
+the formulation is meaningful;
+a determinate T/F verdict has not been established.
+```
+
+Possible reasons include insufficient evidence, conflicting evidence,
+computational limits or model indeterminacy. `C` means something different:
+
+```text
+the selected formulation itself fails semantic admissibility.
+```
+
+Missing information about the mass of a car gives `U`. Asking for the mass of
+the number seven gives `C`.
+
+## Onto4 and Belnap–Dunn
+
+Evidence state is a separate question. For that purpose one can use a
+Belnap–Dunn-style four-state structure:
+
+```text
+Neither    — support for neither polarity
+TrueOnly   — support for truth
+FalseOnly  — support for falsity
+Both       — support for both
+```
+
+This axis does not replace Onto4. For example, `Onto4 = U` with
+`Evidence = Neither` and `Onto4 = U` with `Evidence = Both` describe different
+epistemic situations while the proposition can remain meaningful in both cases.
+
+Belnap–Dunn asks: *what support exists for and against the proposition?*
+Onto4 asks: *what is the semantic and logical status of the formulation itself?*
+
+## Canonical operator semantics
+
+For object-level formulas Onto4 uses **strict semantics**. If a required part of
+a compound formula has value `C`, the canonical result is also `C`:
 
 ```text
 ¬C = C
+
 C ∧ X = C
 C ∨ X = C
+
 C → X = C
 X → C = C
 ```
 
-This prevents a determining branch from hiding an invalid ontology or a hidden
-presupposition. Strict semantics answers: *is this complete formal proposition
-admissible, and what verdict follows from it?*
+The reason is that a true or false neighbouring branch must not hide a category
+error elsewhere in the formula. For example, if `A = T` and `B = C`, then
+`A ∨ B = C` under canonical Onto4 semantics.
 
-An operational **determining/short-circuit projection** is still useful. For
-example, `T ∨ X` or `F ∧ X` may determine a query result before the other branch
-is evaluated. That is an evaluation optimisation, not a replacement for the
-strict verdict. The skipped branch, its context and its semantic diagnostic (or
-an explicit `semantic_check_deferred` marker) must be retained.
+An implementation may still use short-circuit evaluation (`T ∨ X -> T`,
+`F ∧ X -> F`) as an operational optimisation, but that projection does not
+replace the canonical assessment of the whole formula.
 
-## Operator tables
-
-The complete strict tables for negation, conjunction, disjunction, implication
-and derived equivalence are maintained as an executable-style specification:
+Complete operator tables:
 
 - [English operator tables](docs/truth-tables.md)
 - [Russian operator tables](docs/truth-tables-ru.md)
 
-The tables include every combination with `C`. The determining projection is
-documented separately beside them; it never changes the canonical strict
-result.
+## Relation to classical logic
 
-## Relation to other logics
+Onto4 does not claim that classical logic treats every arbitrary natural-language
+string as meaningful. Once a language, interpretation and well-formed formula
+are fixed, classical truth evaluation is normally binary:
 
-| Logic | Values | Semantic inadmissibility | Indeterminacy | Self-reference |
-| --- | --- | --- | --- | --- |
-| Classical | `T`, `F` for well-formed formulas | handled outside the truth-value set | not represented by the truth values | depends on language and interpretation |
-| Three-valued (Łukasiewicz/Kleene) | `T`, `F`, `U` | usually outside the value set | explicit | profile-dependent |
-| FDE / Belnap–Dunn | `Neither`, `TrueOnly`, `FalseOnly`, `Both` | support state is separate | explicit/information-based | profile-dependent |
-| Onto4 | `T`, `F`, `U`, `C` | explicit canonical verdict `C` | explicit `U` | context/profile-bound |
+```text
+T / F
+```
 
-Onto4 does not claim that classical logic treats arbitrary natural-language
-strings as meaningful. For a well-formed proposition under a fixed classical
-interpretation, the truth-value space is binary; semantic inadmissibility is
-handled before that truth evaluation. Onto4 makes this preliminary semantic
-failure explicit as `C`.
+Onto4 makes semantic admissibility of the formulation an explicit part of the
+reasoning result:
 
-## Self-reference and the distinction profile
+```text
+meaning / applicability
+        ↓
+truth evaluation
+```
 
-Self-reference is not automatically a category error. The canonical typed
-profile permits ordinary reflexive equality:
+## Self-reference
+
+Self-reference does not automatically imply `C`:
 
 ```text
 a = a -> T
 ```
 
-An optional historical `DistinctionProfile` explores a narrower philosophical
-hypothesis: an operation may require a grounded distinction between its object
-and its assessment frame. Under that named profile, an ungrounded self-
-application of a semantic operator may yield `C`; this is not the universal rule
-`SelfReference => C`.
+The project also preserves a historical **DistinctionProfile**, a separate
+philosophical model that explores distinction, the external frame of assessment
+and self-application of semantic operators. Under that profile some forms of
+ungrounded self-reference may receive `C`, but this is not a universal Onto4
+law.
 
-For the longer philosophical treatment, see:
+See:
 
-- [Liar paradox example](docs/examples/liar-paradox.md)
+- [Liar paradox](docs/examples/liar-paradox.md)
 - [Distinction and the liar paradox](docs/distinction-liar-paradox.md)
 
-## Further reading
+## In short
 
-The repository keeps formal profiles, examples and historical essays separate
-from this introduction. Start with the operator tables for executable details,
-then select the semantic profile and context relevant to the question being
-studied.
+```text
+T — the question makes sense; the answer is yes.
+F — the question makes sense; the answer is no.
+U — the question makes sense; the answer is unresolved.
+C — the problem may lie in the question itself.
+```
+
+The purpose of Onto4 is to make hidden ontological assumptions visible and to
+give a reasoning system a way to detect when continuing to search for an answer
+inside the chosen categories may itself be a mistake.
