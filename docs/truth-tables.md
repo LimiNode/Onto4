@@ -1,11 +1,10 @@
-# Onto4 operator tables (draft profile)
+# Onto4 operator tables (canonical strict profile)
 
-This document records a **draft operator profile**, not a settled algebra.
-Onto4 first checks whether a proposition is well formed in a pinned semantic
-context. `C` is the result of that check failing (a category error); it is not
-missing evidence and it is not a synonym for an absent object. A proposition
-about an object that is simply false is `F` when the object and predicate are
-well typed.
+This document is the executable-style specification of the current canonical
+operator profile. Onto4 first checks whether a proposition is well formed in a
+pinned semantic context, then evaluates its truth status. `C` is the result of
+semantic admissibility failing; it is not missing evidence and it is not a
+synonym for an absent object.
 
 The four verdicts are:
 
@@ -18,135 +17,127 @@ The four verdicts are:
 
 ## Semantic checking and evaluation
 
-`C` is produced by a typed semantic checker before logical evaluation. A
-compound expression therefore has two possible implementation profiles:
+The semantic checker covers the whole AST before the canonical operator table
+is applied. Therefore a category error in any required sub-expression remains
+visible in the strict result.
 
-1. **Strict assessment (recommended for proofs and audit):** report `C` with
-   diagnostics whenever an operand or required sub-expression is a category
-   error; do not allow a convenient `T` or `F` branch to hide it.
-2. **Operational short-circuit:** an evaluator may skip truth evaluation of
-   `X` after `T ∨ X` or `F ∧ X` determines the result, but semantic/type
-   checking still covers the entire AST. If a branch has not yet been checked,
-   the result carries a deferred semantic assessment rather than claiming that
-   the branch is valid.
+The canonical profile is **strict**. It is defined by the complete tables below,
+including every combination with `C`. This makes the tables suitable as a
+reference for implementations, fixtures and audit/replay checks.
 
-The second profile is an evaluation optimisation, not a replacement for the
-strict assessment. The profile, context, skipped branch and either its
-diagnostics or an explicit `semantic_check_deferred` marker must be recorded in
-a replayable result.
+An evaluator may additionally expose an operational **determining/short-circuit
+projection**. For example, `T ∨ X` can determine a query answer without
+evaluating `X`, and `F ∧ X` can do the same. That projection is an
+optimization at the query/evaluation layer, not a replacement for the strict
+assessment. The skipped branch, context and either its diagnostics or an
+explicit `semantic_check_deferred` marker must be retained.
 
-### Why strict is canonical
-
-Strict semantics is the canonical object-level profile because it prevents a
-determining branch from laundering an invalid category. It preserves
-compositionality, diagnostics and replay: the result describes the whole AST,
-not only the part that happened to determine a Boolean answer.
-
-Example:
-
-```text
-A = Existed(grandfather, reconstructed_past)       -> T
-B = WasAbsolutely(grandfather)                     -> C
-A ∨ B                                               -> C   (strict)
-```
-
-The `T` branch does not make the malformed `B` disappear. A determining
-evaluator may use `T ∨ X = T` to answer a bounded query without evaluating `X`,
-but it must return an operational projection carrying the skipped branch and
-the strict diagnostic. This is useful for query resolution, search, and
-candidate selection; it is not a replacement for the canonical assessment.
-
-Candidate selection is a meta-level operation. Given `F1 -> T` and `F2 -> C`,
-the statement “at least one admissible formalization exists” may select `F1`;
-it must not be represented as the object-level formula `F1 ∨ F2`.
+Strict assessment answers: *is this complete formal proposition admissible, and
+what verdict follows from it?* Determining projection answers a narrower
+operational question: *what result is already determined by the part evaluated
+so far?*
 
 ## Negation
 
-```text
-¬T = F    ¬F = T    ¬U = U    ¬C = C
-```
+| `A` | `¬A` |
+| --- | --- |
+| `T` | `F` |
+| `F` | `T` |
+| `U` | `U` |
+| `C` | `C` |
 
 Negation does not turn a category error into a meaningful proposition.
 
-## Conjunction and disjunction
+## Conjunction
 
-For the strict assessment profile, `C` is propagated before the ordinary
-three-way evaluation:
+| `A ∧ B` | `T` | `F` | `U` | `C` |
+| --- | --- | --- | --- | --- |
+| **`T`** | `T` | `F` | `U` | `C` |
+| **`F`** | `F` | `F` | `F` | `C` |
+| **`U`** | `U` | `F` | `U` | `C` |
+| **`C`** | `C` | `C` | `C` | `C` |
 
-```text
-A ∧ B = C  if A = C or B = C
-A ∨ B = C  if A = C or B = C
-```
+## Disjunction
 
-Otherwise use the following `T/F/U` tables:
+| `A ∨ B` | `T` | `F` | `U` | `C` |
+| --- | --- | --- | --- | --- |
+| **`T`** | `T` | `T` | `T` | `C` |
+| **`F`** | `T` | `F` | `U` | `C` |
+| **`U`** | `T` | `U` | `U` | `C` |
+| **`C`** | `C` | `C` | `C` | `C` |
 
-| A | B | `A ∧ B` | `A ∨ B` |
-|---|---|---|---|
-| T | T | T | T |
-| T | F | F | T |
-| F | F | F | F |
-| T | U | U | T |
-| F | U | F | U |
-| U | U | U | U |
-
-An implementation may expose short-circuit identities such as `F ∧ X = F`
-and `T ∨ X = T`, but strict assessment still evaluates or records the other
-branch for category diagnostics.
+The strict result is `C` whenever either operand is `C`, even when an
+operational evaluator could determine a `T` or `F` branch without evaluating the
+other operand.
 
 ## Implication
 
-The strict profile defines implication only after the category check:
+The canonical definition is:
 
 ```text
-A → B = ¬A ∨ B       when A and B are not C
-A → B = C            when A = C or B = C
+A → B = ¬A ∨ B
 ```
 
-For non-`C` operands:
+with strict `C` propagation. Its complete table is:
 
-| A | B | `A → B` |
-|---|---|---|
-| T | T | T |
-| T | F | F |
-| F | T | T |
-| F | F | T |
-| T | U | U |
-| U | T | T |
-| U | U | U |
+| `A → B` | `T` | `F` | `U` | `C` |
+| --- | --- | --- | --- | --- |
+| **`T`** | `T` | `F` | `U` | `C` |
+| **`F`** | `T` | `T` | `T` | `C` |
+| **`U`** | `T` | `U` | `U` | `C` |
+| **`C`** | `C` | `C` | `C` | `C` |
 
-If a different profile wants `F → C = T` or another treatment of `C`, it must
-declare implication as a separate primitive connective and publish its full
-truth table; it must not claim the definition above while using an
-incompatible table.
+A profile that wants a different treatment of `C` must declare implication as a
+separate primitive connective and publish a different full table; it must not
+claim the definition above while using incompatible entries.
 
 ## Equivalence
 
-The default definition is derived, not an independent primitive:
+The default equivalence is derived, not an independent primitive:
 
 ```text
 A ↔ B = (A → B) ∧ (B → A)
 ```
 
+The resulting complete table is:
+
+| `A ↔ B` | `T` | `F` | `U` | `C` |
+| --- | --- | --- | --- | --- |
+| **`T`** | `T` | `F` | `U` | `C` |
+| **`F`** | `F` | `T` | `U` | `C` |
+| **`U`** | `U` | `U` | `U` | `C` |
+| **`C`** | `C` | `C` | `C` | `C` |
+
 Any profile that chooses a primitive equivalence must document where it differs
 from this derived form and test the difference.
 
+## Determining projection (operational note)
+
+The following is not a second truth table. It records useful operational
+projections while the canonical strict result remains unchanged:
+
+| Expression | Determining projection | Canonical strict |
+| --- | --- | --- |
+| `T ∨ C` | `T` if the right branch is not semantically checked yet | `C` |
+| `F ∧ C` | `F` if the right branch is not semantically checked yet | `C` |
+| `T ∨ U` | `T` | `T` |
+| `F ∧ U` | `F` | `F` |
+
+The first two rows must carry the skipped branch and its deferred or completed
+semantic diagnostic; they are not permission to reinterpret the strict result.
+
 ## Open algebraic obligations
 
-Before these operators are used as a theorem system, the project must choose a
-named profile and test the properties it claims: associativity,
-commutativity, De Morgan laws, distributivity, implication laws and the
-relationship to any information ordering. Evidence conflict belongs to a
-separate `Evidence4` axis (`Neither`, `TrueOnly`, `FalseOnly`, `Both`); it must
-not be encoded by silently changing `U` into `C`.
-
-For the current strict tables, the ordinary `T/F/U` fragment has the expected
-commutativity, associativity, De Morgan and distributive behaviour. Once `C`
-is included as a propagated semantic failure, absorption is not a law of the
-whole four-valued profile; for example:
+The ordinary `T/F/U` fragment has the expected commutativity, associativity,
+De Morgan and distributive behaviour. Once `C` is included as a propagated
+semantic failure, absorption is not a law of the whole four-valued profile; for
+example:
 
 ```text
 A ∧ (A ∨ C) = C, not A
 ```
 
-This is an explicit limitation of the semantic-error lifting, not a reason to
-silently reorder `C` into a truth or information lattice.
+This is an explicit limitation of semantic-error lifting, not a reason to
+silently place `C` into the truth or information lattice. Evidence conflict
+belongs to a separate `Evidence4` axis (`Neither`, `TrueOnly`, `FalseOnly`,
+`Both`) and must not be encoded by changing `U` into `C`.
