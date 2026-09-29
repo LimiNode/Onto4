@@ -125,15 +125,15 @@ but also a distinct informational state:
 R_V := "Vasya != Petya"
 ```
 
-`R_V` carries knowledge of their difference in some context `K`. A physical
-interaction may itself realize the act of distinction `D`, while a sensor,
-memory or database may retain its result:
+In context `K`, `R_V` carries knowledge of their difference. A physical
+interaction may realize the act of distinction `D` itself. A sensor, memory or
+database may retain the result of that act in the form of `R`:
 
 ```text
 D(A, B | physical_interaction)
-R_sensor := Represents(D(...))
-R_memory := Represents(D(...))
-R_database := Represents(D(...))
+R_sensor := Represents(D(...))   -- sensor record
+R_memory := Represents(D(...))   -- memory state
+R_database := Represents(D(...)) -- database record
 ```
 
 In this model, therefore, an observer is a special image of a more general
@@ -281,7 +281,8 @@ But even this distinction belongs to the selected descriptive model; it should
 not be silently treated as a property of the object “in itself”. The existence
 of two abstract possibilities does not yet tell a system which state is
 realized. That requires a physical or symbolic structure carrying the selected
-state: a signal level, memory cell, record or another relation.
+state: a signal level, a memory-cell state, a record, or another structure in
+which that state is represented.
 
 It is therefore useful to distinguish:
 
