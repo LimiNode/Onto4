@@ -212,5 +212,6 @@ described here. They help separate several related but non-identical problems:
   shows why formal object-language and metalanguage levels matter for a truth
   predicate. Here it is only a more distant formal parallel.
 
-Onto4's own claim remains independent: meaning and writing history require an
-explicitly selected physical state, relation and context.
+Onto4's own claim here is that meaning and writing history should not be
+introduced as unconditional properties of an object: they require an explicitly
+selected carrier, relation and context.

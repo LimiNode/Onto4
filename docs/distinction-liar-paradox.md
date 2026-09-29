@@ -125,15 +125,15 @@ but also a distinct informational state:
 R_V := "Vasya != Petya"
 ```
 
-`R_V` carries knowledge of their difference in some context `K`. The same role
-may be played by a sensor, physical interaction, database, comparison rule or
-internal state of an automated system:
+`R_V` carries knowledge of their difference in some context `K`. A physical
+interaction may itself realize the act of distinction `D`, while a sensor,
+memory or database may retain its result:
 
 ```text
-D(A, B | human_cognition)
-D(A, B | detector)
 D(A, B | physical_interaction)
-D(A, B | memory_state)
+R_sensor := Represents(D(...))
+R_memory := Represents(D(...))
+R_database := Represents(D(...))
 ```
 
 In this model, therefore, an observer is a special image of a more general
@@ -149,10 +149,12 @@ is carried by a represented transition structure:
 A
 B
 T := Transition(A, B | K)
+R_T := Represents(T)
 ```
 
-Here it is `T` that records the transition in context `K` and thus makes the
-difference between `A` and `B` available to reasoning.
+`T` itself may be the physical transition. If another part of the system must
+know about it, its result is retained in `R_T`; that record makes the transition
+between `A` and `B` available to further reasoning.
 
 ## Distinction does not prohibit reflexivity
 
@@ -268,16 +270,18 @@ basis for the assessment.
 
 ## Information as represented distinction
 
-The same intuition appears in information theory. A bit is meaningful because
-two states are possible:
+The same intuition appears in information theory. In an ordinary bit model, we
+specify two distinguishable states:
 
 ```text
 0 / 1
 ```
 
-The existence of two abstract possibilities does not yet tell a system which
-state is realized. That requires a physical or symbolic structure carrying the
-selected value: a signal level, memory cell, record or some other state.
+But even this distinction belongs to the selected descriptive model; it should
+not be silently treated as a property of the object “in itself”. The existence
+of two abstract possibilities does not yet tell a system which state is
+realized. That requires a physical or symbolic structure carrying the selected
+state: a signal level, memory cell, record or another relation.
 
 It is therefore useful to distinguish:
 
