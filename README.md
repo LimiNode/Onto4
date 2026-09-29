@@ -5,8 +5,6 @@
 semantic well-formedness from truth, and it never treats a verdict as evidence
 of authority or action permission.
 
-The historical project reference is the [LimiNode/Onto4 repository](https://github.com/LimiNode/Onto4).
-
 The name **Onto4** comes from **"ontology"**—the study of what exists, in what sense, and under what conditions a statement can mean anything.
 
 > Not every assertion has meaning.
@@ -255,9 +253,9 @@ formalization without asserting the undefined one.
 
 | Logic | Values | Support for meaningless expressions | Indeterminacy | Self-reference | Features |
 |-------|--------|------------------------------------|---------------|----------------|----------|
-| **Classical logic** | T, F | ❌ | ❌ | paradox | Simple but inflexible. Everything is meaningful and evaluable. |
+| **Classical logic** | T, F | semantic well-formedness handled outside the truth-value set | ❌ | paradox | Truth evaluation is binary after a language, interpretation and domain are fixed. |
 | **Three-valued (Łukasiewicz, Kleene)** | T, F, U | ❌ | ✅ | paradox | Introduces "unknown" but still requires meaning |
-| **FDE / paraconsistent logic** | T, F, {T∧F} | ❌ | ✅ | paradox | Allows contradictions without collapse |
+| **FDE / Belnap–Dunn** | Neither, TrueOnly, FalseOnly, Both | support state is explicit | ✅ | paradox | Tracks independent support for truth and falsity; tolerates inconsistency and incomplete information. |
 | **Modal logic** | T, F across worlds | ❌ | ◼ | paradox | Extends classical logic via modalities |
 | **Onto4** | T, F, U, C | ✅ | ✅ | context-bound | Checks semantic admissibility before truth assessment and separates meaning from truth |
 
