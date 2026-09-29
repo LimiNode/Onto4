@@ -1,49 +1,96 @@
-# Liar paradox: an optional semantic profile
+# The liar paradox in Onto4
 
-This note preserves the repository's original distinction-based treatment of
-the liar paradox. It is a named philosophical hypothesis, not a universal
-Onto4 rule.
+This example starts with the familiar idea and only then introduces the
+profile terminology. The purpose is to show why a self-referential sentence can
+be difficult without making self-reference a universal category error.
 
-## Canonical typed profile
+## The intuitive paradox
 
-Self-reference is not automatically a category error. In an ordinary typed
-semantic profile:
+Consider the sentence:
+
+```text
+L := "This statement is false"
+```
+
+If `L` is true, what it says makes it false. If `L` is false, what it says
+appears to make it true. The sentence turns its own truth assessment into part
+of the condition being assessed, producing the familiar liar paradox.
+
+## What the canonical profile says
+
+Onto4 does not treat every self-reference as meaningless. In the canonical
+typed profile:
 
 ```text
 a = a                         -> T
 SelfReference(a)              -> T, F or U depending on the predicate/context
 ```
 
-The liar sentence
+The liar becomes a formal expression only after the profile specifies a typed
+truth predicate, its domain and a policy for fixed points:
 
 ```text
-L := "This statement is false"
+L := ¬Truth(L)
 ```
 
-requires a truth predicate whose domain, typing and fixed-point policy are
-specified by the selected `SemanticProfile`. If that profile admits the truth
-predicate and a fixed-point construction, the result is handled by that
-profile's logic; it is not silently converted to `C` merely because the
-sentence refers to itself.
+If those semantic contracts admit the construction, the selected profile's
+logic handles the result. The sentence is not converted to `C` merely because
+it refers to itself. `C` requires a concrete failure of semantic admissibility,
+such as an undefined argument type or an explicit prohibition on this
+self-application.
 
-`C` is appropriate only when the checked formalization fails a concrete
-semantic requirement—for example, when the selected profile explicitly
-forbids the truth predicate's self-application or leaves its argument type
-undefined. The diagnostic must name that failed requirement.
+## Why distinction was proposed
 
-## Historical distinction profile
-
-The earlier essay proposed an additional axiom:
+The repository's earlier philosophical interpretation asked for a distinction
+between the thing being assessed and the frame that assesses it. A distinction
+can be represented by two roles or representations of one object:
 
 ```text
-compare(a, b) is meaningful iff a != b
+x -> r1(x), r2(x) -> comparison frame
 ```
 
-Under that **DistinctionProfile**, `compare(L, L)` is inadmissible and the
-formalization may project to `C`. This is a coherent optional profile for
-exploring one philosophical view, but it must be named and pinned in the
-`ContextFrame`; it must not be presented as the base Onto4 semantics.
+The “observer” in this explanation is not necessarily a person or a
+metaphysical subject. It is a name for the relational position, model or frame
+that makes the comparison possible.
 
-The distinction profile therefore explains one possible diagnosis of the liar
-paradox while the canonical typed profile keeps ordinary reflexive equality and
-self-reference available when their semantic contracts permit them.
+Start with a relation:
+
+```text
+D(a, b)                         -- distinction between two relata
+```
+
+When the comparison frame is reified as an ordinary object, the language can
+apply it to its own representation:
+
+```text
+relation / frame -> reification -> object O -> O(O)
+```
+
+This is one way self-reference can arise. The question is whether the required
+grounding survived the transition from a meta-level frame to an object-level
+term.
+
+## The optional distinction profile
+
+The historical `DistinctionProfile` makes that grounding requirement explicit.
+It can classify the liar as follows:
+
+```text
+unfounded self-grounding
+    -> semantic admissibility failure
+    -> C
+```
+
+This is a profile-relative diagnosis. It is not the universal rule
+`SelfReference => C`; the narrower idea is:
+
+```text
+UngroundedSelfApplication(semantic_operator) => C
+```
+
+when the selected profile requires a distinction that the formalization cannot
+provide. The profile must be named in the context and must not be confused with
+the canonical typed Onto4 semantics.
+
+For the longer philosophical motivation, see [Distinction and the liar
+paradox](../distinction-liar-paradox.md).
