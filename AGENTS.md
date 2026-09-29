@@ -10,6 +10,9 @@ When editing philosophy, thought experiments, semantic explanations or
 conceptual README sections, preserve the author's actual argument. Do not
 replace an unusual idea with the nearest familiar textbook concept.
 
+Before writing or substantially rewriting conceptual documentation, read
+`docs/STYLE.md` and apply `docs/WRITING-CHECKLIST.md` before finalizing.
+
 Before rewriting a conceptual passage, identify:
 
 1. the central claim;

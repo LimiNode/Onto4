@@ -1,3 +1,8 @@
+---
+name: conceptual-writing
+description: Write and review Onto4 philosophical and conceptual documentation while preserving semantic distinctions and load-bearing thought experiments.
+---
+
 # Conceptual Writing
 
 Use this skill for philosophy notes, thought experiments, semantic
