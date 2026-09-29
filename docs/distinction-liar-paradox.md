@@ -280,9 +280,9 @@ specify two distinguishable states:
 But even this distinction belongs to the selected descriptive model; it should
 not be silently treated as a property of the object “in itself”. The existence
 of two abstract possibilities does not yet tell a system which state is
-realized. That requires a physical or symbolic structure carrying the selected
-state: a signal level, a memory-cell state, a record, or another structure in
-which that state is represented.
+realized. That requires a physical or symbolic structure in which the selected
+state is realized or represented: a signal level, a memory-cell state, a record,
+or another structure.
 
 It is therefore useful to distinguish:
 
