@@ -1,125 +1,146 @@
-# Truth Tables for Onto4 Logic Operators
+# Onto4 operator tables (canonical strict profile)
 
-## Onto4 States
+This document is the executable-style specification of the canonical strict
+operator profile. Onto4 first checks whether a proposition is well formed in a
+pinned semantic context, then evaluates its truth status. `C` is the result of
+semantic admissibility failing; it is not missing evidence and it is not a
+synonym for an absent object.
 
-| Symbol | Name | Meaning |
-|--------|----------------------------|------------------------------------------------|
-| **T**  | True                       | Standard truth |
-| **F**  | False                      | Standard falsity |
-| **U**  | Undefined                  | No data / not derived |
-| **C**  | Nonsense / Category error  | The concept is fictive; the statement has no ontological meaning |
+The four verdicts are:
 
----
+| Symbol | Meaning |
+| --- | --- |
+| `T` | well formed and true under the selected context |
+| `F` | well formed and false under the selected context |
+| `U` | well formed, but `T`/`F` is not established in this context |
+| `C` | not well formed under the selected ontology/semantic profile |
 
-## Negation (¬)
+## Semantic checking and evaluation
 
-Idea:
+The semantic checker covers the whole AST before the canonical operator table
+is applied. Therefore a category error in any required sub-expression remains
+visible in the strict result.
 
-- ¬T = F
-- ¬F = T
-- ¬U = U
-- ¬C = C ← you cannot turn nonsense into sense
+The canonical profile is **strict**. It is defined by the complete tables below,
+including every combination with `C`. This makes the tables suitable as a
+reference for implementations, fixtures and audit/replay checks.
 
-| A | ¬A |
-|---|----|
-| T | F  |
-| F | T  |
-| U | U  |
-| C | C  |
+An evaluator may additionally expose an operational **determining/short-circuit
+projection**. For example, `T ∨ X` can determine a query answer without
+evaluating `X`, and `F ∧ X` can do the same. That projection is an
+optimization at the query/evaluation layer, not a replacement for the strict
+assessment. The skipped branch, context and either its diagnostics or an
+explicit `semantic_check_deferred` marker must be retained.
 
----
+Strict assessment answers: *is this complete formal proposition admissible, and
+what verdict follows from it?* Determining projection answers a narrower
+operational question: *what result is already determined by the part evaluated
+so far?*
 
-## Conjunction (A ∧ B)
+## Negation
 
-Idea:
+| `A` | `¬A` |
+| --- | --- |
+| `T` | `F` |
+| `F` | `T` |
+| `U` | `U` |
+| `C` | `C` |
 
-- If both parts are **T**, then T.
-- If at least one is **F**, then F.
-- If both are **U**, then U.
-- If one is **C**, the result is **C** (a category failure infects the whole construction).
+Negation does not turn a category error into a meaningful proposition.
 
-| A | B | A ∧ B |
-|---|---|-------|
-| T | T | T     |
-| T | F | F     |
-| F | F | F     |
-| T | U | U     |
-| F | U | F     |
-| U | U | U     |
-| T | C | C     |
-| F | C | C     |
-| U | C | C     |
-| C | C | C     |
+## Conjunction
 
-**Rule:** if there is **C** → the result is **C**, even if the other part is **F**, because the conjunction is semantically invalid.
+| `A ∧ B` | `T` | `F` | `U` | `C` |
+| --- | --- | --- | --- | --- |
+| **`T`** | `T` | `F` | `U` | `C` |
+| **`F`** | `F` | `F` | `F` | `C` |
+| **`U`** | `U` | `F` | `U` | `C` |
+| **`C`** | `C` | `C` | `C` | `C` |
 
----
+## Disjunction
 
-## Disjunction (A ∨ B)
+| `A ∨ B` | `T` | `F` | `U` | `C` |
+| --- | --- | --- | --- | --- |
+| **`T`** | `T` | `T` | `T` | `C` |
+| **`F`** | `T` | `F` | `U` | `C` |
+| **`U`** | `T` | `U` | `U` | `C` |
+| **`C`** | `C` | `C` | `C` | `C` |
 
-Idea:
+The strict result is `C` whenever either operand is `C`, even when an
+operational evaluator could determine a `T` or `F` branch without evaluating the
+other operand.
 
-- If at least one **T**, then T.
-- If both are **F**, then F.
-- If at least one **C**, the result is C unless there is T (see below).
+## Implication
 
-| A | B | A ∨ B |
-|---|---|-------|
-| T | T | T     |
-| T | F | T     |
-| F | F | F     |
-| T | U | T     |
-| F | U | U     |
-| U | U | U     |
-| T | C | T     |
-| F | C | C     |
-| U | C | C     |
-| C | C | C     |
+The canonical definition is:
 
-**Rule:** if at least one argument is **categorically meaningless**, and there is no **T**, the disjunction is also **meaningless (C)**.
+```text
+A → B = ¬A ∨ B
+```
 
----
+with strict `C` propagation. Its complete table is:
 
-## Implication (A → B)
+| `A → B` | `T` | `F` | `U` | `C` |
+| --- | --- | --- | --- | --- |
+| **`T`** | `T` | `F` | `U` | `C` |
+| **`F`** | `T` | `T` | `T` | `C` |
+| **`U`** | `T` | `U` | `U` | `C` |
+| **`C`** | `C` | `C` | `C` | `C` |
 
-Implication is tricky:
+A profile that wants a different treatment of `C` must declare implication as a
+separate primitive connective and publish a different full table; it must not
+claim the definition above while using incompatible entries.
 
-- In classical logic: false A → anything = true
-- In Onto4: **if A or B = C → the result is also C**, because the statement is logically inadmissible.
+## Equivalence
 
-| A | B | A → B |
-|---|---|-------|
-| T | T | T     |
-| T | F | F     |
-| F | T | T     |
-| F | F | T     |
-| T | U | U     |
-| U | T | T     |
-| U | U | U     |
-| T | C | C     |
-| C | T | C     |
-| F | C | C     |
-| C | F | C     |
-| C | U | C     |
-| U | C | C     |
-| C | C | C     |
+The default equivalence is derived, not an independent primitive:
 
----
+```text
+A ↔ B = (A → B) ∧ (B → A)
+```
 
-## Equivalence (A ↔ B)
+The resulting complete table is:
 
-| A | B | A ↔ B |
-|---|---|-------|
-| T | T | T     |
-| F | F | T     |
-| T | F | F     |
-| F | T | F     |
-| U | U | U     |
-| T | U | U     |
-| F | U | U     |
-| T | C | C     |
-| F | C | C     |
-| U | C | C     |
-| C | C | C     |
+| `A ↔ B` | `T` | `F` | `U` | `C` |
+| --- | --- | --- | --- | --- |
+| **`T`** | `T` | `F` | `U` | `C` |
+| **`F`** | `F` | `T` | `U` | `C` |
+| **`U`** | `U` | `U` | `U` | `C` |
+| **`C`** | `C` | `C` | `C` | `C` |
 
----
+Any profile that chooses a primitive equivalence must document where it differs
+from this derived form and test the difference.
+
+## Determining projection (operational note)
+
+The following is not a second truth table. It records useful operational
+projections while the canonical strict result remains unchanged:
+
+| Expression at short-circuit time | Operational projection | After complete semantic check |
+| --- | --- | --- |
+| `T ∨ X` | `T` before `X` is evaluated | `C` if `X` checks as `C`; otherwise the ordinary strict result |
+| `F ∧ X` | `F` before `X` is evaluated | `C` if `X` checks as `C`; otherwise the ordinary strict result |
+| `T ∨ U` | `T` | `T` |
+| `F ∧ U` | `F` | `F` |
+
+The first two rows describe an as-yet unchecked branch, not a branch already
+known to be `C`. If the later semantic check returns `C`, the canonical result
+is `C`; if it returns a meaningful verdict, the corresponding strict table
+applies. The operational result must carry the skipped branch and its deferred
+or completed semantic diagnostic.
+
+## Open algebraic obligations
+
+For the canonical strict profile, `∧` and `∨` remain commutative and associative
+over all four values; both De Morgan laws and both distributive laws hold.
+Once `C` is included as a propagated semantic failure, absorption is not a law
+of the whole four-valued profile; for example:
+
+```text
+A ∧ (A ∨ C) = C, not A
+```
+
+This is an explicit limitation of semantic-error lifting, not a reason to
+silently place `C` into the truth or information lattice. Evidence conflict
+belongs to a separate `Evidence4` axis (`Neither`, `TrueOnly`, `FalseOnly`,
+`Both`) and must not be encoded by changing `U` into `C`.

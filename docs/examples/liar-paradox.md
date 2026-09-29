@@ -1,74 +1,113 @@
-# Analysis of the Liar Paradox in Onto4
+# The liar paradox in Onto4
 
-## 1. Context of Reasoning
-
-Consider a context `C₀` in which the following basic ontological assumption holds:
-
-> **(Axiom 1: Distinction as a condition of truth)**
-> Any logical state (`true` or `false`) is possible **only when two different objects are distinguished** during comparison.
-
-Further justification for this principle can be found in the essay ["On Distinction and the Liar Paradox"](../distinction-liar-paradox.md).
-
-Formally:
+Consider the sentence:
 
 ```text
-Let V ∈ {T, F}  // logical values
-Let compare : Object × Object → V
-
-compare(a, b) is meaningful ⇔ a ≠ b
+L := "This statement is false"
 ```
 
-If an object is compared with itself (`a = a`), then according to this principle the logical evaluation `V` is **meaningless**, because no distinction takes place. This defines the basic boundary of applicability of logic inside Onto4.
-
-## 2. Formalizing the liar statement
-
-The liar paradox:
+If `L` is true, its own content says that it is false. If `L` is false, what it
+says appears to be true. This creates a closed dependency:
 
 ```text
-L := "This statement is false."
+L -> Truth(L) -> L
 ```
 
-In more explicit form:
+For the longer philosophical account of distinction, representation and
+self-reference, see [Distinction and the liar paradox](../distinction-liar-paradox.md).
+
+## Distinction and truth assessment
+
+For `true` and `false` to carry information, the assessment must distinguish at
+least two alternatives:
 
 ```text
-L ≡ "L is false"
+true / false
 ```
 
-Here `L` makes a logical judgment about itself, that is `compare(L, L)`.
-
-## 3. Applying the axiom of distinction
-
-The comparison `compare(L, L)` compares **an object with itself**:
+The assessment also normally distinguishes what is being assessed from the
+basis on which its result is established:
 
 ```text
-compare(L, L) ⇒ meaningless (by Axiom 1)
+assessment basis
+      |
+      v
+      P
+      |
+      v
+   T or F
 ```
 
-Therefore the logical operation `L is false` **has no foundation**, as it violates the basic criterion of distinction. As a result, the whole statement `L` cannot be logically evaluated.
+The result is not its own basis.
 
-## 4. Derivation via Onto4
+## What goes wrong in the liar
 
-Check the features:
-
-| Feature | Value | Justification |
-|---------|-------|---------------|
-| `S` (sensible) | `0` | Self-reference destroys distinction → no meaning |
-| `E` (evaluable) | `0` | Evaluation impossible when `S = 0` |
-| `V` (value) | `–` | Not applicable |
-
-Result:
+Write the liar using a truth predicate:
 
 ```text
-meaning(L, C₀) = Ø
+L := ¬Truth(L)
 ```
 
-## 5. Conclusion
+To determine `L`, we need `Truth(L)`. But to establish `Truth(L)`, we already
+need the truth status of `L`:
 
-In Onto4 the liar paradox is not a paradox in the logical sense. It **does not produce a contradiction** because it **fails the ontological admissibility test**: the statement has no meaning as an object of reasoning.
+```text
+L
+└─ depends on ¬Truth(L)
+               └─ depends on the truth status of L
+```
 
-Onto4 allows a clear separation between:
+No independent assessment basis appears in this chain. The outcome of the
+assessment is used as the basis for that same assessment.
 
-* grammatically correct but ontologically meaningless constructions;
-* and truly comparable statements that can be analyzed logically.
+## The Onto4 verdict under DistinctionProfile
 
-Thus the liar paradox in Onto4 receives the value `Ø`—**outside of logic**, not within its bounds.
+In a semantic profile that requires an independent basis for truth assessment,
+this is not merely an unresolved answer `U`. It is a failure of the truth
+predicate's applicability condition:
+
+```text
+UngroundedSelfApplication(Truth, L) -> C
+```
+
+Here `C` means that the question “is `L` true?” was formulated using an
+operation whose conditions are not satisfied in this construction. The problem
+lies in the assessment itself, not in missing evidence for either `T` or `F`.
+
+Onto4 calls this semantic profile **DistinctionProfile**.
+
+## Important limitation
+
+This does **not** mean that all self-reference is meaningless. For example:
+
+```text
+a = a -> T
+```
+
+is an ordinary reflexive formula, and many self-referential constructions are
+meaningful. The universal rule
+
+```text
+SelfReference(x) -> C
+```
+
+is therefore incorrect. The narrower, profile-relative rule is:
+
+```text
+UngroundedSelfApplication(semantic_operator) -> C
+```
+
+and it applies only when the selected semantic profile requires independent
+grounding for that operation.
+
+In this interpretation, the liar is interesting not because it “breaks logic”,
+but because it exposes a boundary of the selected semantic apparatus. Sometimes
+the problem is not choosing between `T` and `F`; the assessment operation itself
+has lost its admissible meaning in the chosen context.
+
+This note presents only the logical path through the example. The roles of an
+external position, multiple representations, information as distinction and
+reification of the meta-level are discussed in [the longer philosophical
+essay](../distinction-liar-paradox.md). The related thought experiments are
+available separately: [“One-bit world”](../thought-experiments/one-bit-world.md)
+and [“The ideal flash drive”](../thought-experiments/ideal-flash-drive.md).
