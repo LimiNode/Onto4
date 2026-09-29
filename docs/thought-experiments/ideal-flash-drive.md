@@ -120,3 +120,24 @@ Thus a question about complete meaning or complete description may be neither
 false nor merely unresolved. First we must check whether the operation itself
 is admissible in the selected context. For the connection to self-reference and
 the verdict `C`, see [“Distinction and the liar paradox”](../distinction-liar-paradox.md).
+
+## Related ideas and research
+
+These works do not prove the impossibility of exactly the ideal flash drive
+described here. They help separate several related but non-identical problems:
+
+- [Thomas Breuer, *The Impossibility of Accurate State Self-Measurements*](https://doi.org/10.1086/289852)
+  studies which states cannot be distinguished exactly by an observer that is
+  part of the system.
+- [Charles S. Peirce: semiotics](https://plato.stanford.edu/entries/peirce/)
+  presents meaning through the triad of object, sign and interpretant; this is
+  close to the claim that a carrier's state is not automatically its meaning.
+- [W. K. Wootters and W. H. Zurek, *A Single Quantum Cannot Be Cloned*](https://doi.org/10.1038/299802a0)
+  establishes a specific quantum limit on perfectly copying an unknown state.
+  It is an analogy, not a general prohibition on copying or self-representation.
+- [Alfred Tarski, *The Semantic Conception of Truth*](https://doi.org/10.2307/2102968)
+  shows why formal object-language and metalanguage levels matter for a truth
+  predicate. Here it is only a more distant formal parallel.
+
+Onto4's own claim remains broader and independent: meaning and complete
+description require an explicitly selected context, level and carrier.

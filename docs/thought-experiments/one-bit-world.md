@@ -139,3 +139,24 @@ presupposes a distinction context that the selected ontology does not provide.
 
 For the next step, see [“The ideal flash drive”](ideal-flash-drive.md) and
 [“Distinction and the liar paradox”](../distinction-liar-paradox.md).
+
+## Related ideas and research
+
+The following works do not prove Onto4's claims and do not define its normative
+semantics. They provide related lines of thought:
+
+- [Carlo Rovelli, *Relational Quantum Mechanics*](https://doi.org/10.1007/BF02302261)
+  treats physical values as arising relative to another physical system in an
+  interaction, rather than as properties fixed outside every relation.
+- [Thomas Breuer, *The Impossibility of Accurate State Self-Measurements*](https://doi.org/10.1086/289852)
+  formulates limits on accurate self-measurement by an observer that is part of
+  the observed system.
+- [Wojciech H. Zurek, *Quantum Darwinism*](https://doi.org/10.1038/nphys1202)
+  connects accessible objectivity with multiple physical records in an
+  environment.
+- [G. Spencer-Brown, *Laws of Form*](https://doi.org/10.2307/2272151)
+  treats distinction as a primary act of drawing a boundary.
+
+Onto4 uses these works only as philosophical and physical analogies. Its
+claim here is narrower: a change becomes information only in a context where it
+is physically or symbolically represented.

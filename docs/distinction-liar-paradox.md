@@ -524,3 +524,29 @@ This is the broader lesson of the example for Onto4:
 
 > Sometimes the problem lies not in the answer, but in the conditions that
 > were supposed to make the question meaningful.
+
+## Related ideas and research
+
+This interpretation is not derived from the works below, nor does it claim
+that they prove `DistinctionProfile`. They are related lines of thought that
+help clarify the limits of the analogy:
+
+- [G. Spencer-Brown, *Laws of Form*](https://doi.org/10.2307/2272151)
+  treats distinction as an act of drawing a boundary. This is a close
+  motivation, not Onto4's ready-made semantics.
+- [Charles S. Peirce: semiotics](https://plato.stanford.edu/entries/peirce/)
+  connects a sign's meaning with an object and an interpretant, which resonates
+  with the distinction between a carrier's state and its meaning.
+- [Alfred Tarski, *The Semantic Conception of Truth*](https://doi.org/10.2307/2102968)
+  and the formal tradition that followed show why object-language and
+  metalanguage levels matter for a truth predicate. `DistinctionProfile` does
+  not replace this analysis; it offers a different, ontologically motivated
+  diagnosis.
+- [Carlo Rovelli, *Relational Quantum Mechanics*](https://doi.org/10.1007/BF02302261)
+  and [Thomas Breuer, *The Impossibility of Accurate State Self-Measurements*](https://doi.org/10.1086/289852)
+  provide physical parallels for contextual values and limits on
+  self-measurement. They are not proofs of Onto4's philosophical conclusions.
+
+The detailed thought experiments supporting this essay are separate:
+[“One-bit world”](thought-experiments/one-bit-world.md) and
+[“The ideal flash drive”](thought-experiments/ideal-flash-drive.md).
