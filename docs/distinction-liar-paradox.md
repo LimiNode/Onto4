@@ -88,18 +88,19 @@ This can be written as:
 D(A, B | K)
 ```
 
-Yet distinction and knowledge of distinction are still not the same thing. For
-`D` to become information, the system needs a separate carrier:
+Yet a physical act of distinction and its representation for another part of
+the system are still not the same thing. For a distinction to be stored or
+available as knowledge, the system needs a corresponding carrier:
 
 ```text
-C := Distinguishes(A, B | K)
+R := Represents(D(A, B | K))
 ```
 
-`C` is a third element structurally, but not necessarily a third physical
+`R` is a third element structurally, but not necessarily a third physical
 object. It may be a relation, system state, record, rule, event or another
-structure in which distinction is represented. Even mathematical `R(A, B)`
-introduces the relation `R` into the description; knowledge of the difference
-is not extracted from `A` and `B` alone.
+structure in which distinction is represented. `D` itself may be a physical
+event or state; the additional `R` is needed when another part of the system
+must retain or use it as knowledge.
 
 Onto4 asks whether the selected context provides an admissible act and carrier
 for the relation required by an assessment.
@@ -121,12 +122,12 @@ Petya
 but also a distinct informational state:
 
 ```text
-K := "Vasya != Petya"
+R_V := "Vasya != Petya"
 ```
 
-It is `K` that carries the knowledge of their difference. The same role may be
-played by a sensor, physical interaction, database, comparison rule or internal
-state of an automated system:
+`R_V` carries knowledge of their difference in some context `K`. The same role
+may be played by a sensor, physical interaction, database, comparison rule or
+internal state of an automated system:
 
 ```text
 D(A, B | human_cognition)
@@ -193,23 +194,24 @@ requires?**
 Suppose a representation of difference is given by:
 
 ```text
-C := Distinguishes(A, B)
+R := Represents(D(A, B | K))
 ```
 
-A formal language may then make `C` itself an object of reasoning. We can ask
-where `C` came from, compare it with another record, or assess its truth. This
+A formal language may then make `R` itself an object of reasoning. We can ask
+where `R` came from, compare it with another record, or assess its truth. This
 new assessment must itself be represented somewhere:
 
 ```text
-D := Assess(C)
+E_R := Assess(R)
 ```
 
 This produces distinct levels:
 
 ```text
 A, B                         -- objects being distinguished
-C := Distinguishes(A, B)     -- carrier of the distinction
-D := Assess(C)               -- carrier of the assessment of C
+D(A, B | K)                  -- act of distinction
+R := Represents(D(A, B | K)) -- carrier of the representation
+E_R := Assess(R)             -- carrier of the assessment of R
 ```
 
 This is not an infinite regress for every practical item of knowledge. Within
@@ -530,7 +532,7 @@ The distinction profile begins by separating reality from its representation:
 
 ```text
 D(A, B | K)                    -- distinction in context K
-C := Encode(D(A, B | K))       -- the distinction is represented
+R := Encode(D(A, B | K))       -- the distinction is represented
 ```
 
 A distinction belongs to a concrete act, process or system state, and a
@@ -569,7 +571,7 @@ This interpretation is not derived from the works below, nor does it claim
 that they prove `DistinctionProfile`. They are related lines of thought that
 help clarify the limits of the analogy:
 
-- [G. Spencer-Brown, *Laws of Form*](https://doi.org/10.2307/2272151)
+- G. Spencer-Brown, *Laws of Form* (1969)
   treats distinction as an act of drawing a boundary. This is a close
   motivation, not Onto4's ready-made semantics.
 - [Charles S. Peirce: semiotics](https://plato.stanford.edu/entries/peirce/)

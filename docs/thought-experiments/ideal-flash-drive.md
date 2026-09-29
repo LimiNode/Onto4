@@ -52,19 +52,31 @@ For that distinction to be available, a carrier is needed:
 M := “this brick was produced by a write operation”
 ```
 
-But `M` must itself be physically realized. The state is then:
+If `M` must be placed inside the brick itself, it must be physically realized
+there, and the state is then:
 
 ```text
 Brick + M
 ```
 
-and the ideal condition is broken: additional matter or structure has appeared
-beyond the state of the brick itself.
+The ideal condition is broken: additional matter or structure has appeared
+beyond the state of the brick itself. If `M` is instead located in an external
+system—for example, an experimenter's memory or an environmental state—the
+drive can remain ideal, but the distinction “recorded / ordinary” belongs to the
+extended system:
+
+```text
+Brick + environment
+```
+
+not to the brick by itself.
 
 If the distinction is not physically represented anywhere, then within the
 experiment a “recorded brick” and an “ordinary brick” are indistinguishable.
-This does not assert that their histories must be the same; it says that the
-history is not available as information without an additional carrier.
+This does not leave a hidden absolute history in the background. Within the
+experiment's restricted ontology, the relation “history of this object” is not
+given. It appears only after the system is extended with an environmental state,
+observer memory or another physical process.
 
 ## Writing the same state again
 
@@ -167,7 +179,8 @@ writing history require an additional physical distinction.
 
 The experiment shows that:
 
-1. information can be identified completely with physical state;
+1. the experiment shows the consequences of assuming that information is
+   completely identical with physical state;
 2. a recorded object and an ordinary object can be physically indistinguishable;
 3. history, operation count and the fact of writing require additional state;
 4. a carrier's state has no meaning without a context and representation

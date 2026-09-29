@@ -12,6 +12,10 @@ Imagine an ontology in which only one bit is given:
 b ∈ {0, 1}
 ```
 
+Even this notation already belongs to our model of the world: it specifies a
+space of possible states from outside. The experiment does not assume that the
+one-bit world itself “knows” that it is a bit or that two alternatives exist.
+
 The next step usually looks obvious:
 
 ```text
@@ -160,7 +164,7 @@ semantics. They provide related lines of thought:
 - [Wojciech H. Zurek, *Quantum Darwinism*](https://doi.org/10.1038/nphys1202)
   connects accessible objectivity with multiple physical records in an
   environment.
-- [G. Spencer-Brown, *Laws of Form*](https://doi.org/10.2307/2272151)
+- G. Spencer-Brown, *Laws of Form* (1969)
   treats distinction as a primary act of drawing a boundary.
 
 Onto4 uses these works only as philosophical and physical analogies. Its claim
