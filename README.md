@@ -1,7 +1,11 @@
 # Onto4
 [For the Russian version of this README, see](README-RU.md).
 
-**Onto4** is a four-valued logic in which the logical status of a statement depends not only on its truth or falsity but also on whether it is meaningful within a given context.
+**Onto4** is a context-bound four-valued semantic verdict system. It separates
+semantic well-formedness from truth, and it never treats a verdict as evidence
+of authority or action permission.
+
+The historical project reference is the [LimiNode/Onto4 repository](https://github.com/LimiNode/Onto4).
 
 The name **Onto4** comes from **"ontology"**—the study of what exists, in what sense, and under what conditions a statement can mean anything.
 
@@ -13,15 +17,15 @@ In classical logic any statement is considered either true (`T`) or false (`F`).
 
 **Onto4** introduces a more precise classification by adding two additional statuses:
 
-- `U` — **uncertain**: the statement is meaningful but cannot be logically evaluated as true or false;
-- `Ø` — **nonsense**: the statement has no meaning in the given context and cannot take part in logical reasoning.
+- `U` — **undetermined**: the statement is meaningful, but `T`/`F` is not established in the current context;
+- `C` — **category error**: the checked formalization is not well formed in the selected ontology/semantic profile.
 
 Thus Onto4 extends classical logic by introducing the concept of **ontological admissibility** as a preliminary condition for analysis. Each statement is first checked for meaning and evaluability and receives one of four values:
 
 - `T` — **true**: meaningful and true;
 - `F` — **false**: meaningful and false;
-- `U` — **uncertain**: meaningful but not subject to binary evaluation;
-- `Ø` — **nonsense**: meaningless and excluded from the logic.
+- `U` — **undetermined**: meaningful but not resolved as true or false;
+- `C` — **category error**: rejected by semantic/type/presupposition checking.
 
 ### Formal structure of Onto4
 
@@ -40,7 +44,7 @@ Onto4 feature table:
 | `T`   | 1   | 1   | 1   | Makes sense, evaluable, and true |
 | `F`   | 1   | 1   | 0   | Makes sense, evaluable, and false |
 | `U`   | 1   | 0   | –   | Makes sense, but logical evaluation does not apply |
-| `Ø`   | 0   | 0   | –   | Statement lacks meaning; evaluation is impossible |
+| `C`   | 0   | 0   | –   | Category/type checking rejects the formalization |
 
 > Thus every logical value in Onto4 is not merely a label (`True`/`False`) but a **combination of ontological and logical conditions**.
 
@@ -52,7 +56,7 @@ Onto4 **does not abolish binary logic**, but extends it with an **ontological la
 
 - If `S = 1` and `E = 1`, logic reduces to the classical case;
 - If `S = 1` but `E = 0` — logical indeterminacy (`U`);
-- If `S = 0` — nonsense (`Ø`), and reasoning cannot start.
+- If semantic checking fails (`C`), the invalid formalization is not evaluated.
 
 This separation enables **context-sensitive reasoning** where a statement may be rejected not because it is false but because it is inexpressible within the system of concepts.
 
@@ -76,7 +80,8 @@ This is not a logically derived entity but a **projection of the subjective feel
 
 > ❓ *"Is it even possible to formulate this statement meaningfully within the given system—in its language, time, culture?"*
 
-If the answer is no, the statement receives status `Ø` — **ontologically inadmissible**, and is excluded from logical analysis.
+If the answer is no, the checked formalization receives status `C` —
+**ontologically inadmissible** — and is excluded from ordinary logical evaluation.
 
 Thus Onto4 allows reasoning **from within the system itself**, acknowledging:
 
@@ -90,7 +95,9 @@ Thus Onto4 allows reasoning **from within the system itself**, acknowledging:
 "2 + 2 = 4"                               → T (meaningful and true)
 "An elephant is smaller than an ant"      → F (meaningful and false)
 "It will rain tomorrow"                   → U (meaningful but truth not yet determined)
-"The Internet existed in the year 0 AD"  → Ø (meaningless in the context of the 1st century)
+"Mass(integer_7) > 1000 kg"            → C (a typed category error)
+"The Internet existed in the year 0 AD"  → F or U, depending on the
+                                             historical interpretation and evidence
 ```
 
 Onto4 is a logic in which truth is secondary:
@@ -116,7 +123,7 @@ meaning : Statement × Context → Onto4Value
 A context `Context` can be represented as a set of parameters:
 
 ```text
-C = {
+ContextFrame = {
   Language = Russian,
   Time = 2025,
   Concepts = {internet, computer, falsehood, truth},
@@ -145,11 +152,52 @@ C₂ = {
   Concepts = {интернет, компьютер, сеть}
 }
 
-meaning(S, C₁) = Ø   // nonsense — the concept "internet" is absent
+meaning(S, C₁) = U   // interpretation/evidence is unresolved in this frame
 meaning(S, C₂) = T   // meaningful and true
 ```
 
 This allows Onto4 to abandon the abstract observer for whom all statements always have sense and value.
+
+Formally, the verdict is context-bound:
+
+```text
+V(P | ontology, semantics, epistemics, inference, perspective)
+```
+
+A concrete implementation can carry these dimensions explicitly:
+
+```cpp
+struct ContextFrame {
+    OntologyProfile ontology;
+    SemanticProfile semantics;
+    EpistemicProfile epistemics;
+    InferenceProfile inference;
+    Perspective perspective;
+};
+```
+
+The same text may therefore receive different verdicts under different
+`ContextFrame` profiles. A missing object in the current model is not by itself
+`C`; the semantic checker must show that the expression is ill typed or its
+presupposition is inadmissible.
+
+### Onto4 and Evidence4 are different axes
+
+Onto4 describes semantic status. Evidence is tracked separately in a
+Belnap–Dunn-like `Evidence4` space:
+
+```text
+Neither | TrueOnly | FalseOnly | Both
+```
+
+For example, `Onto4 = U` with `Evidence4 = Neither` means a meaningful claim
+without admitted support, while `Onto4 = U` with `Evidence4 = Both` means a
+meaningful claim with conflicting support. `Both` is not a category error.
+
+`Sense`/definedness is a property produced by formalization and semantic
+checking; it is not required to be an additional logical operator. A checked
+formalization should retain its ontology, assumptions, normalized expression,
+diagnostics and context revision.
 
 ---
 
@@ -161,7 +209,7 @@ This allows Onto4 to abandon the abstract observer for whom all statements alway
 | **Three-valued (Łukasiewicz, Kleene)** | T, F, U | ❌ | ✅ | paradox | Introduces "unknown" but still requires meaning |
 | **FDE / paraconsistent logic** | T, F, {T∧F} | ❌ | ✅ | paradox | Allows contradictions without collapse |
 | **Modal logic** | T, F across worlds | ❌ | ◼ | paradox | Extends classical logic via modalities |
-| **Onto4** | T, F, U, Ø | ✅ | ✅ | ✅ → Ø | Takes ontological admissibility into account, separates meaning from truth |
+| **Onto4** | T, F, U, C | ✅ | ✅ | context-bound | Checks semantic admissibility before truth assessment and separates meaning from truth |
 
 ### Examples and philosophical analyses
 
@@ -178,8 +226,13 @@ The project includes discussions of cases such as:
 
 ### Tables of logical operators
 
-Onto4 extends the classical truth table by adding the additional states `U` (undefined) and `Ø` (nonsense).
+The operator tables are currently a **draft profile**. In particular, the
+strict treatment of `C`, implication and equivalence must be kept consistent
+with the chosen definitions and tested algebraic properties.
 
 For details, see the tables of logical operators:
 
 📄 [docs/truth-tables.md](docs/truth-tables.md)
+
+The repository's draft tables are not an Evidence4 table and do not define
+authority, provider admission or physical effects.
