@@ -1,74 +1,49 @@
-# Analysis of the Liar Paradox in Onto4
+# Liar paradox: an optional semantic profile
 
-## 1. Context of Reasoning
+This note preserves the repository's original distinction-based treatment of
+the liar paradox. It is a named philosophical hypothesis, not a universal
+Onto4 rule.
 
-Consider a context `C₀` in which the following basic ontological assumption holds:
+## Canonical typed profile
 
-> **(Axiom 1: Distinction as a condition of truth)**
-> Any logical state (`true` or `false`) is possible **only when two different objects are distinguished** during comparison.
-
-Further justification for this principle can be found in the essay ["On Distinction and the Liar Paradox"](../distinction-liar-paradox.md).
-
-Formally:
+Self-reference is not automatically a category error. In an ordinary typed
+semantic profile:
 
 ```text
-Let V ∈ {T, F}  // logical values
-Let compare : Object × Object → V
-
-compare(a, b) is meaningful ⇔ a ≠ b
+a = a                         -> T
+SelfReference(a)              -> T, F or U depending on the predicate/context
 ```
 
-If an object is compared with itself (`a = a`), then according to this principle the logical evaluation `V` is **meaningless**, because no distinction takes place. This defines the basic boundary of applicability of logic inside Onto4.
-
-## 2. Formalizing the liar statement
-
-The liar paradox:
+The liar sentence
 
 ```text
-L := "This statement is false."
+L := "This statement is false"
 ```
 
-In more explicit form:
+requires a truth predicate whose domain, typing and fixed-point policy are
+specified by the selected `SemanticProfile`. If that profile admits the truth
+predicate and a fixed-point construction, the result is handled by that
+profile's logic; it is not silently converted to `C` merely because the
+sentence refers to itself.
+
+`C` is appropriate only when the checked formalization fails a concrete
+semantic requirement—for example, when the selected profile explicitly
+forbids the truth predicate's self-application or leaves its argument type
+undefined. The diagnostic must name that failed requirement.
+
+## Historical distinction profile
+
+The earlier essay proposed an additional axiom:
 
 ```text
-L ≡ "L is false"
+compare(a, b) is meaningful iff a != b
 ```
 
-Here `L` makes a logical judgment about itself, that is `compare(L, L)`.
+Under that **DistinctionProfile**, `compare(L, L)` is inadmissible and the
+formalization may project to `C`. This is a coherent optional profile for
+exploring one philosophical view, but it must be named and pinned in the
+`ContextFrame`; it must not be presented as the base Onto4 semantics.
 
-## 3. Applying the axiom of distinction
-
-The comparison `compare(L, L)` compares **an object with itself**:
-
-```text
-compare(L, L) ⇒ meaningless (by Axiom 1)
-```
-
-Therefore the logical operation `L is false` **has no foundation**, as it violates the basic criterion of distinction. As a result, the whole statement `L` cannot be logically evaluated.
-
-## 4. Derivation via Onto4
-
-Check the features:
-
-| Feature | Value | Justification |
-|---------|-------|---------------|
-| `S` (sensible) | `0` | Self-reference destroys distinction → no meaning |
-| `E` (evaluable) | `0` | Evaluation impossible when `S = 0` |
-| `V` (value) | `–` | Not applicable |
-
-Result:
-
-```text
-meaning(L, C₀) = Ø
-```
-
-## 5. Conclusion
-
-In Onto4 the liar paradox is not a paradox in the logical sense. It **does not produce a contradiction** because it **fails the ontological admissibility test**: the statement has no meaning as an object of reasoning.
-
-Onto4 allows a clear separation between:
-
-* grammatically correct but ontologically meaningless constructions;
-* and truly comparable statements that can be analyzed logically.
-
-Thus the liar paradox in Onto4 receives the value `Ø`—**outside of logic**, not within its bounds.
+The distinction profile therefore explains one possible diagnosis of the liar
+paradox while the canonical typed profile keeps ordinary reflexive equality and
+self-reference available when their semantic contracts permit them.

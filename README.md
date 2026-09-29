@@ -20,7 +20,7 @@ In classical logic any statement is considered either true (`T`) or false (`F`).
 - `U` — **undetermined**: the statement is meaningful, but `T`/`F` is not established in the current context;
 - `C` — **category error**: the checked formalization is not well formed in the selected ontology/semantic profile.
 
-Thus Onto4 extends classical logic by introducing the concept of **ontological admissibility** as a preliminary condition for analysis. Each statement is first checked for meaning and evaluability and receives one of four values:
+Thus Onto4 extends classical logic by introducing the concept of **ontological admissibility** as a preliminary condition for analysis. Each statement is first checked for semantic well-formedness and determination and receives one of four values:
 
 - `T` — **true**: meaningful and true;
 - `F` — **false**: meaningful and false;
@@ -29,22 +29,25 @@ Thus Onto4 extends classical logic by introducing the concept of **ontological a
 
 ### Formal structure of Onto4
 
-Each value in Onto4 is described by a triple of binary features:
+The historical `S/E/V` sketch is retained only as a mnemonic. Its old meaning
+of `E = evaluable as true or false` conflicts with the current distinction
+between semantic well-formedness and an unresolved verdict. The compatible
+informal reading is:
 
 | Feature      | Label          | Values        | Description |
 |--------------|---------------|---------------|-------------|
 | Sense        | `S` (Sensible) | `1` / `0`     | Whether the statement makes sense in this context |
-| Evaluability | `E` (Evaluable)| `1` / `0`     | Whether it can be logically judged as true or false |
-| Truth value  | `V` (Value)    | `1` / `0` / `–` | True, false or not applicable (if `E = 0`) |
+| Determination | `D` (Determinate) | `1` / `0`     | Whether a `T`/`F` verdict is established in this context |
+| Truth value  | `V` (Value)    | `1` / `0` / `–` | True, false or not applicable (if `D = 0`) |
 
 Onto4 feature table:
 
-| Onto4 | `S` | `E` | `V` | Comment |
+| Onto4 | `S` | `D` | `V` | Comment |
 |-------|-----|-----|-----|------------------------------|
 | `T`   | 1   | 1   | 1   | Makes sense, evaluable, and true |
 | `F`   | 1   | 1   | 0   | Makes sense, evaluable, and false |
-| `U`   | 1   | 0   | –   | Makes sense, but logical evaluation does not apply |
-| `C`   | 0   | 0   | –   | Category/type checking rejects the formalization |
+| `U`   | 1   | 0   | –   | Well formed, but not determined as `T` or `F` |
+| `C`   | 0   | –   | –   | Category/type checking rejects the formalization |
 
 > Thus every logical value in Onto4 is not merely a label (`True`/`False`) but a **combination of ontological and logical conditions**.
 
@@ -54,29 +57,25 @@ Onto4 feature table:
 
 Onto4 **does not abolish binary logic**, but extends it with an **ontological layer**:
 
-- If `S = 1` and `E = 1`, logic reduces to the classical case;
-- If `S = 1` but `E = 0` — logical indeterminacy (`U`);
+- If `S = 1` and `D = 1`, logic reduces to the classical case;
+- If `S = 1` but `D = 0` — the claim is unresolved (`U`);
 - If semantic checking fails (`C`), the invalid formalization is not evaluated.
 
 This separation enables **context-sensitive reasoning** where a statement may be rejected not because it is false but because it is inexpressible within the system of concepts.
 
 ### Overcoming the observer paradox
 
-Classical logic implicitly relies on a metaphysical assumption of an external, universal observer for whom any statement:
+Informal reasoning often behaves as if there were an external, universal
+observer for whom every statement has a fixed meaning and is evaluable in every
+context. That is a useful philosophical target for analysis, but it is not a
+theorem about classical logic: classical semantics already works relative to a
+language, interpretation, domain and valuation.
 
-- has a fixed, unambiguous meaning,
-- can be formulated in any context,
-- and is subject to logical evaluation as true or false.
-
-Such an observer:
-
-- is **outside time** — knowing past, present and future as a whole;
-- **outside language and culture** — concepts are always defined;
-- **outside the system itself** — merely "looking from the side".
-
-This is not a logically derived entity but a **projection of the subjective feeling "I, observing everything"**, built into thinking by default. In reality such an observer is a **metaphysical fiction** that ignores the limitations of context, language and concepts.
-
-**Onto4** rejects this fiction.
+Onto4 is motivated by the more limited observation that informal reasoning
+often treats meaning, reference and evaluability as globally available even
+when the adopted ontology does not justify that assumption. This is a
+motivation for context-bound semantic checking, not a claim that classical
+logic itself requires a metaphysical universal observer.
 
 > ❓ *"Is it even possible to formulate this statement meaningfully within the given system—in its language, time, culture?"*
 
@@ -152,8 +151,12 @@ C₂ = {
   Concepts = {интернет, компьютер, сеть}
 }
 
-meaning(S, C₁) = U   // interpretation/evidence is unresolved in this frame
-meaning(S, C₂) = T   // meaningful and true
+meaning(S, C₁) = C   // "internet" is undefined in this semantic profile
+meaning(S, C₂) = T   // the term is defined and supported in this frame
+
+If a profile explicitly defines the term retrospectively but lacks evidence,
+the same proposition is well formed and may be `U` (or `F` after historical
+assessment). The difference is semantic definition, not merely missing data.
 ```
 
 This allows Onto4 to abandon the abstract observer for whom all statements always have sense and value.
@@ -264,9 +267,9 @@ Onto4 is a tool for analyzing philosophical and linguistic paradoxes that are ha
 
 The project includes discussions of cases such as:
 
-- **The liar paradox** — why the phrase *"This statement is false"* has no meaning in Onto4:
+- **The liar paradox (historical optional profile)** — an earlier distinction-based analysis, not a universal Onto4 rule:
   📄 [docs/examples/liar-paradox.md](docs/examples/liar-paradox.md)
-- **On distinction and the liar paradox** — how deconstructing the “observer” dissolves the paradox:
+- **On distinction and the liar paradox (historical essay)** — philosophical motivation retained separately from the canonical typed profile:
   📄 [docs/distinction-liar-paradox.md](docs/distinction-liar-paradox.md)
 
 ---

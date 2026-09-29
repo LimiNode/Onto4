@@ -24,12 +24,16 @@ compound expression therefore has two possible implementation profiles:
 1. **Strict assessment (recommended for proofs and audit):** report `C` with
    diagnostics whenever an operand or required sub-expression is a category
    error; do not allow a convenient `T` or `F` branch to hide it.
-2. **Operational short-circuit:** an evaluator may return `T` for `T ∨ X` or
-   `F` for `F ∧ X`, but it must retain the skipped branch and its diagnostic.
+2. **Operational short-circuit:** an evaluator may skip truth evaluation of
+   `X` after `T ∨ X` or `F ∧ X` determines the result, but semantic/type
+   checking still covers the entire AST. If a branch has not yet been checked,
+   the result carries a deferred semantic assessment rather than claiming that
+   the branch is valid.
 
 The second profile is an evaluation optimisation, not a replacement for the
-strict assessment. The profile, diagnostics and skipped branches must be
-recorded in a replayable result.
+strict assessment. The profile, context, skipped branch and either its
+diagnostics or an explicit `semantic_check_deferred` marker must be recorded in
+a replayable result.
 
 ### Why strict is canonical
 
@@ -134,3 +138,15 @@ commutativity, De Morgan laws, distributivity, implication laws and the
 relationship to any information ordering. Evidence conflict belongs to a
 separate `Evidence4` axis (`Neither`, `TrueOnly`, `FalseOnly`, `Both`); it must
 not be encoded by silently changing `U` into `C`.
+
+For the current strict tables, the ordinary `T/F/U` fragment has the expected
+commutativity, associativity, De Morgan and distributive behaviour. Once `C`
+is included as a propagated semantic failure, absorption is not a law of the
+whole four-valued profile; for example:
+
+```text
+A ∧ (A ∨ C) = C, not A
+```
+
+This is an explicit limitation of the semantic-error lifting, not a reason to
+silently reorder `C` into a truth or information lattice.
