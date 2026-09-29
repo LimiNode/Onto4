@@ -5,9 +5,9 @@
 **Onto4** is a context-dependent four-valued logic in which a proposition is
 checked for semantic admissibility before its truth value is assessed.
 
-The name **Onto4** comes from **ontology**: the study of *what exists*, *in
-what sense it exists*, and *which categories and relations are available when
-we describe the world*.
+The name **Onto4** comes from **ontology**, a branch of philosophy that studies
+*what exists*, *in what sense it exists*, and *which categories and relations
+are used to describe reality*.
 
 The central idea of Onto4 is simple:
 
@@ -151,8 +151,8 @@ A context may determine:
 - which evidence is available;
 - from which perspective the assessment is made.
 
-The same natural-language sentence can therefore receive different verdicts
-under different formalizations.
+The same natural-language sentence can therefore lead to different
+formalizations and, consequently, different verdicts.
 
 ## Example: time
 
