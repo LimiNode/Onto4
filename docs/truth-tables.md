@@ -1,6 +1,6 @@
 # Onto4 operator tables (canonical strict profile)
 
-This document is the executable-style specification of the current canonical
+This document is the executable-style specification of the canonical strict
 operator profile. Onto4 first checks whether a proposition is well formed in a
 pinned semantic context, then evaluates its truth status. `C` is the result of
 semantic admissibility failing; it is not missing evidence and it is not a
@@ -131,7 +131,7 @@ or completed semantic diagnostic.
 
 ## Open algebraic obligations
 
-For the current strict profile, `∧` and `∨` remain commutative and associative
+For the canonical strict profile, `∧` and `∨` remain commutative and associative
 over all four values; both De Morgan laws and both distributive laws hold.
 Once `C` is included as a propagated semantic failure, absorption is not a law
 of the whole four-valued profile; for example:

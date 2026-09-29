@@ -1,99 +1,55 @@
 # The liar paradox in Onto4
 
-This example starts with the familiar idea and only then introduces the
-profile terminology. The purpose is to show why a self-referential sentence can
-be difficult without making self-reference a universal category error.
-
-## The intuitive paradox
-
 Consider the sentence:
 
 ```text
 L := "This statement is false"
 ```
 
-If `L` is true, what it says makes it false. If `L` is false, what it says
-appears to make it true. The sentence turns its own truth assessment into part
-of the condition being assessed, producing the familiar liar paradox.
-
-## What the canonical profile says
-
-Onto4 does not treat every self-reference as meaningless. In the canonical
-typed profile:
+If `L` is true, its own content says that it is false. If `L` is false, what it
+says appears to be true. This creates a closed dependency:
 
 ```text
-a = a                         -> T
-SelfReference(a)              -> T, F or U depending on the predicate/context
+L -> Truth(L) -> L
 ```
 
-The liar becomes a formal expression only after the profile specifies a typed
-truth predicate, its domain and a policy for fixed points:
+For the longer philosophical account of distinction, representation and
+self-reference, see [Distinction and the liar paradox](../distinction-liar-paradox.md).
+
+## Distinction and truth assessment
+
+For `true` and `false` to carry information, the assessment must distinguish at
+least two alternatives:
 
 ```text
-L := ¬Truth(L)
+true / false
 ```
 
-If those semantic contracts admit the construction, the selected profile's
-logic handles the result. The sentence is not converted to `C` merely because
-it refers to itself. `C` requires a concrete failure of semantic admissibility,
-such as an undefined argument type or an explicit prohibition on this
-self-application.
-
-## Why distinction was proposed
-
-The repository's earlier philosophical interpretation asked for a distinction
-between the thing being assessed and the frame that assesses it. A distinction
-can be represented by two roles or representations of one object:
+The assessment also normally distinguishes what is being assessed from the
+basis on which its result is established:
 
 ```text
-             comparison frame
-              /           \\
-          r1(x)           r2(x)
+assessment basis
+      |
+      v
+      P
+      |
+      v
+   T or F
 ```
 
-Even when we write a reflexive expression such as `a = a`, a comparison can
-still involve two distinguishable positions or two representations of one
-referent. The referent may be one object; the roles in the relation are what
-make the assessment possible.
+The result is not its own basis.
 
-The “observer” in this explanation is not necessarily a person or a
-metaphysical subject. It is a name for the relational position, model or frame
-that makes the comparison possible.
+## What goes wrong in the liar
 
-Start with a relation:
-
-```text
-D(a, b)                         -- distinction between two relata
-```
-
-When the comparison frame is reified as an ordinary object, the language can
-apply it to its own representation:
-
-```text
-relation / frame -> reification -> object O -> O(O)
-```
-
-This is one way self-reference can arise. The question is whether the required
-grounding survived the transition from a meta-level frame to an object-level
-term.
-
-## Where grounding fails in the liar
-
-In an ordinary assessment there is a distinction between the proposition `P`
-and the frame that establishes its truth status:
-
-```text
-assessment_frame --assesses--> P
-```
-
-For the liar:
+Write the liar using a truth predicate:
 
 ```text
 L := ¬Truth(L)
 ```
 
-the value of `L` depends on `Truth(L)`, while `Truth(L)` in turn requires the
-truth status of `L`:
+To determine `L`, we need `Truth(L)`. But to establish `Truth(L)`, we already
+need the truth status of `L`:
 
 ```text
 L
@@ -101,50 +57,55 @@ L
                └─ depends on the truth status of L
 ```
 
-The result is a closed chain in which the outcome of the assessment is used as
-the basis for that same assessment. `DistinctionProfile` interprets this
-specific ungrounded dependence of a semantic operator as a violation of its
-applicability condition:
+No independent assessment basis appears in this chain. The outcome of the
+assessment is used as the basis for that same assessment.
+
+## The Onto4 verdict under DistinctionProfile
+
+In a semantic profile that requires an independent basis for truth assessment,
+this is not merely an unresolved answer `U`. It is a failure of the truth
+predicate's applicability condition:
 
 ```text
-UngroundedSelfApplication(Truth, L)
-    -> C
+UngroundedSelfApplication(Truth, L) -> C
 ```
 
-This does not make every recursive definition or every self-reference
-meaningless. `C` appears here only because the selected profile requires an
-independent grounding for truth assessment.
+Here `C` means that the question “is `L` true?” was formulated using an
+operation whose conditions are not satisfied in this construction. The problem
+lies in the assessment itself, not in missing evidence for either `T` or `F`.
 
-## The optional distinction profile
+Onto4 calls this semantic profile **DistinctionProfile**.
 
-The historical `DistinctionProfile` makes that grounding requirement explicit.
-It can classify the liar as follows:
+## Important limitation
+
+This does **not** mean that all self-reference is meaningless. For example:
 
 ```text
-unfounded self-grounding
-    -> semantic admissibility failure
-    -> C
+a = a -> T
 ```
 
-This is a profile-relative diagnosis. It is not the universal rule
-`SelfReference => C`; the narrower idea is:
+is an ordinary reflexive formula, and many self-referential constructions are
+meaningful. The universal rule
 
 ```text
-UngroundedSelfApplication(semantic_operator) => C
+SelfReference(x) -> C
 ```
 
-when the selected profile requires a distinction that the formalization cannot
-provide. The profile must be named in the context and must not be confused with
-the canonical typed Onto4 semantics.
+is therefore incorrect. The narrower, profile-relative rule is:
 
-The liar is useful in this profile not because it “breaks logic”, but because it
-makes the boundary of a semantic construction visible. While an operator works,
-its preconditions can remain unnoticed. The self-referential failure forces the
-question: was the truth operator admissible in this context at all?
+```text
+UngroundedSelfApplication(semantic_operator) -> C
+```
 
-This is the broader Onto4 lesson: sometimes the problem is not choosing between
-`T` and `F`, but that the assessment operation itself has lost its meaning in
-the selected context.
+and it applies only when the selected semantic profile requires independent
+grounding for that operation.
 
-For the longer philosophical motivation, see [Distinction and the liar
-paradox](../distinction-liar-paradox.md).
+In this interpretation, the liar is interesting not because it “breaks logic”,
+but because it exposes a boundary of the selected semantic apparatus. Sometimes
+the problem is not choosing between `T` and `F`; the assessment operation itself
+has lost its admissible meaning in the chosen context.
+
+This note presents only the logical path through the example. The roles of an
+external position, multiple representations, information as distinction and
+reification of the meta-level are discussed in [the longer philosophical
+essay](../distinction-liar-paradox.md).

@@ -126,10 +126,8 @@ Thus:
 > An Onto4 verdict is therefore not merely another label beside `True` and
 > `False`. It combines semantic admissibility with logical assessment.
 
-An early version of Onto4 used `E` (`Evaluable`) instead of `D`. That wording
-proved ambiguous: a meaningful proposition may be perfectly evaluable in
-principle while its actual truth value is still unresolved. The current
-formulation therefore uses `D` for determination.
+`D` (`Determinate`) records whether a definite `T/F` verdict has actually been
+established.
 
 ## Context
 
@@ -327,11 +325,11 @@ Self-reference does not automatically imply `C`:
 a = a -> T
 ```
 
-The project also preserves a historical **DistinctionProfile**, a separate
-philosophical model that explores distinction, the external frame of assessment
-and self-application of semantic operators. Under that profile some forms of
-ungrounded self-reference may receive `C`, but this is not a universal Onto4
-law.
+The project also considers a **distinction profile** (`DistinctionProfile`), a
+separate philosophical model that explores distinction, the external frame of
+assessment and self-application of semantic operators. Under that profile some
+forms of ungrounded self-reference may receive `C`, but this is not a universal
+Onto4 law.
 
 See:
 
