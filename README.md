@@ -326,13 +326,15 @@ a = a -> T
 ```
 
 The project also considers a **distinction profile** (`DistinctionProfile`), a
-separate philosophical model that explores distinction, the external frame of
-assessment and self-application of semantic operators. Under that profile some
+separate philosophical model that explores distinction, the assessment context
+and self-application of semantic operators. Under that profile some
 forms of ungrounded self-reference may receive `C`, but this is not a universal
 Onto4 law.
 
 See:
 
+- [One-bit world](docs/thought-experiments/one-bit-world.md)
+- [The ideal flash drive](docs/thought-experiments/ideal-flash-drive.md)
 - [Liar paradox](docs/examples/liar-paradox.md)
 - [Distinction and the liar paradox](docs/distinction-liar-paradox.md)
 

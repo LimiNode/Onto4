@@ -31,7 +31,7 @@ This is not a universal theory of self-reference, nor a claim that every liar
 construction must receive the same answer. Onto4 models this approach as a
 separate **distinction profile** (`DistinctionProfile`).
 
-## Difference and knowledge of difference
+## Contextual distinction
 
 Begin with a simple intuition. To call something true or false is to
 distinguish at least two possibilities:
@@ -46,51 +46,69 @@ Comparing system states likewise presupposes a difference:
 state A / state B
 ```
 
-Yet a difference between two objects and knowledge of that difference are not
-the same thing. Suppose two objects exist:
+But we should not turn distinction into a ready-made property of a pair of
+objects. Let two states be denoted by `A` and `B`. The existence of two labels
+alone does not establish an absolute, context-independent fact `A != B`. Before
+an act of distinction, that expression is a hypothesis of a language or model
+about a possible relation.
+
+Distinction arises in an act, relation or system state:
 
 ```text
 A
 B
+
+D(A, B | K)
 ```
 
-They may be different in reality:
+Here `K` is the context of distinction: a physical interaction, measurement,
+computational state, memory, model or linguistic scheme. In an ontology where
+measurement or collapse is treated as a physical event, one might write:
 
 ```text
-A != B
+D_physical(A, B)
 ```
 
-Their mere existence, however, does not create a separate item of information
-that says “`A` differs from `B`.” For the difference to be present in a system
-as a represented relation, record or item of knowledge, it needs a carrier:
+This is not a claim about a particular interpretation of quantum mechanics. It
+is an example of a possible physical ontology of distinction. The same event
+may later be represented in another system:
 
 ```text
-C := Distinguishes(A, B)
+D_cognitive(A, B)
 ```
 
-The separation can be written as:
+`D_cognitive` need not be identical to `D_physical`: it may arise later, be
+incomplete, mistaken or absent altogether. In both cases, distinction belongs
+to a context, process or carrier; it is not knowledge that appears “from
+nowhere”.
+
+This can be written as:
 
 ```text
-difference in reality:     A != B
-represented difference:   C := Encode(A != B)
+D(A, B | K)
+```
+
+Yet distinction and knowledge of distinction are still not the same thing. For
+`D` to become information, the system needs a separate carrier:
+
+```text
+C := Distinguishes(A, B | K)
 ```
 
 `C` is a third element structurally, but not necessarily a third physical
-object. It may be a relation, system state, record, rule, event or any other
-structure in which the difference is represented. Even mathematical
-`R(A, B)` introduces the relation `R` into the description; knowledge of the
-difference is not extracted from `A` and `B` alone.
+object. It may be a relation, system state, record, rule, event or another
+structure in which distinction is represented. Even mathematical `R(A, B)`
+introduces the relation `R` into the description; knowledge of the difference
+is not extracted from `A` and `B` alone.
 
-Only a represented difference can participate in further reasoning. Onto4 is
-concerned not only with whether objects differ in reality, but also with
-whether the selected context provides an admissible carrier for the relation
-required by an assessment.
+Onto4 asks whether the selected context provides an admissible act and carrier
+for the relation required by an assessment.
 
 ## What “observer” means here
 
-Here the word **observer** denotes a carrier of represented distinction. It
-does not necessarily mean a person, a mind or an external metaphysical
-subject.
+Here the word **observer** denotes one possible context or carrier of
+represented distinction. It does not necessarily mean a person, a mind or an
+external metaphysical subject.
 
 If a person knows that Vasya and Petya are different people, the description
 contains not only:
@@ -107,12 +125,20 @@ K := "Vasya != Petya"
 ```
 
 It is `K` that carries the knowledge of their difference. The same role may be
-played by a database, a sensor, a comparison rule or an internal state of an
-automated system.
+played by a sensor, physical interaction, database, comparison rule or internal
+state of an automated system:
+
+```text
+D(A, B | human_cognition)
+D(A, B | detector)
+D(A, B | physical_interaction)
+D(A, B | memory_state)
+```
 
 In this model, therefore, an observer is a special image of a more general
-notion: a **carrier of distinction**. It may be internal to the system under
-consideration and has no privileged point of view.
+notion: a **context and carrier of distinction**. It may be internal to the
+system under consideration and has no privileged point of view. The model does
+not assume a real view “outside all reality”.
 
 This qualification matters for processes as well. States `A` and `B` need not
 themselves carry information about a transition between them. That information
@@ -121,11 +147,11 @@ is carried by a represented transition structure:
 ```text
 A
 B
-T := Transition(A, B)
+T := Transition(A, B | K)
 ```
 
-Here it is `T` that records the transition and thus makes the difference
-between `A` and `B` available to reasoning.
+Here it is `T` that records the transition in context `K` and thus makes the
+difference between `A` and `B` available to reasoning.
 
 ## Distinction does not prohibit reflexivity
 
@@ -264,6 +290,64 @@ motivation: before assigning a truth verdict, one should ask whether the
 represented relations and grounds needed to make the assessment meaningful
 are available. Onto4 can express the absence of those conditions with the
 separate verdict `C`.
+
+## The one-bit world and the outside view
+
+The thought experiment [“One-bit world”](thought-experiments/one-bit-world.md)
+helps make this intuition concrete. Imagine an isolated world containing only
+one bit `b`:
+
+```text
+b ∈ {0, 1}
+```
+
+If it had states `0` and `1` at times `t1` and `t2`, an outside describer can
+easily write:
+
+```text
+b(t1) = 0
+b(t2) = 1
+b(t1) != b(t2)
+```
+
+But the current state `1` does not itself contain the statement “I was `0`
+before.” Establishing a change requires additional state, relation or history.
+The imagined outside observer exposes this dependence, but does not create a
+real external position: in reality every observer is part of a wider system.
+
+If a second bit is added to store the first bit's past state, that bit becomes a
+privileged carrier of another state. A new question appears: what makes its
+`0` the past value of `b`, rather than merely the second bit's own state? The
+answer is another representation relation.
+
+## The ideal flash drive and self-representation
+
+The second thought experiment is [“The ideal flash drive”](thought-experiments/ideal-flash-drive.md).
+Let the complete state of the drive be `F`, and suppose the drive must store
+`Encode(F)`. The write changes its state:
+
+```text
+F -> F'
+Encode(F) != Encode(F')
+```
+
+The record therefore cannot simply remain a complete description of the
+already-changed carrier. Including the record itself produces another level of
+description. This does not forbid ordinary copies, checksums or partial
+self-descriptions; the problem concerns the naive demand for a complete
+self-representation that includes its own presence.
+
+Both experiments expose the same boundary: the state of a carrier and the
+meaning assigned to it are not the same entity. Meaning is a relation inside a
+wider system:
+
+```text
+Meaning(1, proposition | K)
+```
+
+where `K` includes a language, memory, encoding scheme, process or other
+context. Only after this qualification should we turn to the liar and ask
+whether an independent context exists for `Truth(L)`.
 
 ## Applying the profile to the liar
 
@@ -407,14 +491,15 @@ from an inadmissible question.
 The distinction profile begins by separating reality from its representation:
 
 ```text
-A != B                         -- the objects differ
-C := Encode(A != B)            -- the difference is represented
+D(A, B | K)                    -- distinction in context K
+C := Encode(D(A, B | K))       -- the distinction is represented
 ```
 
-A represented distinction needs a carrier. That carrier need not be a person,
-a mind or a separate physical object; it can be a relation, record, state,
-transition or rule. “Observer” is only a convenient image for such a carrier,
-not a privileged external subject.
+A distinction belongs to a concrete act, process or system state, and a
+represented distinction needs a carrier. That carrier need not be a person, a
+mind or a separate physical object; it can be a relation, record, state,
+transition or rule. “Observer” is only a convenient image for such a context
+and carrier, not a privileged external subject.
 
 When a carrier of assessment becomes an object in the language, self-reference
 becomes possible. Syntactic possibility, however, does not guarantee that the

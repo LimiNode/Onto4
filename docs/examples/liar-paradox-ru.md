@@ -109,3 +109,6 @@ UngroundedSelfApplication(semantic_operator) -> C
 В этой заметке показана только логическая схема. Внешняя позиция, несколько
 репрезентаций, информация как различие и реификация метауровня подробно
 разобраны в [длинном философском эссе](../distinction-liar-paradox-ru.md).
+Связанные мысленные эксперименты вынесены в отдельные заметки:
+[«Однобитный мир»](../thought-experiments/one-bit-world-ru.md) и
+[«Идеальная флешка»](../thought-experiments/ideal-flash-drive-ru.md).

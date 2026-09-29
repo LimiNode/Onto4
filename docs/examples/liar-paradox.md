@@ -108,4 +108,6 @@ has lost its admissible meaning in the chosen context.
 This note presents only the logical path through the example. The roles of an
 external position, multiple representations, information as distinction and
 reification of the meta-level are discussed in [the longer philosophical
-essay](../distinction-liar-paradox.md).
+essay](../distinction-liar-paradox.md). The related thought experiments are
+available separately: [“One-bit world”](../thought-experiments/one-bit-world.md)
+and [“The ideal flash drive”](../thought-experiments/ideal-flash-drive.md).
