@@ -301,13 +301,13 @@ one bit `b`:
 b ∈ {0, 1}
 ```
 
-If it had states `0` and `1` at times `t1` and `t2`, an outside describer can
-easily write:
+If an outside describer with comparison context `K` records states `0` and `1`
+at times `t1` and `t2`, it can write:
 
 ```text
 b(t1) = 0
 b(t2) = 1
-b(t1) != b(t2)
+D(b(t1), b(t2) | K)
 ```
 
 But the current state `1` does not itself contain the statement “I was `0`
@@ -320,34 +320,49 @@ privileged carrier of another state. A new question appears: what makes its
 `0` the past value of `b`, rather than merely the second bit's own state? The
 answer is another representation relation.
 
-## The ideal flash drive and self-representation
+## The ideal flash drive and physical meaning
 
 The second thought experiment is [“The ideal flash drive”](thought-experiments/ideal-flash-drive.md).
-Let the complete state of the drive be `F`, and suppose the drive must store
-`Encode(F)`. The write changes its state:
+Its premise is stronger than ordinary file storage: information is fully
+identical with the carrier's physical state. If we perform:
+
+```text
+Write(brick)
+```
+
+the drive does not contain a description of a brick; it literally becomes a
+brick:
+
+```text
+Flash == Brick
+```
+
+If a recorded brick and an ordinary brick are physically indistinguishable, the
+statement “this brick was produced by writing” is not contained in the brick
+itself. It requires an additional physical carrier `M`. The same happens when
+the same state is written again:
+
+```text
+S0 = Brick
+Write(Brick)
+S1 = Brick
+```
+
+Without a counter or history, zero, one and a thousand writes cannot be
+distinguished. But a counter would again be additional physical state. The
+experiment therefore shows that meaning, history and the fact of an operation
+do not exist beyond the states and relations in which they are represented.
+
+The more familiar regress of complete self-representation remains a consequence:
 
 ```text
 F -> F'
 Encode(F) != Encode(F')
 ```
 
-The record therefore cannot simply remain a complete description of the
-already-changed carrier. Including the record itself produces another level of
-description. This does not forbid ordinary copies, checksums or partial
-self-descriptions; the problem concerns the naive demand for a complete
-self-representation that includes its own presence.
-
-Both experiments expose the same boundary: the state of a carrier and the
-meaning assigned to it are not the same entity. Meaning is a relation inside a
-wider system:
-
-```text
-Meaning(1, proposition | K)
-```
-
-where `K` includes a language, memory, encoding scheme, process or other
-context. Only after this qualification should we turn to the liar and ask
-whether an independent context exists for `Truth(L)`.
+but it is not the primary subject. First we must establish where the physical
+distinction that makes a write a write is located. Only then should we turn to
+the liar and ask whether an independent context exists for `Truth(L)`.
 
 ## Applying the profile to the liar
 

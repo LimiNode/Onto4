@@ -1,125 +1,185 @@
-# The ideal flash drive: meaning and complete self-representation
+# The ideal flash drive: when information becomes physical state
 
-This thought experiment concerns the boundary between a carrier's state, its
-meaning and its description of itself. It is not about ordinary file copying,
-but about a stronger requirement: a carrier must contain a complete description
-of its own state, including the presence of that description.
+This thought experiment is not the ordinary problem of a file storing its own
+description. Its premise is stronger: **information is fully identical with
+the carrier's physical state**.
 
-## A complete description changes what it describes
+The ideal flash drive has no separate layer of “carrier material plus stored
+meaning”, filesystem, metadata or spare space for history. All of its physical
+state is occupied by what has been written.
 
-Let the complete state of an ideal flash drive be `F`. Suppose the drive must
-store its own complete description:
+## What “ideal” means
+
+An ordinary flash drive is roughly:
 
 ```text
-F contains Encode(F)
+drive material
+      ↓ encodes
+information about a brick
 ```
 
-The record `Encode(F)` becomes part of the carrier's state. After the write,
-the state is different:
+We can therefore distinguish the carrier, the code and the meaning. The
+experiment removes that gap. To write an object is to bring the carrier into
+exactly the physical state corresponding to the object.
+
+```text
+Write(brick)
+Flash -> Brick
+```
+
+The drive does not contain a file describing a brick. In the physical sense
+stipulated by the experiment, it becomes a brick:
+
+```text
+Flash == Brick
+```
+
+## A recorded brick and an ordinary brick
+
+Compare two physically identical bricks. One arose normally; the other was
+produced by `Write(brick)` on the ideal drive.
+
+If there is no physical difference between them, the brick itself contains no
+statement saying:
+
+```text
+“this brick used to be a flash drive”
+```
+
+For that distinction to be available, a carrier is needed:
+
+```text
+M := “this brick was produced by a write operation”
+```
+
+But `M` must itself be physically realized. The state is then:
+
+```text
+Brick + M
+```
+
+and the ideal condition is broken: additional matter or structure has appeared
+beyond the state of the brick itself.
+
+If the distinction is not physically represented anywhere, then within the
+experiment a “recorded brick” and an “ordinary brick” are indistinguishable.
+This does not assert that their histories must be the same; it says that the
+history is not available as information without an additional carrier.
+
+## Writing the same state again
+
+Suppose the drive has already become a brick:
+
+```text
+S0 = Brick
+```
+
+Now perform again:
+
+```text
+Write(Brick)
+```
+
+and obtain:
+
+```text
+S1 = Brick
+```
+
+If the states before and after are absolutely identical:
+
+```text
+S0 = S1
+```
+
+the current state cannot reveal that a write occurred. It cannot distinguish:
+
+```text
+brick written 0 times
+brick written 1 time
+brick written 1000 times
+```
+
+To distinguish them we would need a counter:
+
+```text
+count = 1000
+```
+
+But a counter is additional physical state. We have again obtained:
+
+```text
+Brick + history / count / "was written"
+```
+
+Distinction shows where an extra state has been smuggled into the model.
+
+## Carrier and meaning
+
+We ordinarily write:
+
+```text
+physical_state = X
+value = Brick
+```
+
+as if meaning were an independent entity attached to a physical state. The
+ideal drive removes that escape: after the write, only the brick's physical
+state remains.
+
+If we still call it the “meaning of a brick”, we must specify a relation and a
+context:
+
+```text
+Meaning(Brick, "recorded brick" | K)
+```
+
+where `K` may be an observer's memory, process history, language or another
+structure in reality. The brick itself contains no label saying whose meaning
+it carries.
+
+Meaning is therefore not an immaterial layer on top of matter. Within this
+experiment, what remains is:
+
+```text
+states of what exists
+relations between those states
+```
+
+“Meaning” is a useful name for a particular structure of such relations.
+
+## Consequence: complete self-representation
+
+The experiment has a more familiar consequence as well. If the ideal drive must
+contain a complete description of its own state `F`, writing the description
+makes it part of that state:
 
 ```text
 F -> F'
-```
-
-The description computed for `F` is therefore not a complete description of
-`F'`:
-
-```text
 Encode(F) != Encode(F')
 ```
 
-Including the new record requires `Encode(F')`. Placing it changes the state
-again:
-
-```text
-F' -> F'' -> F''' -> ...
-```
-
-This is not merely a shortage of storage. It is a self-referential dependency:
-the description becomes part of the object it is supposed to describe
-completely.
-
-## What is actually impossible here
-
-The experiment does not say that a device cannot store its serial number, a
-memory image, a checksum or a partial description. What fails is the simple
-closure:
-
-```text
-object = complete representation of object
-```
-
-when “complete” includes the placement of the description itself and the whole
-structure is required to remain unchanged.
-
-Practical systems handle this boundary with levels, external storage, fixed
-formats, snapshots or a restricted description domain. They do not erase
-self-reference; they explicitly choose the context in which the description
-counts as sufficient.
-
-## Carrier state and meaning
-
-Suppose a physical cell is in state `1`. The state alone does not say that it
-means:
-
-```text
-“Vasya is alive”
-```
-
-The relation between the bit and the proposition must be represented in a wider
-system:
-
-```text
-Meaning(1, “Vasya is alive” | K)
-```
-
-Here `K` includes a language, encoding scheme, memory, convention or
-interpretive process. Meaning is therefore not a second entity attached to a
-physical state. It is a relation inside some system.
-
-The same applies to a record about another object. If `b1` stores the past state
-of `b0`, seeing `b1 = 0` is not enough; the system needs the relation:
-
-```text
-Represents(b1, previous_state(b0) | K)
-```
-
-Without `K` and the relation itself, there is no way to determine whose meaning
-the `0` is supposed to carry.
-
-## Self-representation and additional levels
-
-Trying to place the representation relation inside the same object creates
-another level:
-
-```text
-F
-Encode(F)
-Encode(F, Encode(F))
-...
-```
-
-This does not mean that every practical regress is infinite in every
-implementation. A system may stop at an accepted basis: an external format,
-key or encoding scheme can be taken as given. In that case complete
-self-representation has been replaced by a contextual description with an
-explicit basis.
+This creates a regress of levels. It is not the primary subject here: its role
+becomes clear only after the more fundamental observation that meaning and
+writing history require an additional physical distinction.
 
 ## Relation to Onto4
 
-The ideal flash drive highlights several connected claims:
+The experiment shows that:
 
-1. a carrier's state is not identical to its history or description;
-2. a description included in an object changes that object;
-3. meaning exists as a relation in a wider system;
-4. self-representation requires a boundary, level or external basis;
-5. an absolute point of view cannot be silently added when it is absent from
-   the selected ontology.
+1. information can be identified completely with physical state;
+2. a recorded object and an ordinary object can be physically indistinguishable;
+3. history, operation count and the fact of writing require additional state;
+4. a carrier's state has no meaning without a context and representation
+   relation;
+5. distinction exposes where a hidden carrier is being added to the model.
 
-Thus a question about complete meaning or complete description may be neither
-false nor merely unresolved. First we must check whether the operation itself
-is admissible in the selected context. For the connection to self-reference and
-the verdict `C`, see [“Distinction and the liar paradox”](../distinction-liar-paradox.md).
+A question about a “meaning” that exists in neither the system's state nor its
+relations may therefore be neither false nor merely unresolved. First we must
+check whether an admissible physical carrier for that meaning exists.
+
+For the connection to the one-bit world and the liar paradox, see [“One-bit
+world”](one-bit-world.md) and [“Distinction and the liar paradox”](../distinction-liar-paradox.md).
 
 ## Related ideas and research
 
@@ -131,13 +191,13 @@ described here. They help separate several related but non-identical problems:
   part of the system.
 - [Charles S. Peirce: semiotics](https://plato.stanford.edu/entries/peirce/)
   presents meaning through the triad of object, sign and interpretant; this is
-  close to the claim that a carrier's state is not automatically its meaning.
+  close to the claim that physical state is not automatically its meaning.
 - [W. K. Wootters and W. H. Zurek, *A Single Quantum Cannot Be Cloned*](https://doi.org/10.1038/299802a0)
   establishes a specific quantum limit on perfectly copying an unknown state.
-  It is an analogy, not a general prohibition on copying or self-representation.
+  It is an analogy, not a general prohibition on copying or writing.
 - [Alfred Tarski, *The Semantic Conception of Truth*](https://doi.org/10.2307/2102968)
   shows why formal object-language and metalanguage levels matter for a truth
   predicate. Here it is only a more distant formal parallel.
 
-Onto4's own claim remains broader and independent: meaning and complete
-description require an explicitly selected context, level and carrier.
+Onto4's own claim remains independent: meaning and writing history require an
+explicitly selected physical state, relation and context.

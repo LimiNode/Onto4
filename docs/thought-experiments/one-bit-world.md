@@ -19,11 +19,13 @@ b(t1) = 0
 b(t2) = 1
 ```
 
-An observer imagined outside the world can easily write:
+An observer imagined outside the world, with a comparison context `K`, can
+easily write:
 
 ```text
-b(t1) != b(t2)
-b changed
+b(t1) = 0
+b(t2) = 1
+D(b(t1), b(t2) | K)
 ```
 
 But that statement already uses additional structure: two times, access to
