@@ -1,0 +1,18 @@
+name: relational_presentism
+
+ontology:
+  types:
+    grandfather: Person
+    past_t: Time
+    now: Time
+  predicates:
+    exists_at:
+      domain: [Person, Time]
+      returns: Proposition
+    earlier_than:
+      domain: [Time, Time]
+      returns: Proposition
+  absent_concepts:
+    - was_absolutely
+
+evidence: {}

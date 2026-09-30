@@ -1,0 +1,4 @@
+name: identity_by_persistent_substance
+expression:
+  predicate: same_persistent_substance
+  args: [me_child, me_now]

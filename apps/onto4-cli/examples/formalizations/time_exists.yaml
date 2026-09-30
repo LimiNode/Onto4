@@ -1,0 +1,8 @@
+name: grandfather_existed_earlier
+expression:
+  op: and
+  args:
+    - predicate: exists_at
+      args: [grandfather, past_t]
+    - predicate: earlier_than
+      args: [past_t, now]
