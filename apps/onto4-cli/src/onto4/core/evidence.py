@@ -31,11 +31,11 @@ def parse_evidence(value: object) -> Evidence4:
 def parse_verdict(value: object) -> Verdict:
     if isinstance(value, Verdict):
         if value is Verdict.C:
-            raise ValueError("C is not an atomic truth result; it comes from admission.")
+            raise ValueError("C is not an atomic verdict entry; it comes from admission.")
         return value
     normalized = str(value).strip().upper()
     if normalized not in {"T", "F", "U"}:
-        raise ValueError(f"Unknown atomic truth value: {value!r}")
+        raise ValueError(f"Unknown atomic verdict value: {value!r}")
     return Verdict(normalized)
 
 
