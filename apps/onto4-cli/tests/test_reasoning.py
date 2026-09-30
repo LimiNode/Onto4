@@ -1,0 +1,148 @@
+from onto4.core import (
+    AssessmentContext,
+    Evidence4,
+    OntologyProfile,
+    PredicateCall,
+    PredicateExpr,
+    PredicateSignature,
+    Verdict,
+)
+from onto4.core.evidence import AtomicVerdictStore
+from onto4.reasoning import (
+    Ambiguity,
+    AssessmentLandscape,
+    ConceptualDepth,
+    CrossCandidateStatus,
+    FormalizationCandidate,
+    InterpretationSpace,
+    SemanticReading,
+    aggregate_assessments,
+    assess_candidates,
+)
+
+
+def atom(name: str) -> PredicateExpr:
+    return PredicateExpr(PredicateCall(name, ()))
+
+
+def context(*, verdicts=None, predicates=("a", "b")) -> AssessmentContext:
+    return AssessmentContext(
+        ontology=OntologyProfile(
+            name="fixture",
+            predicates={name: PredicateSignature(()) for name in predicates},
+        ),
+        verdicts=AtomicVerdictStore(verdicts or {}),
+    )
+
+
+def candidate(identifier, label, context_id, expression, reading_id=None):
+    return FormalizationCandidate(
+        id=identifier,
+        label=label,
+        context_id=context_id,
+        formalization=expression,
+        reading_id=reading_id,
+    )
+
+
+def test_interpretation_space_preserves_readings_without_verdicts():
+    space = InterpretationSpace(
+        source_text="Я тот же человек, которым был в детстве?",
+        conceptual_depth=ConceptualDepth.Philosophical,
+        ambiguities=(Ambiguity("тот же", "критерий идентичности не задан"),),
+        readings=(
+            SemanticReading("continuity", "непрерывность", "тождество через continuity"),
+            SemanticReading("substance", "субстанция", "численная тождественность сущности"),
+        ),
+    )
+
+    assert len(space.readings) == 2
+    assert not hasattr(space, "verdict")
+
+
+def test_same_verdict_across_candidates_is_stable():
+    candidates = [
+        candidate("a", "reading A", "fixture", atom("a")),
+        candidate("b", "reading B", "fixture", atom("b")),
+    ]
+    assessments = assess_candidates(
+        candidates,
+        {"fixture": context(verdicts={"a()": Verdict.T, "b()": Verdict.T})},
+    )
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.StableAcrossCandidates
+    assert all(item.result.verdict is Verdict.T for item in landscape.assessments)
+
+
+def test_different_contexts_produce_context_dependent_landscape():
+    candidates = [
+        candidate("present", "present reading", "present", atom("a")),
+        candidate("eternal", "eternal reading", "eternal", atom("a")),
+    ]
+    assessments = assess_candidates(
+        candidates,
+        {
+            "present": context(verdicts={"a()": Verdict.T}),
+            "eternal": context(verdicts={"a()": Verdict.F}),
+        },
+    )
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.ContextDependent
+
+
+def test_different_formalizations_in_one_context_are_a_conflict():
+    candidates = [
+        candidate("a", "reading A", "fixture", atom("a")),
+        candidate("b", "reading B", "fixture", atom("b")),
+    ]
+    assessments = assess_candidates(
+        candidates,
+        {"fixture": context(verdicts={"a()": Verdict.T, "b()": Verdict.F})},
+    )
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.FormalizationConflict
+
+
+def test_unresolved_candidate_keeps_landscape_meta_level():
+    candidates = [
+        candidate("resolved", "resolved reading", "fixture", atom("a")),
+        candidate("pending", "pending reading", "fixture", None),
+    ]
+    assessments = assess_candidates(
+        candidates,
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.FormalizationUnresolved
+    assert landscape.unresolved_candidate_ids == ("pending",)
+    assert landscape.assessments[0].result.verdict is Verdict.T
+    assert landscape.assessments[1].result.verdict is None
+
+
+def test_category_error_and_unknown_result_can_be_compared_without_collapsing():
+    process = AssessmentContext(
+        ontology=OntologyProfile(
+            name="process",
+            types={"me": "PersonState"},
+            predicates={"continuity": PredicateSignature(())},
+            absent_concepts={"same_substance"},
+        ),
+    )
+    candidates = [
+        candidate("continuity", "continuity", "process", PredicateExpr(PredicateCall("continuity", ()))) ,
+        candidate("substance", "substance", "process", PredicateExpr(PredicateCall("same_substance", ()))) ,
+    ]
+    assessments = assess_candidates(candidates, {"process": process})
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.FormalizationConflict
+    assert [item.result.verdict for item in landscape.assessments] == [Verdict.U, Verdict.C]
