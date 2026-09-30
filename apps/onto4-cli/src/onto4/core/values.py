@@ -22,11 +22,17 @@ class Evidence4(str, Enum):
 class SemanticStatus(str, Enum):
     Admitted = "Admitted"
     Inapplicable = "Inapplicable"
-    Unresolved = "Unresolved"
+
+
+class AssessmentState(str, Enum):
+    Assessed = "Assessed"
+    FormalizationUnresolved = "FormalizationUnresolved"
+    InvalidRequest = "InvalidRequest"
 
 
 class UnknownReason(str, Enum):
     InsufficientEvidence = "insufficient_evidence"
     ConflictingEvidence = "conflicting_evidence"
     UndeterminedCompound = "undetermined_compound"
+    TruthNotEstablished = "truth_not_established"
     FormalizationUnresolved = "formalization_unresolved"

@@ -19,13 +19,16 @@ from .context import (
     PredicateSignature,
     SemanticProfile,
 )
-from .evaluator import AssessmentResult, evaluate
-from .values import Evidence4, SemanticStatus, Verdict
+from .evaluator import AssessmentResult, AtomicAssessment, UnsupportedProfile, evaluate
+from .evidence import TruthStore
+from .values import AssessmentState, Evidence4, SemanticStatus, Verdict
 
 __all__ = [
     "And",
     "AssessmentContext",
+    "AssessmentState",
     "AssessmentResult",
+    "AtomicAssessment",
     "EpistemicProfile",
     "Equivalent",
     "Evidence4",
@@ -40,7 +43,9 @@ __all__ = [
     "PredicateSignature",
     "SemanticProfile",
     "SemanticStatus",
+    "TruthStore",
     "Term",
     "Verdict",
+    "UnsupportedProfile",
     "evaluate",
 ]

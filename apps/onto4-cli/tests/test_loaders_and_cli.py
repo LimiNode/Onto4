@@ -9,10 +9,20 @@ ROOT = Path(__file__).parents[1]
 
 
 def test_example_profiles_load_and_evaluate():
-    expression = load_formalization(ROOT / "examples/formalizations/mass_integer_7.yaml")
+    expression = load_formalization(ROOT / "examples/formalizations/has_mass_integer_7.yaml")
     context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
 
     assert evaluate(expression, context).verdict is Verdict.C
+
+
+def test_truth_and_evidence_load_as_separate_axes():
+    expression = load_formalization(ROOT / "examples/formalizations/has_mass_car.yaml")
+    context = load_context(ROOT / "profiles/contexts/verified_physical_objects.yaml")
+
+    result = evaluate(expression, context)
+
+    assert result.verdict is Verdict.T
+    assert result.evidence.value == "TrueOnly"
 
 
 def test_compare_command_emits_all_contexts(capsys):
@@ -33,3 +43,21 @@ def test_compare_command_emits_all_contexts(capsys):
     assert "substance" in output
     assert "Onto4: C" in output
     assert "Onto4: U" in output
+
+
+def test_json_renderer_handles_uncomputed_evidence(capsys):
+    code = main(
+        [
+            "eval",
+            str(ROOT / "examples/formalizations/has_mass_integer_7.yaml"),
+            "--context",
+            str(ROOT / "profiles/contexts/physical_objects.yaml"),
+            "--format",
+            "json",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert '"verdict": "C"' in output
+    assert '"evidence": null' in output

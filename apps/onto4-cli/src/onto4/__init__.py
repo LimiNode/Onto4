@@ -2,6 +2,7 @@
 
 from .core import (
     AssessmentContext,
+    AssessmentState,
     AssessmentResult,
     Evidence4,
     Verdict,
@@ -10,6 +11,7 @@ from .core import (
 
 __all__ = [
     "AssessmentContext",
+    "AssessmentState",
     "AssessmentResult",
     "Evidence4",
     "Verdict",

@@ -1,12 +1,15 @@
-name: physical_objects
+name: verified_physical_objects
 
 ontology:
   types:
-    integer_7: Integer
     car_A: PhysicalObject
   predicates:
     has_mass:
       domain: [PhysicalObject]
       returns: Proposition
 
-evidence: {}
+truth:
+  has_mass(car_A): T
+
+evidence:
+  has_mass(car_A): TrueOnly

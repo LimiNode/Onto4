@@ -25,7 +25,7 @@ from onto4.core import (
     SemanticProfile,
     Term,
 )
-from onto4.core.evidence import EvidenceStore, parse_evidence
+from onto4.core.evidence import EvidenceStore, TruthStore, parse_evidence, parse_truth
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -110,6 +110,14 @@ def load_context(path: str | Path) -> AssessmentContext:
         expr = expression_from_text(str(key))
         evidence.entries[expr.call.key()] = parse_evidence(value)
 
+    raw_truth = data.get("truth", {}) or {}
+    if not isinstance(raw_truth, dict):
+        raise ValueError(f"Truth must be a mapping in {source}.")
+    truth = TruthStore()
+    for key, value in raw_truth.items():
+        expr = expression_from_text(str(key))
+        truth.entries[expr.call.key()] = parse_truth(value)
+
     return AssessmentContext(
         ontology=OntologyProfile(
             name=str(data.get("name", source.stem)),
@@ -129,4 +137,5 @@ def load_context(path: str | Path) -> AssessmentContext:
         inference=InferenceProfile(name=str(data.get("inference", {}).get("name", "direct_evidence"))),
         perspective=Perspective(name=str(data.get("perspective", {}).get("name", "default"))),
         evidence=evidence,
+        truth=truth,
     )

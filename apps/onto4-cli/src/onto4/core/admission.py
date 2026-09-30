@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 from .ast import And, Equivalent, Expr, Implies, Not, Or, PredicateExpr
 from .context import AssessmentContext
@@ -15,10 +16,32 @@ class Diagnostic:
     path: str = ""
 
 
+class AdmissionStatus(str, Enum):
+    Admitted = "Admitted"
+    CategoryError = "CategoryError"
+    Unresolved = "Unresolved"
+    InvalidRequest = "InvalidRequest"
+
+
 @dataclass(frozen=True)
 class AdmissionResult:
-    admitted: bool
+    status: AdmissionStatus
     diagnostics: tuple[Diagnostic, ...] = ()
+
+    @property
+    def admitted(self) -> bool:
+        return self.status is AdmissionStatus.Admitted
+
+
+CATEGORY_ERROR_CODES = {
+    "absent_concept",
+    "arity_mismatch",
+    "declared_type_mismatch",
+    "non_propositional_predicate",
+    "type_mismatch",
+}
+UNRESOLVED_CODES = {"unknown_predicate", "unknown_symbol"}
+INVALID_REQUEST_CODES = {"unsupported_expression"}
 
 
 def admit(expr: Expr, context: AssessmentContext) -> AdmissionResult:
@@ -101,4 +124,14 @@ def admit(expr: Expr, context: AssessmentContext) -> AdmissionResult:
             diagnostics.append(Diagnostic("unsupported_expression", f"Unsupported expression: {type(node)!r}", path))
 
     visit(expr, "expression")
-    return AdmissionResult(not diagnostics, tuple(diagnostics))
+    if not diagnostics:
+        status = AdmissionStatus.Admitted
+    elif any(item.code in INVALID_REQUEST_CODES for item in diagnostics):
+        status = AdmissionStatus.InvalidRequest
+    elif any(item.code in CATEGORY_ERROR_CODES for item in diagnostics):
+        status = AdmissionStatus.CategoryError
+    elif any(item.code in UNRESOLVED_CODES for item in diagnostics):
+        status = AdmissionStatus.Unresolved
+    else:
+        status = AdmissionStatus.InvalidRequest
+    return AdmissionResult(status, tuple(diagnostics))

@@ -1,12 +1,14 @@
 from onto4.core import (
     And,
     AssessmentContext,
+    AssessmentState,
     Evidence4,
     OntologyProfile,
     PredicateCall,
     PredicateExpr,
     PredicateSignature,
     SemanticStatus,
+    UnsupportedProfile,
     Term,
     Verdict,
     Or,
@@ -14,8 +16,9 @@ from onto4.core import (
 )
 
 
-def context_for(*, predicates, types, absent=(), evidence=None):
-    from onto4.core.evidence import EvidenceStore
+def context_for(*, predicates, types, absent=(), evidence=None, truth=None, semantics=None, inference=None):
+    from onto4.core.context import InferenceProfile, SemanticProfile
+    from onto4.core.evidence import EvidenceStore, TruthStore
 
     return AssessmentContext(
         ontology=OntologyProfile(
@@ -25,6 +28,9 @@ def context_for(*, predicates, types, absent=(), evidence=None):
             absent_concepts=set(absent),
         ),
         evidence=EvidenceStore(evidence or {}),
+        truth=TruthStore(truth or {}),
+        semantics=semantics or SemanticProfile(),
+        inference=inference or InferenceProfile(),
     )
 
 
@@ -32,57 +38,73 @@ def atom(name, *args):
     return PredicateExpr(PredicateCall(name, tuple(Term(arg) for arg in args)))
 
 
-def test_mass_of_integer_is_category_error():
+def test_has_mass_of_integer_is_category_error():
     context = context_for(
         types={"integer_7": "Integer"},
-        predicates={"mass": PredicateSignature(("PhysicalObject",))},
+        predicates={"has_mass": PredicateSignature(("PhysicalObject",))},
     )
 
-    result = evaluate(atom("mass", "integer_7"), context)
+    result = evaluate(atom("has_mass", "integer_7"), context)
 
     assert result.semantic_status is SemanticStatus.Inapplicable
     assert result.verdict is Verdict.C
     assert any(item.code == "type_mismatch" for item in result.diagnostics)
 
 
-def test_mass_of_car_without_evidence_is_unresolved():
+def test_has_mass_of_car_without_evidence_is_unresolved():
     context = context_for(
         types={"car_A": "PhysicalObject"},
-        predicates={"mass": PredicateSignature(("PhysicalObject",))},
+        predicates={"has_mass": PredicateSignature(("PhysicalObject",))},
     )
 
-    result = evaluate(atom("mass", "car_A"), context)
+    result = evaluate(atom("has_mass", "car_A"), context)
 
     assert result.semantic_status is SemanticStatus.Admitted
     assert result.verdict is Verdict.U
     assert result.evidence is Evidence4.Neither
 
 
-def test_evidence_can_establish_true_and_false():
+def test_established_truth_is_separate_from_evidence():
     predicate = PredicateSignature(("PhysicalObject",))
     base = {"car_A": "PhysicalObject"}
     true_context = context_for(
         types=base,
-        predicates={"mass": predicate},
-        evidence={"mass(car_A)": Evidence4.TrueOnly},
+        predicates={"has_mass": predicate},
+        truth={"has_mass(car_A)": Verdict.T},
+        evidence={"has_mass(car_A)": Evidence4.TrueOnly},
     )
     false_context = context_for(
         types=base,
-        predicates={"mass": predicate},
-        evidence={"mass(car_A)": Evidence4.FalseOnly},
+        predicates={"has_mass": predicate},
+        truth={"has_mass(car_A)": Verdict.F},
+        evidence={"has_mass(car_A)": Evidence4.FalseOnly},
     )
 
-    assert evaluate(atom("mass", "car_A"), true_context).verdict is Verdict.T
-    assert evaluate(atom("mass", "car_A"), false_context).verdict is Verdict.F
+    assert evaluate(atom("has_mass", "car_A"), true_context).verdict is Verdict.T
+    assert evaluate(atom("has_mass", "car_A"), false_context).verdict is Verdict.F
+
+
+def test_supporting_evidence_alone_does_not_establish_truth():
+    context = context_for(
+        types={"car_A": "PhysicalObject"},
+        predicates={"has_mass": PredicateSignature(("PhysicalObject",))},
+        evidence={"has_mass(car_A)": Evidence4.TrueOnly},
+    )
+
+    result = evaluate(atom("has_mass", "car_A"), context)
+
+    assert result.verdict is Verdict.U
+    assert result.evidence is Evidence4.TrueOnly
 
 
 def test_strict_formula_does_not_hide_category_error():
     context = context_for(
         types={"car_A": "PhysicalObject", "integer_7": "Integer"},
-        predicates={"mass": PredicateSignature(("PhysicalObject",))},
-        evidence={"mass(car_A)": Evidence4.TrueOnly},
+        predicates={"has_mass": PredicateSignature(("PhysicalObject",))},
+        truth={"has_mass(car_A)": Verdict.T},
+        evidence={"has_mass(car_A)": Evidence4.TrueOnly},
     )
-    expression = And(atom("mass", "car_A"), atom("mass", "integer_7"))
+    expression = And(atom("has_mass", "car_A"), atom("has_mass", "integer_7"))
 
     result = evaluate(expression, context)
 
@@ -92,11 +114,12 @@ def test_strict_formula_does_not_hide_category_error():
 def test_strict_or_does_not_hide_category_error():
     context = context_for(
         types={"car_A": "PhysicalObject", "integer_7": "Integer"},
-        predicates={"mass": PredicateSignature(("PhysicalObject",))},
-        evidence={"mass(car_A)": Evidence4.TrueOnly},
+        predicates={"has_mass": PredicateSignature(("PhysicalObject",))},
+        truth={"has_mass(car_A)": Verdict.T},
+        evidence={"has_mass(car_A)": Evidence4.TrueOnly},
     )
 
-    result = evaluate(Or(atom("mass", "car_A"), atom("mass", "integer_7")), context)
+    result = evaluate(Or(atom("has_mass", "car_A"), atom("has_mass", "integer_7")), context)
 
     assert result.verdict is Verdict.C
 
@@ -104,5 +127,112 @@ def test_strict_or_does_not_hide_category_error():
 def test_missing_formalization_has_no_onto4_verdict():
     result = evaluate(None, AssessmentContext())
 
-    assert result.semantic_status is SemanticStatus.Unresolved
+    assert result.state is AssessmentState.FormalizationUnresolved
+    assert result.semantic_status is None
     assert result.verdict is None
+
+
+def test_unknown_reference_is_not_category_error():
+    context = context_for(
+        types={},
+        predicates={"has_mass": PredicateSignature(("PhysicalObject",))},
+    )
+
+    result = evaluate(atom("has_mass", "unknown_car"), context)
+
+    assert result.state is AssessmentState.FormalizationUnresolved
+    assert result.semantic_status is None
+    assert result.verdict is None
+
+
+def test_unknown_predicate_is_unresolved_until_explicitly_absent():
+    context = context_for(types={"car_A": "PhysicalObject"}, predicates={})
+
+    result = evaluate(atom("has_mass", "car_A"), context)
+
+    assert result.state is AssessmentState.FormalizationUnresolved
+    assert result.verdict is None
+
+
+def test_explicitly_absent_predicate_is_category_error():
+    context = context_for(
+        types={"car_A": "PhysicalObject"},
+        predicates={},
+        absent={"has_mass"},
+    )
+
+    result = evaluate(atom("has_mass", "car_A"), context)
+
+    assert result.state is AssessmentState.Assessed
+    assert result.semantic_status is SemanticStatus.Inapplicable
+    assert result.verdict is Verdict.C
+
+
+def test_compound_evidence_is_uncomputed_unless_explicitly_supplied():
+    expression = And(atom("a"), atom("b"))
+    context = context_for(
+        types={},
+        predicates={"a": PredicateSignature(()), "b": PredicateSignature(())},
+        truth={"a()": Verdict.T, "b()": Verdict.T},
+        evidence={"a()": Evidence4.TrueOnly, "b()": Evidence4.TrueOnly},
+    )
+
+    result = evaluate(expression, context)
+
+    assert result.verdict is Verdict.T
+    assert result.evidence is None
+
+    context.evidence.entries["and(a(), b())"] = Evidence4.TrueOnly
+    explicit = evaluate(expression, context)
+    assert explicit.evidence is Evidence4.TrueOnly
+
+
+def test_unsupported_expression_is_an_invalid_request():
+    result = evaluate(object(), AssessmentContext())  # type: ignore[arg-type]
+
+    assert result.state is AssessmentState.InvalidRequest
+    assert result.semantic_status is None
+    assert result.verdict is None
+
+
+def test_unsupported_profiles_fail_closed():
+    from onto4.core.context import InferenceProfile, SemanticProfile
+
+    context = context_for(
+        types={},
+        predicates={"a": PredicateSignature(())},
+        truth={"a()": Verdict.T},
+        semantics=SemanticProfile(name="non_strict", strict=False),
+    )
+    try:
+        evaluate(atom("a"), context)
+    except UnsupportedProfile:
+        pass
+    else:
+        raise AssertionError("unsupported semantic profile was silently accepted")
+
+    context.inference = InferenceProfile(name="solver")
+    try:
+        evaluate(atom("a"), context)
+    except UnsupportedProfile:
+        pass
+    else:
+        raise AssertionError("unsupported inference profile was silently accepted")
+
+
+def test_arity_and_non_propositional_use_are_category_errors():
+    arity_context = context_for(
+        types={"car_A": "PhysicalObject"},
+        predicates={"has_mass": PredicateSignature(("PhysicalObject",))},
+    )
+    arity_result = evaluate(atom("has_mass"), arity_context)
+    assert arity_result.verdict is Verdict.C
+    assert any(item.code == "arity_mismatch" for item in arity_result.diagnostics)
+
+    function_context = context_for(
+        types={"car_A": "PhysicalObject"},
+        predicates={"mass": PredicateSignature(("PhysicalObject",), returns="MassValue")},
+    )
+    function_result = evaluate(atom("mass", "car_A"), function_context)
+    assert function_result.verdict is Verdict.C
+    assert any(item.code == "non_propositional_predicate" for item in function_result.diagnostics)

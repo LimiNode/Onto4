@@ -1,4 +1,0 @@
-name: mass_car_A
-expression:
-  predicate: mass
-  args: [car_A]

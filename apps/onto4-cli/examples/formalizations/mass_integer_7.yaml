@@ -1,4 +1,0 @@
-name: mass_integer_7
-expression:
-  predicate: mass
-  args: [integer_7]

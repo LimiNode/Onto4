@@ -15,9 +15,10 @@ from onto4.pipeline.eval import evaluate_files
 
 def _result_dict(result: AssessmentResult) -> dict[str, Any]:
     return {
-        "semantic_status": result.semantic_status.value,
+        "state": result.state.value,
+        "semantic_status": result.semantic_status.value if result.semantic_status else None,
         "verdict": result.verdict.value if result.verdict else None,
-        "evidence": result.evidence.value,
+        "evidence": result.evidence.value if result.evidence else None,
         "unknown_reasons": [reason.value for reason in result.unknown_reasons],
         "diagnostics": [asdict(item) for item in result.diagnostics],
     }
@@ -26,9 +27,10 @@ def _result_dict(result: AssessmentResult) -> dict[str, Any]:
 def _print_result(result: AssessmentResult, context_name: str | None = None) -> None:
     if context_name:
         print(f"Context: {context_name}")
-    print(f"Semantic status: {result.semantic_status.value}")
+    print(f"State: {result.state.value}")
+    print(f"Semantic status: {result.semantic_status.value if result.semantic_status else '—'}")
     print(f"Onto4: {result.verdict.value if result.verdict else '—'}")
-    print(f"Evidence: {result.evidence.value}")
+    print(f"Evidence: {result.evidence.value if result.evidence else '—'}")
     if result.unknown_reasons:
         print("Reasons: " + ", ".join(reason.value for reason in result.unknown_reasons))
     for diagnostic in result.diagnostics:

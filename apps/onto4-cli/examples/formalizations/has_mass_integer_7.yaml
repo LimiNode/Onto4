@@ -1,0 +1,4 @@
+name: has_mass_integer_7
+expression:
+  predicate: has_mass
+  args: [integer_7]
