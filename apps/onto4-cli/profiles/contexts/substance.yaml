@@ -1,0 +1,12 @@
+name: substance_identity
+
+ontology:
+  types:
+    me_child: PersonState
+    me_now: PersonState
+  predicates:
+    same_persistent_substance:
+      domain: [PersonState, PersonState]
+      returns: Proposition
+
+evidence: {}

@@ -1,0 +1,12 @@
+name: physical_objects
+
+ontology:
+  types:
+    integer_7: Integer
+    car_A: PhysicalObject
+  predicates:
+    has_mass:
+      domain: [PhysicalObject]
+      returns: Proposition
+
+evidence: {}

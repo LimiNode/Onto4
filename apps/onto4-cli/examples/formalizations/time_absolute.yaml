@@ -1,0 +1,4 @@
+name: grandfather_was_absolutely
+expression:
+  predicate: was_absolutely
+  args: [grandfather]

@@ -1,0 +1,14 @@
+name: process_identity
+
+ontology:
+  types:
+    me_child: PersonState
+    me_now: PersonState
+  predicates:
+    continuity:
+      domain: [PersonState, PersonState]
+      returns: Proposition
+  absent_concepts:
+    - same_persistent_substance
+
+evidence: {}

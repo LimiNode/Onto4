@@ -1,0 +1,4 @@
+name: has_mass_car_A
+expression:
+  predicate: has_mass
+  args: [car_A]

@@ -1,0 +1,4 @@
+name: identity_by_continuity
+expression:
+  predicate: continuity
+  args: [me_child, me_now]
