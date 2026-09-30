@@ -16,9 +16,9 @@ from onto4.core import (
 )
 
 
-def context_for(*, predicates, types, absent=(), evidence=None, truth=None, semantics=None, inference=None):
+def context_for(*, predicates, types, absent=(), evidence=None, verdicts=None, semantics=None, inference=None):
     from onto4.core.context import InferenceProfile, SemanticProfile
-    from onto4.core.evidence import EvidenceStore, TruthStore
+    from onto4.core.evidence import AtomicVerdictStore, EvidenceStore
 
     return AssessmentContext(
         ontology=OntologyProfile(
@@ -28,7 +28,7 @@ def context_for(*, predicates, types, absent=(), evidence=None, truth=None, sema
             absent_concepts=set(absent),
         ),
         evidence=EvidenceStore(evidence or {}),
-        truth=TruthStore(truth or {}),
+        verdicts=AtomicVerdictStore(verdicts or {}),
         semantics=semantics or SemanticProfile(),
         inference=inference or InferenceProfile(),
     )
@@ -70,13 +70,13 @@ def test_established_truth_is_separate_from_evidence():
     true_context = context_for(
         types=base,
         predicates={"has_mass": predicate},
-        truth={"has_mass(car_A)": Verdict.T},
+        verdicts={"has_mass(car_A)": Verdict.T},
         evidence={"has_mass(car_A)": Evidence4.TrueOnly},
     )
     false_context = context_for(
         types=base,
         predicates={"has_mass": predicate},
-        truth={"has_mass(car_A)": Verdict.F},
+        verdicts={"has_mass(car_A)": Verdict.F},
         evidence={"has_mass(car_A)": Evidence4.FalseOnly},
     )
 
@@ -101,7 +101,7 @@ def test_strict_formula_does_not_hide_category_error():
     context = context_for(
         types={"car_A": "PhysicalObject", "integer_7": "Integer"},
         predicates={"has_mass": PredicateSignature(("PhysicalObject",))},
-        truth={"has_mass(car_A)": Verdict.T},
+        verdicts={"has_mass(car_A)": Verdict.T},
         evidence={"has_mass(car_A)": Evidence4.TrueOnly},
     )
     expression = And(atom("has_mass", "car_A"), atom("has_mass", "integer_7"))
@@ -115,7 +115,7 @@ def test_strict_or_does_not_hide_category_error():
     context = context_for(
         types={"car_A": "PhysicalObject", "integer_7": "Integer"},
         predicates={"has_mass": PredicateSignature(("PhysicalObject",))},
-        truth={"has_mass(car_A)": Verdict.T},
+        verdicts={"has_mass(car_A)": Verdict.T},
         evidence={"has_mass(car_A)": Evidence4.TrueOnly},
     )
 
@@ -168,12 +168,30 @@ def test_explicitly_absent_predicate_is_category_error():
     assert result.verdict is Verdict.C
 
 
+def test_category_error_is_decisive_with_unresolved_sibling():
+    context = context_for(
+        types={"integer_7": "Integer"},
+        predicates={"has_mass": PredicateSignature(("PhysicalObject",))},
+    )
+    expression = And(
+        atom("has_mass", "integer_7"),
+        atom("has_mass", "unknown_car"),
+    )
+
+    result = evaluate(expression, context)
+
+    assert result.state is AssessmentState.Assessed
+    assert result.semantic_status is SemanticStatus.Inapplicable
+    assert result.verdict is Verdict.C
+    assert {item.code for item in result.diagnostics} == {"type_mismatch", "unknown_symbol"}
+
+
 def test_compound_evidence_is_uncomputed_unless_explicitly_supplied():
     expression = And(atom("a"), atom("b"))
     context = context_for(
         types={},
         predicates={"a": PredicateSignature(()), "b": PredicateSignature(())},
-        truth={"a()": Verdict.T, "b()": Verdict.T},
+        verdicts={"a()": Verdict.T, "b()": Verdict.T},
         evidence={"a()": Evidence4.TrueOnly, "b()": Evidence4.TrueOnly},
     )
 
@@ -201,7 +219,7 @@ def test_unsupported_profiles_fail_closed():
     context = context_for(
         types={},
         predicates={"a": PredicateSignature(())},
-        truth={"a()": Verdict.T},
+        verdicts={"a()": Verdict.T},
         semantics=SemanticProfile(name="non_strict", strict=False),
     )
     try:

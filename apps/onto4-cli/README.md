@@ -34,12 +34,13 @@ Formalization + AssessmentContext -> AssessmentResult
 An unresolved or missing formalization has no Onto4 verdict. It is not `U`:
 `U` is reserved for an admitted, meaningful formalization whose `T/F` status
 has not been established. Supporting `Evidence4` is not itself an established
-truth verdict; explicit atomic truth entries are kept in a separate store.
+verdict; explicit atomic verdict entries are kept in a separate store.
+
 
 For example, a context may keep the two axes explicit:
 
 ```yaml
-truth:
+verdicts:
   has_mass(car_A): T
 
 evidence:
@@ -58,3 +59,8 @@ python -m pytest -q
 
 The suite includes the complete canonical strict tables for negation,
 conjunction, disjunction, implication and equivalence.
+
+Admission uses an explicit decisive-C policy for mixed diagnostics: an invalid
+request takes precedence over a category error, and a category error takes
+precedence over an unresolved sibling. An unresolved-only formalization still
+has no Onto4 verdict.

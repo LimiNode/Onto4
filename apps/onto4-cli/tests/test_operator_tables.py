@@ -12,7 +12,7 @@ from onto4.core import (
     PredicateExpr,
     PredicateSignature,
     Term,
-    TruthStore,
+    AtomicVerdictStore,
     Verdict,
     evaluate,
 )
@@ -36,7 +36,7 @@ def context() -> AssessmentContext:
             },
             absent_concepts={"c"},
         ),
-        truth=TruthStore({"t()": Verdict.T, "f()": Verdict.F, "u()": Verdict.U}),
+        verdicts=AtomicVerdictStore({"t()": Verdict.T, "f()": Verdict.F, "u()": Verdict.U}),
     )
 
 

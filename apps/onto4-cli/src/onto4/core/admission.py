@@ -45,6 +45,14 @@ INVALID_REQUEST_CODES = {"unsupported_expression"}
 
 
 def admit(expr: Expr, context: AssessmentContext) -> AdmissionResult:
+    """Check the complete AST and classify its admission outcome.
+
+    The MVP uses a decisive-C policy for mixed diagnostics: an explicit
+    category error dominates unresolved siblings under strict semantics, while
+    an invalid request dominates both. This makes the precedence explicit
+    rather than relying on evaluator control flow.
+    """
+
     diagnostics: list[Diagnostic] = []
 
     def visit(node: Expr, path: str) -> None:
@@ -126,6 +134,7 @@ def admit(expr: Expr, context: AssessmentContext) -> AdmissionResult:
     visit(expr, "expression")
     if not diagnostics:
         status = AdmissionStatus.Admitted
+    # Precedence is intentional: invalid request > category error > unresolved.
     elif any(item.code in INVALID_REQUEST_CODES for item in diagnostics):
         status = AdmissionStatus.InvalidRequest
     elif any(item.code in CATEGORY_ERROR_CODES for item in diagnostics):

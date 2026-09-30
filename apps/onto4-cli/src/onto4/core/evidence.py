@@ -28,7 +28,7 @@ def parse_evidence(value: object) -> Evidence4:
         raise ValueError(f"Unknown evidence value: {value!r}") from exc
 
 
-def parse_truth(value: object) -> Verdict:
+def parse_verdict(value: object) -> Verdict:
     if isinstance(value, Verdict):
         if value is Verdict.C:
             raise ValueError("C is not an atomic truth result; it comes from admission.")
@@ -51,8 +51,8 @@ class EvidenceStore:
 
 
 @dataclass
-class TruthStore:
-    """Established atomic results, kept separate from supporting evidence."""
+class AtomicVerdictStore:
+    """Atomic Onto4 verdicts, kept separate from supporting evidence."""
 
     entries: dict[str, Verdict] = field(default_factory=dict)
 

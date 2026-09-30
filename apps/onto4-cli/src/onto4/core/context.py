@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .evidence import EvidenceStore, TruthStore
+from .evidence import AtomicVerdictStore, EvidenceStore
 
 
 @dataclass(frozen=True)
@@ -66,4 +66,4 @@ class AssessmentContext:
     inference: InferenceProfile = field(default_factory=InferenceProfile)
     perspective: Perspective = field(default_factory=Perspective)
     evidence: EvidenceStore = field(default_factory=EvidenceStore)
-    truth: TruthStore = field(default_factory=TruthStore)
+    verdicts: AtomicVerdictStore = field(default_factory=AtomicVerdictStore)

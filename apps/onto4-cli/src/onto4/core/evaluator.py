@@ -51,7 +51,7 @@ def _validate_context(context: AssessmentContext) -> None:
 
 def _atomic_assessment(node: PredicateExpr, context: AssessmentContext) -> AtomicAssessment:
     evidence = context.evidence.for_expression(node) or Evidence4.Neither
-    established = context.truth.for_expression(node)
+    established = context.verdicts.for_expression(node)
     if established is not None:
         reasons = ()
         if established is Verdict.U:

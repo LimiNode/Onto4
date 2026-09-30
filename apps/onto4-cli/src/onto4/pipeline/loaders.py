@@ -25,7 +25,7 @@ from onto4.core import (
     SemanticProfile,
     Term,
 )
-from onto4.core.evidence import EvidenceStore, TruthStore, parse_evidence, parse_truth
+from onto4.core.evidence import AtomicVerdictStore, EvidenceStore, parse_evidence, parse_verdict
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -110,13 +110,15 @@ def load_context(path: str | Path) -> AssessmentContext:
         expr = expression_from_text(str(key))
         evidence.entries[expr.call.key()] = parse_evidence(value)
 
-    raw_truth = data.get("truth", {}) or {}
-    if not isinstance(raw_truth, dict):
-        raise ValueError(f"Truth must be a mapping in {source}.")
-    truth = TruthStore()
-    for key, value in raw_truth.items():
+    # ``truth`` remains accepted for contexts written against the first
+    # unreleased snapshot; new profiles use the semantically precise name.
+    raw_verdicts = data.get("verdicts", data.get("truth", {})) or {}
+    if not isinstance(raw_verdicts, dict):
+        raise ValueError(f"Verdicts must be a mapping in {source}.")
+    verdicts = AtomicVerdictStore()
+    for key, value in raw_verdicts.items():
         expr = expression_from_text(str(key))
-        truth.entries[expr.call.key()] = parse_truth(value)
+        verdicts.entries[expr.call.key()] = parse_verdict(value)
 
     return AssessmentContext(
         ontology=OntologyProfile(
@@ -137,5 +139,5 @@ def load_context(path: str | Path) -> AssessmentContext:
         inference=InferenceProfile(name=str(data.get("inference", {}).get("name", "direct_evidence"))),
         perspective=Perspective(name=str(data.get("perspective", {}).get("name", "default"))),
         evidence=evidence,
-        truth=truth,
+        verdicts=verdicts,
     )

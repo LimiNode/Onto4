@@ -8,7 +8,7 @@ ontology:
       domain: [PhysicalObject]
       returns: Proposition
 
-truth:
+verdicts:
   has_mass(car_A): T
 
 evidence:
