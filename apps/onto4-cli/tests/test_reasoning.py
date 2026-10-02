@@ -46,6 +46,7 @@ def candidate(identifier, label, formalization_id, context_id, expression, readi
 
 def test_interpretation_space_preserves_readings_without_verdicts():
     space = InterpretationSpace(
+        id="identity-question",
         source_text="Я тот же человек, которым был в детстве?",
         conceptual_depth=ConceptualDepth.Philosophical,
         ambiguities=(Ambiguity("тот же", "критерий идентичности не задан"),),

@@ -96,7 +96,7 @@ inconsistent identifier.
 Interpretation and formalization are separate provider steps:
 
 ```text
-InterpretationRequest
+InterpretationRequest (source text + optional conceptual depth)
     -> InterpretationSpace
     -> FormalizationRequest
     -> FormalizationCandidate[]
@@ -105,5 +105,10 @@ InterpretationRequest
 The provider contracts return only meta-level interpretations and explicit
 candidate structures. Assessment remains a separate call to the deterministic
 Onto4 core. `FixtureInterpretationProvider` and
-`FixtureFormalizationProvider` provide exact-match fixtures for tests; they do
-not implement natural-language understanding, LLM behavior or KEV behavior.
+`FixtureFormalizationProvider` provide exact-match fixtures for tests.
+Formalization fixtures are keyed by the immutable `InterpretationSpace.id`, so
+equal source text does not collapse different interpretation snapshots. A
+candidate's `reading_id`, when present, must refer to a reading in the supplied
+space; candidate assumptions must be traceable to its presuppositions or
+explicitly introduced during formalization. These fixtures do not implement
+natural-language understanding, LLM behavior or KEV behavior.

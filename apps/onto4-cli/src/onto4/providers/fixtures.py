@@ -18,24 +18,31 @@ class FixtureInterpretationProvider:
 
     def interpret(self, request: InterpretationRequest) -> InterpretationSpace:
         try:
-            return self.spaces[request.source_text]
+            space = self.spaces[request.source_text]
         except KeyError as exc:
             raise KeyError(
                 f"No interpretation fixture for source text {request.source_text!r}."
             ) from exc
+        if request.conceptual_depth is not None and space.conceptual_depth is not request.conceptual_depth:
+            raise ValueError(
+                f"Interpretation fixture {space.id!r} has depth "
+                f"{space.conceptual_depth.value!r}, not the requested "
+                f"{request.conceptual_depth.value!r}."
+            )
+        return space
 
 
 @dataclass(frozen=True)
 class FixtureFormalizationProvider:
-    """Return predefined candidates keyed by a space's source text."""
+    """Return predefined candidates keyed by an interpretation identity."""
 
     candidates: Mapping[str, tuple[FormalizationCandidate, ...]]
 
     def formalize(self, request: FormalizationRequest) -> tuple[FormalizationCandidate, ...]:
         try:
-            return self.candidates[request.interpretation.source_text]
+            return self.candidates[request.interpretation.id]
         except KeyError as exc:
             raise KeyError(
-                "No formalization fixture for source text "
-                f"{request.interpretation.source_text!r}."
+                "No formalization fixture for interpretation "
+                f"{request.interpretation.id!r}."
             ) from exc

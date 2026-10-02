@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, Sequence
 
-from onto4.reasoning import FormalizationCandidate, InterpretationSpace
+from onto4.reasoning import ConceptualDepth, FormalizationCandidate, InterpretationSpace
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,7 @@ class InterpretationRequest:
     """Input accepted by an interpretation provider."""
 
     source_text: str
+    conceptual_depth: ConceptualDepth | None = None
     state: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -54,7 +55,13 @@ class FormalizationRequest:
 
 
 class FormalizationProvider(Protocol):
-    """Produce candidates; assessment remains a separate deterministic step."""
+    """Produce candidates; assessment remains a separate deterministic step.
+
+    A returned candidate's ``reading_id``, when present, must refer to a
+    reading in ``request.interpretation``. Candidate assumptions must either
+    trace to that interpretation's presuppositions or be explicitly marked as
+    assumptions introduced during formalization.
+    """
 
     def formalize(self, request: FormalizationRequest) -> Sequence[FormalizationCandidate]:
         ...
