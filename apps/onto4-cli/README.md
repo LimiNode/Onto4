@@ -90,3 +90,20 @@ this layer.
 have equal formalization structure and assumptions. The aggregator rejects a
 landscape with a conflicting claim as `InvalidRequest` rather than trusting an
 inconsistent identifier.
+
+## Provider boundary
+
+Interpretation and formalization are separate provider steps:
+
+```text
+InterpretationRequest
+    -> InterpretationSpace
+    -> FormalizationRequest
+    -> FormalizationCandidate[]
+```
+
+The provider contracts return only meta-level interpretations and explicit
+candidate structures. Assessment remains a separate call to the deterministic
+Onto4 core. `FixtureInterpretationProvider` and
+`FixtureFormalizationProvider` provide exact-match fixtures for tests; they do
+not implement natural-language understanding, LLM behavior or KEV behavior.
