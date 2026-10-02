@@ -64,3 +64,29 @@ Admission uses an explicit decisive-C policy for mixed diagnostics: an invalid
 request takes precedence over a category error, and a category error takes
 precedence over an unresolved sibling. An unresolved-only formalization still
 has no Onto4 verdict.
+
+## Interpretation space
+
+The next deterministic layer keeps one natural-language question separate from
+the formalizations that may be derived from it:
+
+```text
+InterpretationSpace
+    -> FormalizationCandidate[]
+    -> AssessmentResult per candidate
+    -> AssessmentLandscape
+```
+
+`AssessmentLandscape` is a meta-level result. It can be
+`StableAcrossCandidates`, `ContextDependent`, `FormalizationConflict` or
+`MixedDependence`, `FormalizationUnresolved` or `InvalidRequest`; it never
+replaces the Onto4 verdict of an individual candidate. `ContextDependent` is
+reserved for one formalization assessed in different contexts. If both the
+formalization and context axes change, the result is `MixedDependence` instead
+of an unsupported causal attribution. LLM and KEV providers are not needed for
+this layer.
+
+`formalization_id` is an explicit identity claim: candidates sharing it must
+have equal formalization structure and assumptions. The aggregator rejects a
+landscape with a conflicting claim as `InvalidRequest` rather than trusting an
+inconsistent identifier.
