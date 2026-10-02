@@ -104,11 +104,13 @@ InterpretationRequest (source text + optional conceptual depth)
 
 The provider contracts return only meta-level interpretations and explicit
 candidate structures. Assessment remains a separate call to the deterministic
-Onto4 core. `FixtureInterpretationProvider` and
-`FixtureFormalizationProvider` provide exact-match fixtures for tests.
-Formalization fixtures are keyed by the immutable `InterpretationSpace.id`, so
-equal source text does not collapse different interpretation snapshots. A
-candidate's `reading_id`, when present, must refer to a reading in the supplied
-space; candidate assumptions must be traceable to its presuppositions or
-explicitly introduced during formalization. These fixtures do not implement
-natural-language understanding, LLM behavior or KEV behavior.
+Onto4 core. `FixtureInterpretationProvider` routes by
+`(source_text, conceptual_depth)`; `FixtureFormalizationProvider` is then
+keyed by the immutable `InterpretationSpace.id`. Equal source text therefore
+does not collapse different interpretation snapshots. A candidate's
+`reading_id`, when present, must refer to a reading in the supplied space and
+is checked fail-closed by the fixture. Candidate assumptions must be traceable
+to its presuppositions or explicitly introduced during formalization; that
+assumptions provenance is a normative contract and is not machine-validated in
+this slice. These fixtures do not implement natural-language understanding,
+LLM behavior or KEV behavior.

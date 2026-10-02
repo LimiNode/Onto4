@@ -60,7 +60,9 @@ class FormalizationProvider(Protocol):
     A returned candidate's ``reading_id``, when present, must refer to a
     reading in ``request.interpretation``. Candidate assumptions must either
     trace to that interpretation's presuppositions or be explicitly marked as
-    assumptions introduced during formalization.
+    assumptions introduced during formalization. The current string-only
+    assumption shape makes that provenance normative rather than machine-
+    validated.
     """
 
     def formalize(self, request: FormalizationRequest) -> Sequence[FormalizationCandidate]:
