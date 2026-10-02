@@ -15,7 +15,9 @@ class CrossCandidateStatus(str, Enum):
     StableAcrossCandidates = "StableAcrossCandidates"
     ContextDependent = "ContextDependent"
     FormalizationConflict = "FormalizationConflict"
+    MixedDependence = "MixedDependence"
     FormalizationUnresolved = "FormalizationUnresolved"
+    InvalidRequest = "InvalidRequest"
 
 
 @dataclass(frozen=True)
@@ -26,6 +28,8 @@ class AssessmentLandscape:
     status: CrossCandidateStatus
     unresolved_candidate_ids: tuple[str, ...] = ()
     invalid_candidate_ids: tuple[str, ...] = ()
+    varies_by_context: bool = False
+    varies_by_formalization: bool = False
 
 
 def aggregate_assessments(
@@ -33,10 +37,12 @@ def aggregate_assessments(
 ) -> AssessmentLandscape:
     """Classify a landscape without collapsing it to a single Onto4 verdict.
 
-    Any unresolved or invalid candidate keeps the landscape formally
-    unresolved. For fully assessed candidates, equal verdicts are stable;
-    differing verdicts across named contexts are context-dependent; differing
-    verdicts within one context are a formalization conflict.
+    Invalid requests and unresolved candidates remain distinct at the landscape
+    level. For fully assessed candidates, equal verdicts are stable. When
+    verdicts differ, the candidate identity axes determine the status: a
+    single formalization across contexts is context-dependent, multiple
+    formalizations in one context are a formalization conflict, and changing
+    both axes is mixed dependence rather than an attribution to context.
     """
 
     collected = tuple(assessments)
@@ -50,7 +56,14 @@ def aggregate_assessments(
         for item in collected
         if item.result.state is AssessmentState.InvalidRequest
     )
-    if not collected or unresolved or invalid:
+    if invalid:
+        return AssessmentLandscape(
+            assessments=collected,
+            status=CrossCandidateStatus.InvalidRequest,
+            unresolved_candidate_ids=unresolved,
+            invalid_candidate_ids=invalid,
+        )
+    if not collected or unresolved:
         return AssessmentLandscape(
             assessments=collected,
             status=CrossCandidateStatus.FormalizationUnresolved,
@@ -61,8 +74,20 @@ def aggregate_assessments(
     verdicts = {item.result.verdict for item in collected}
     if len(verdicts) == 1:
         status = CrossCandidateStatus.StableAcrossCandidates
-    elif len({item.context_id for item in collected}) > 1:
-        status = CrossCandidateStatus.ContextDependent
+        varies_by_context = False
+        varies_by_formalization = False
     else:
-        status = CrossCandidateStatus.FormalizationConflict
-    return AssessmentLandscape(assessments=collected, status=status)
+        varies_by_context = len({item.context_id for item in collected}) > 1
+        varies_by_formalization = len({item.candidate.formalization_id for item in collected}) > 1
+        if varies_by_context and not varies_by_formalization:
+            status = CrossCandidateStatus.ContextDependent
+        elif varies_by_formalization and not varies_by_context:
+            status = CrossCandidateStatus.FormalizationConflict
+        else:
+            status = CrossCandidateStatus.MixedDependence
+    return AssessmentLandscape(
+        assessments=collected,
+        status=status,
+        varies_by_context=varies_by_context,
+        varies_by_formalization=varies_by_formalization,
+    )

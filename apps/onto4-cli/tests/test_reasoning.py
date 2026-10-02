@@ -1,6 +1,5 @@
 from onto4.core import (
     AssessmentContext,
-    Evidence4,
     OntologyProfile,
     PredicateCall,
     PredicateExpr,
@@ -10,7 +9,6 @@ from onto4.core import (
 from onto4.core.evidence import AtomicVerdictStore
 from onto4.reasoning import (
     Ambiguity,
-    AssessmentLandscape,
     ConceptualDepth,
     CrossCandidateStatus,
     FormalizationCandidate,
@@ -35,10 +33,11 @@ def context(*, verdicts=None, predicates=("a", "b")) -> AssessmentContext:
     )
 
 
-def candidate(identifier, label, context_id, expression, reading_id=None):
+def candidate(identifier, label, formalization_id, context_id, expression, reading_id=None):
     return FormalizationCandidate(
         id=identifier,
         label=label,
+        formalization_id=formalization_id,
         context_id=context_id,
         formalization=expression,
         reading_id=reading_id,
@@ -62,8 +61,8 @@ def test_interpretation_space_preserves_readings_without_verdicts():
 
 def test_same_verdict_across_candidates_is_stable():
     candidates = [
-        candidate("a", "reading A", "fixture", atom("a")),
-        candidate("b", "reading B", "fixture", atom("b")),
+        candidate("a", "reading A", "formal-a", "fixture", atom("a")),
+        candidate("b", "reading B", "formal-b", "fixture", atom("b")),
     ]
     assessments = assess_candidates(
         candidates,
@@ -78,8 +77,8 @@ def test_same_verdict_across_candidates_is_stable():
 
 def test_different_contexts_produce_context_dependent_landscape():
     candidates = [
-        candidate("present", "present reading", "present", atom("a")),
-        candidate("eternal", "eternal reading", "eternal", atom("a")),
+        candidate("present", "present reading", "same-formalization", "present", atom("a")),
+        candidate("eternal", "eternal reading", "same-formalization", "eternal", atom("a")),
     ]
     assessments = assess_candidates(
         candidates,
@@ -92,12 +91,14 @@ def test_different_contexts_produce_context_dependent_landscape():
     landscape = aggregate_assessments(assessments)
 
     assert landscape.status is CrossCandidateStatus.ContextDependent
+    assert landscape.varies_by_context is True
+    assert landscape.varies_by_formalization is False
 
 
 def test_different_formalizations_in_one_context_are_a_conflict():
     candidates = [
-        candidate("a", "reading A", "fixture", atom("a")),
-        candidate("b", "reading B", "fixture", atom("b")),
+        candidate("a", "reading A", "formal-a", "fixture", atom("a")),
+        candidate("b", "reading B", "formal-b", "fixture", atom("b")),
     ]
     assessments = assess_candidates(
         candidates,
@@ -107,12 +108,14 @@ def test_different_formalizations_in_one_context_are_a_conflict():
     landscape = aggregate_assessments(assessments)
 
     assert landscape.status is CrossCandidateStatus.FormalizationConflict
+    assert landscape.varies_by_context is False
+    assert landscape.varies_by_formalization is True
 
 
 def test_unresolved_candidate_keeps_landscape_meta_level():
     candidates = [
-        candidate("resolved", "resolved reading", "fixture", atom("a")),
-        candidate("pending", "pending reading", "fixture", None),
+        candidate("resolved", "resolved reading", "formal-a", "fixture", atom("a")),
+        candidate("pending", "pending reading", "formal-pending", "fixture", None),
     ]
     assessments = assess_candidates(
         candidates,
@@ -137,8 +140,8 @@ def test_category_error_and_unknown_result_can_be_compared_without_collapsing():
         ),
     )
     candidates = [
-        candidate("continuity", "continuity", "process", PredicateExpr(PredicateCall("continuity", ()))) ,
-        candidate("substance", "substance", "process", PredicateExpr(PredicateCall("same_substance", ()))) ,
+        candidate("continuity", "continuity", "continuity", "process", PredicateExpr(PredicateCall("continuity", ()))),
+        candidate("substance", "substance", "substance", "process", PredicateExpr(PredicateCall("same_substance", ()))),
     ]
     assessments = assess_candidates(candidates, {"process": process})
 
@@ -146,3 +149,36 @@ def test_category_error_and_unknown_result_can_be_compared_without_collapsing():
 
     assert landscape.status is CrossCandidateStatus.FormalizationConflict
     assert [item.result.verdict for item in landscape.assessments] == [Verdict.U, Verdict.C]
+
+
+def test_different_formalizations_and_contexts_are_mixed_dependence():
+    candidates = [
+        candidate("present", "present reading", "present-formal", "present", atom("a")),
+        candidate("eternal", "eternal reading", "eternal-formal", "eternal", atom("a")),
+    ]
+    assessments = assess_candidates(
+        candidates,
+        {
+            "present": context(verdicts={"a()": Verdict.T}),
+            "eternal": context(verdicts={"a()": Verdict.F}),
+        },
+    )
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.MixedDependence
+    assert landscape.varies_by_context is True
+    assert landscape.varies_by_formalization is True
+
+
+def test_invalid_candidate_has_distinct_landscape_status():
+    candidates = [
+        candidate("invalid", "invalid reading", "invalid-formal", "fixture", object()),
+    ]
+    assessments = assess_candidates(candidates, {"fixture": context()})
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.InvalidRequest
+    assert landscape.invalid_candidate_ids == ("invalid",)
+    assert landscape.unresolved_candidate_ids == ()

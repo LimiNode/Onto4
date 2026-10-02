@@ -79,5 +79,9 @@ InterpretationSpace
 
 `AssessmentLandscape` is a meta-level result. It can be
 `StableAcrossCandidates`, `ContextDependent`, `FormalizationConflict` or
-`FormalizationUnresolved`; it never replaces the Onto4 verdict of an individual
-candidate. LLM and KEV providers are not needed for this layer.
+`MixedDependence`, `FormalizationUnresolved` or `InvalidRequest`; it never
+replaces the Onto4 verdict of an individual candidate. `ContextDependent` is
+reserved for one formalization assessed in different contexts. If both the
+formalization and context axes change, the result is `MixedDependence` instead
+of an unsupported causal attribution. LLM and KEV providers are not needed for
+this layer.

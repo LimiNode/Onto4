@@ -18,6 +18,9 @@ class FormalizationCandidate:
 
     id: str
     label: str
+    # Candidate instance identity is distinct from this reusable formalization
+    # identity, which permits one formalization to be assessed in many contexts.
+    formalization_id: str
     context_id: str
     formalization: Expr | None
     reading_id: str | None = None
