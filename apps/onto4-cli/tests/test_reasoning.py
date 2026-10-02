@@ -236,3 +236,34 @@ def test_shared_formalization_id_with_different_structures_fails_closed():
     assert landscape.status is CrossCandidateStatus.InvalidRequest
     assert landscape.invalid_candidate_ids == ("first", "second")
     assert landscape.invalid_reasons == ("formalization_id_conflict",)
+
+
+def test_shared_formalization_id_with_different_assumptions_fails_closed():
+    candidates = [
+        FormalizationCandidate(
+            id="first",
+            label="first",
+            formalization_id="shared",
+            context_id="fixture",
+            formalization=atom("a"),
+            assumptions=("identity_is_continuous",),
+        ),
+        FormalizationCandidate(
+            id="second",
+            label="second",
+            formalization_id="shared",
+            context_id="fixture",
+            formalization=atom("a"),
+            assumptions=("identity_is_substantial",),
+        ),
+    ]
+    assessments = assess_candidates(
+        candidates,
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.InvalidRequest
+    assert landscape.invalid_candidate_ids == ("first", "second")
+    assert landscape.invalid_reasons == ("formalization_id_conflict",)
