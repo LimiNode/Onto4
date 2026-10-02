@@ -95,6 +95,26 @@ def test_different_contexts_produce_context_dependent_landscape():
     assert landscape.varies_by_formalization is False
 
 
+def test_stable_verdict_still_records_context_variation():
+    candidates = [
+        candidate("present", "present reading", "same-formalization", "present", atom("a")),
+        candidate("eternal", "eternal reading", "same-formalization", "eternal", atom("a")),
+    ]
+    assessments = assess_candidates(
+        candidates,
+        {
+            "present": context(verdicts={"a()": Verdict.T}),
+            "eternal": context(verdicts={"a()": Verdict.T}),
+        },
+    )
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.StableAcrossCandidates
+    assert landscape.varies_by_context is True
+    assert landscape.varies_by_formalization is False
+
+
 def test_different_formalizations_in_one_context_are_a_conflict():
     candidates = [
         candidate("a", "reading A", "formal-a", "fixture", atom("a")),
@@ -108,6 +128,23 @@ def test_different_formalizations_in_one_context_are_a_conflict():
     landscape = aggregate_assessments(assessments)
 
     assert landscape.status is CrossCandidateStatus.FormalizationConflict
+    assert landscape.varies_by_context is False
+    assert landscape.varies_by_formalization is True
+
+
+def test_stable_verdict_still_records_formalization_variation():
+    candidates = [
+        candidate("a", "reading A", "formal-a", "fixture", atom("a")),
+        candidate("b", "reading B", "formal-b", "fixture", atom("b")),
+    ]
+    assessments = assess_candidates(
+        candidates,
+        {"fixture": context(verdicts={"a()": Verdict.T, "b()": Verdict.T})},
+    )
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.StableAcrossCandidates
     assert landscape.varies_by_context is False
     assert landscape.varies_by_formalization is True
 
@@ -182,3 +219,20 @@ def test_invalid_candidate_has_distinct_landscape_status():
     assert landscape.status is CrossCandidateStatus.InvalidRequest
     assert landscape.invalid_candidate_ids == ("invalid",)
     assert landscape.unresolved_candidate_ids == ()
+
+
+def test_shared_formalization_id_with_different_structures_fails_closed():
+    candidates = [
+        candidate("first", "first", "shared", "fixture", atom("a")),
+        candidate("second", "second", "shared", "fixture", atom("b")),
+    ]
+    assessments = assess_candidates(
+        candidates,
+        {"fixture": context(verdicts={"a()": Verdict.T, "b()": Verdict.T})},
+    )
+
+    landscape = aggregate_assessments(assessments)
+
+    assert landscape.status is CrossCandidateStatus.InvalidRequest
+    assert landscape.invalid_candidate_ids == ("first", "second")
+    assert landscape.invalid_reasons == ("formalization_id_conflict",)

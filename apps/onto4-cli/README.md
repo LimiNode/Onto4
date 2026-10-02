@@ -85,3 +85,8 @@ reserved for one formalization assessed in different contexts. If both the
 formalization and context axes change, the result is `MixedDependence` instead
 of an unsupported causal attribution. LLM and KEV providers are not needed for
 this layer.
+
+`formalization_id` is an explicit identity claim: candidates sharing it must
+have equal formalization structure and assumptions. The aggregator rejects a
+landscape with a conflicting claim as `InvalidRequest` rather than trusting an
+inconsistent identifier.
