@@ -156,7 +156,11 @@ probability and no global acceptance threshold is applied. The deterministic
 consumer may use a valid choice, or handle explicit abstention, but it never
 produces `T/F/U/C`.
 
-`TypedDecisionBatchProvider` is optional: providers that support it can answer
-several typed questions over one shared state. `FixtureDecisionProvider` and
-`FixtureBatchDecisionProvider` cover these contracts without selecting a real
-model or implementing KEV/Jev behavior.
+Decision results carry mandatory profile id/version provenance. A valid
+decision is either a profile choice or an explicit abstention (`choice=None`);
+the two states are not inferred from one another. `TypedDecisionBatchProvider`
+is optional: providers that support it answer several typed questions over one
+shared state and reject mixed-state batches. `FixtureDecisionProvider` is
+question-keyed and intentionally does not model a state-sensitive scorer;
+`FixtureBatchDecisionProvider` covers the shared-state contract without
+selecting a real model or implementing KEV/Jev behavior.

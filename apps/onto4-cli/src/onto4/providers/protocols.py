@@ -20,12 +20,14 @@ class TypedDecisionRequest:
 
 @dataclass(frozen=True)
 class TypedDecision:
+    """A profile-provenanced bounded decision or explicit abstention."""
+
+    profile_id: str
+    profile_version: str
     choice: str | None = None
     abstained: bool = False
     confidence: float | None = None
     probabilities: Mapping[str, float] = field(default_factory=dict)
-    profile_id: str | None = None
-    profile_version: str | None = None
 
 
 class AbstentionPolicy(str, Enum):
@@ -63,16 +65,20 @@ class DecisionProfile:
         )
 
     def validate(self, decision: TypedDecision) -> None:
-        if decision.profile_id is not None and decision.profile_id != self.id:
+        if decision.abstained and decision.choice is not None:
+            raise ValueError("An abstained decision cannot contain a choice.")
+        if not decision.abstained and decision.choice is None:
+            raise ValueError("A non-abstained decision must contain a choice.")
+        if decision.profile_id != self.id:
             raise ValueError(
                 f"Decision profile mismatch: expected {self.id!r}, got {decision.profile_id!r}."
             )
-        if decision.profile_version is not None and decision.profile_version != self.version:
+        if decision.profile_version != self.version:
             raise ValueError(
                 "Decision profile version mismatch: "
                 f"expected {self.version!r}, got {decision.profile_version!r}."
             )
-        if decision.abstained or decision.choice is None:
+        if decision.abstained:
             if self.abstention_policy is AbstentionPolicy.Forbidden:
                 raise ValueError(f"Profile {self.id!r} does not allow abstention.")
             return
@@ -90,7 +96,11 @@ class TypedDecisionProvider(Protocol):
 
 
 class TypedDecisionBatchProvider(Protocol):
-    """Optional fan-out capability over one shared request state."""
+    """Optional fan-out capability over one shared request state.
+
+    Implementations must reject a batch whose requests do not share state and
+    profile/schema identity.
+    """
 
     def decide_many(
         self, requests: Sequence[TypedDecisionRequest]

@@ -91,4 +91,9 @@ class FixtureBatchDecisionProvider(FixtureDecisionProvider, TypedDecisionBatchPr
     def decide_many(
         self, requests: Sequence[TypedDecisionRequest]
     ) -> tuple[TypedDecision, ...]:
+        if not requests:
+            return ()
+        shared_state = requests[0].state
+        if any(request.state != shared_state for request in requests[1:]):
+            raise ValueError("A decision batch must use one shared state.")
         return tuple(self.decide(request) for request in requests)
