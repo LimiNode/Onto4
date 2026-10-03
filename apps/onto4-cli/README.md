@@ -90,3 +90,27 @@ this layer.
 have equal formalization structure and assumptions. The aggregator rejects a
 landscape with a conflicting claim as `InvalidRequest` rather than trusting an
 inconsistent identifier.
+
+## Provider boundary
+
+Interpretation and formalization are separate provider steps:
+
+```text
+InterpretationRequest (source text + optional conceptual depth)
+    -> InterpretationSpace
+    -> FormalizationRequest
+    -> FormalizationCandidate[]
+```
+
+The provider contracts return only meta-level interpretations and explicit
+candidate structures. Assessment remains a separate call to the deterministic
+Onto4 core. `FixtureInterpretationProvider` routes by
+`(source_text, conceptual_depth)`; `FixtureFormalizationProvider` is then
+keyed by the immutable `InterpretationSpace.id`. Equal source text therefore
+does not collapse different interpretation snapshots. A candidate's
+`reading_id`, when present, must refer to a reading in the supplied space and
+is checked fail-closed by the fixture. Candidate assumptions must be traceable
+to its presuppositions or explicitly introduced during formalization; that
+assumptions provenance is a normative contract and is not machine-validated in
+this slice. These fixtures do not implement natural-language understanding,
+LLM behavior or KEV behavior.

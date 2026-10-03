@@ -48,6 +48,7 @@ class InterpretationSpace:
     It carries no Onto4 verdict and does not select one reading as canonical.
     """
 
+    id: str
     source_text: str
     conceptual_depth: ConceptualDepth
     ambiguities: tuple[Ambiguity, ...] = ()
