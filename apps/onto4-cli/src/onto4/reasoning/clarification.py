@@ -111,22 +111,25 @@ class FixtureClarificationPolicy:
                 if item.candidate.id in landscape.unresolved_candidate_ids
             )
             kind = ClarificationKind.Formalization
+            text = "Что нужно уточнить, чтобы завершить формализацию этого чтения?"
             if any(
                 diagnostic.code == "unknown_symbol"
                 for item in unresolved
                 for diagnostic in item.result.diagnostics
             ):
                 kind = ClarificationKind.Reference
+                text = "Какой объект или референс имеется в виду?"
             elif any(
                 diagnostic.code == "unknown_predicate"
                 for item in unresolved
                 for diagnostic in item.result.diagnostics
             ):
                 kind = ClarificationKind.Meaning
+                text = "Как следует понимать этот предикат или термин?"
             return ClarificationQuestion(
                 id=f"unresolved:{','.join(landscape.unresolved_candidate_ids)}",
                 kind=kind,
-                text="Какой референс или смысл нужно уточнить для формализации?",
+                text=text,
                 target_ids=landscape.unresolved_candidate_ids,
             )
 
@@ -153,16 +156,26 @@ class FixtureClarificationPolicy:
             )
 
         if landscape.status is CrossCandidateStatus.MixedDependence:
-            targets = tuple(
+            reading_targets = tuple(
                 dict.fromkeys(
-                    f"formalization:{item.candidate.formalization_id}"
+                    item.candidate.reading_id
                     for item in context.assessments
+                    if item.candidate.reading_id is not None
                 )
             )
+            if len(reading_targets) == len(context.assessments):
+                return ClarificationQuestion(
+                    id="mixed:meaning",
+                    kind=ClarificationKind.Meaning,
+                    text="Какое смысловое чтение утверждения вы имеете в виду?",
+                    target_ids=reading_targets,
+                    choices=reading_targets,
+                )
+            targets = tuple(dict.fromkeys(item.candidate.id for item in context.assessments))
             return ClarificationQuestion(
-                id="mixed:disambiguate",
-                kind=ClarificationKind.Meaning,
-                text="Какое смысловое чтение утверждения вы имеете в виду?",
+                id="mixed:formalization",
+                kind=ClarificationKind.Formalization,
+                text="Какой вариант формализации следует рассматривать?",
                 target_ids=targets,
                 choices=targets,
             )

@@ -104,7 +104,7 @@ def test_material_ambiguity_requests_meaning_clarification():
     assert result.clarification_question.target_ids == ("identity-term",)
 
 
-def test_context_dependence_requests_perspective_clarification():
+def test_context_dependence_requests_context_clarification():
     result = run(
         space(),
         [
@@ -155,10 +155,43 @@ def test_mixed_dependence_preserves_both_axes_in_question_targets():
     )
 
     assert result.disposition is PipelineDisposition.AskClarification
-    assert result.clarification_question.target_ids == (
-        "formalization:present-formal",
-        "formalization:eternal-formal",
+    assert result.clarification_question.kind is ClarificationKind.Formalization
+    assert result.clarification_question.text == "Какой вариант формализации следует рассматривать?"
+    assert result.clarification_question.target_ids == ("present", "eternal")
+
+
+def test_mixed_dependence_uses_reading_ids_for_meaning_question():
+    readings = (
+        SemanticReading("continuity", "continuity", "process identity"),
+        SemanticReading("substance", "substance", "persistent identity"),
     )
+    result = run(
+        space(readings=readings),
+        [
+            candidate(
+                "present",
+                "present-formal",
+                "present",
+                atom("a"),
+                reading_id="continuity",
+            ),
+            candidate(
+                "eternal",
+                "eternal-formal",
+                "eternal",
+                atom("a"),
+                reading_id="substance",
+            ),
+        ],
+        {
+            "present": context(verdicts={"a()": Verdict.T}),
+            "eternal": context(verdicts={"a()": Verdict.F}),
+        },
+    )
+
+    assert result.clarification_question.kind is ClarificationKind.Meaning
+    assert result.clarification_question.target_ids == ("continuity", "substance")
+    assert result.clarification_question.choices == ("continuity", "substance")
 
 
 def test_unresolved_formalization_requests_reference_clarification():
@@ -170,6 +203,9 @@ def test_unresolved_formalization_requests_reference_clarification():
 
     assert result.disposition is PipelineDisposition.AskClarification
     assert result.clarification_question.kind is ClarificationKind.Formalization
+    assert result.clarification_question.text == (
+        "Что нужно уточнить, чтобы завершить формализацию этого чтения?"
+    )
 
 
 def test_unknown_symbol_unresolved_requests_reference_clarification():
@@ -196,6 +232,7 @@ def test_unknown_symbol_unresolved_requests_reference_clarification():
 
     assert result.disposition is PipelineDisposition.AskClarification
     assert result.clarification_question.kind is ClarificationKind.Reference
+    assert result.clarification_question.text == "Какой объект или референс имеется в виду?"
 
 
 def test_admitted_unknown_verdict_requests_evidence():
