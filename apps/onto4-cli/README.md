@@ -164,3 +164,17 @@ shared state and reject mixed-state batches. `FixtureDecisionProvider` is
 question-keyed and intentionally does not model a state-sensitive scorer;
 `FixtureBatchDecisionProvider` covers the shared-state contract without
 selecting a real model or implementing KEV/Jev behavior.
+
+The clarification bridge uses this substrate in a bounded direction:
+
+```text
+ClarificationContext
+    -> TypedDecisionRequest
+    -> TypedDecisionProvider
+    -> DeterministicDecisionPolicy
+    -> PipelineDisposition
+```
+
+The request contains interpretation and landscape metadata only. A provider
+choice can select a workflow action or abstain, but it cannot become an Onto4
+verdict; `T/F/U/C` remain exclusively produced by the core evaluator.
