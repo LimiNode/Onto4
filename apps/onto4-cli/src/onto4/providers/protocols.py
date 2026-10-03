@@ -50,6 +50,16 @@ class DecisionProfile:
     calibration_metadata: Mapping[str, Any] = field(default_factory=dict)
     abstention_policy: AbstentionPolicy = AbstentionPolicy.Allowed
 
+    def __post_init__(self) -> None:
+        if not self.id:
+            raise ValueError("Decision profile id must not be empty.")
+        if not self.version:
+            raise ValueError("Decision profile version must not be empty.")
+        if not self.choices:
+            raise ValueError("Decision profile must define at least one choice.")
+        if len(set(self.choices)) != len(self.choices):
+            raise ValueError("Decision profile choices must be unique.")
+
     def request(
         self,
         question: str,

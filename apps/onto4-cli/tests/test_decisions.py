@@ -47,6 +47,20 @@ def test_profile_versions_request_schema_and_low_confidence_signal_is_consumable
     assert not hasattr(result, "verdict")
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    (
+        ({"id": "", "version": "1", "choices": ("A",)}, "id must not be empty"),
+        ({"id": "profile", "version": "", "choices": ("A",)}, "version must not be empty"),
+        ({"id": "profile", "version": "1", "choices": ()}, "at least one choice"),
+        ({"id": "profile", "version": "1", "choices": ("A", "A")}, "unique"),
+    ),
+)
+def test_decision_profile_schema_rejects_invalid_definition(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        DecisionProfile(**kwargs)
+
+
 def test_abstention_is_explicit_and_profile_scoped():
     decision_profile = profile()
     request = decision_profile.request("Choose a clarification")
