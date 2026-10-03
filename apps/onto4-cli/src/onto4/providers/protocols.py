@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Mapping, Protocol, Sequence
 
 from onto4.reasoning import ConceptualDepth, FormalizationCandidate, InterpretationSpace
@@ -14,19 +15,86 @@ class TypedDecisionRequest:
     question: str
     choices: tuple[str, ...]
     state: Mapping[str, Any] = field(default_factory=dict)
+    profile_version: str | None = None
 
 
 @dataclass(frozen=True)
 class TypedDecision:
-    choice: str
+    choice: str | None = None
+    abstained: bool = False
     confidence: float | None = None
     probabilities: Mapping[str, float] = field(default_factory=dict)
+    profile_id: str | None = None
+    profile_version: str | None = None
+
+
+class AbstentionPolicy(str, Enum):
+    Allowed = "allowed"
+    Forbidden = "forbidden"
+
+
+@dataclass(frozen=True)
+class DecisionProfile:
+    """Versioned schema and calibration boundary for typed decisions.
+
+    Confidence has no portable meaning outside this profile. Thresholds, if
+    introduced later, belong in ``calibration_metadata`` for this exact
+    schema/version rather than in a global provider rule.
+    """
+
+    id: str
+    version: str
+    choices: tuple[str, ...]
+    calibration_metadata: Mapping[str, Any] = field(default_factory=dict)
+    abstention_policy: AbstentionPolicy = AbstentionPolicy.Allowed
+
+    def request(
+        self,
+        question: str,
+        *,
+        state: Mapping[str, Any] | None = None,
+    ) -> TypedDecisionRequest:
+        return TypedDecisionRequest(
+            profile=self.id,
+            profile_version=self.version,
+            question=question,
+            choices=self.choices,
+            state=state or {},
+        )
+
+    def validate(self, decision: TypedDecision) -> None:
+        if decision.profile_id is not None and decision.profile_id != self.id:
+            raise ValueError(
+                f"Decision profile mismatch: expected {self.id!r}, got {decision.profile_id!r}."
+            )
+        if decision.profile_version is not None and decision.profile_version != self.version:
+            raise ValueError(
+                "Decision profile version mismatch: "
+                f"expected {self.version!r}, got {decision.profile_version!r}."
+            )
+        if decision.abstained or decision.choice is None:
+            if self.abstention_policy is AbstentionPolicy.Forbidden:
+                raise ValueError(f"Profile {self.id!r} does not allow abstention.")
+            return
+        if decision.choice not in self.choices:
+            raise ValueError(
+                f"Choice {decision.choice!r} is not valid for profile {self.id!r} v{self.version}."
+            )
 
 
 class TypedDecisionProvider(Protocol):
     """A bounded decision service; it does not define Onto4 semantics."""
 
     def decide(self, request: TypedDecisionRequest) -> TypedDecision:
+        ...
+
+
+class TypedDecisionBatchProvider(Protocol):
+    """Optional fan-out capability over one shared request state."""
+
+    def decide_many(
+        self, requests: Sequence[TypedDecisionRequest]
+    ) -> Sequence[TypedDecision]:
         ...
 
 
