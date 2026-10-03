@@ -114,3 +114,35 @@ to its presuppositions or explicitly introduced during formalization; that
 assumptions provenance is a normative contract and is not machine-validated in
 this slice. These fixtures do not implement natural-language understanding,
 LLM behavior or KEV behavior.
+
+## Clarification-aware orchestration
+
+The next deterministic layer treats `ask` as an iterative workflow rather
+than a one-shot verdict request:
+
+```text
+InterpretationRequest
+    -> InterpretationSpace
+    -> FormalizationCandidate[]
+    -> AssessmentLandscape
+    -> Complete | AskClarification | NeedEvidence | CannotProceed
+```
+
+`FixtureClarificationPolicy` emits typed, provenance-aware questions and keeps
+clarification turns as immutable successor snapshots. A clarification is not
+an Onto4 verdict: semantic ambiguity and unresolved reference lead to a
+question, missing evidence leads to `NeedEvidence`, an admitted category
+mismatch remains `C`, and an invalid request follows `CannotProceed`.
+Unknown formalization causes remain `Formalization` clarification until a
+diagnostic establishes a more specific cause; context dependence is likewise
+reported neutrally as `Context` rather than being attributed to perspective.
+Clarification targets use stable IDs, and successor turns must form a
+continuous interpretation chain.
+
+The provider roadmap keeps responsibilities separate. Interpretation and
+formalization providers may later be model-backed, while typed decision
+providers remain bounded scorers or classifiers. Deterministic policy decides
+the next workflow action; no global confidence threshold is assumed, and any
+future threshold belongs to a versioned decision profile. Batched typed
+questions remain possible over one shared state. These engineering constraints
+do not define canonical Onto4 semantics.

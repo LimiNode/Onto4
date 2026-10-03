@@ -49,7 +49,7 @@ def test_interpretation_space_preserves_readings_without_verdicts():
         id="identity-question",
         source_text="Я тот же человек, которым был в детстве?",
         conceptual_depth=ConceptualDepth.Philosophical,
-        ambiguities=(Ambiguity("тот же", "критерий идентичности не задан"),),
+        ambiguities=(Ambiguity("identity-term", "тот же", "критерий идентичности не задан"),),
         readings=(
             SemanticReading("continuity", "непрерывность", "тождество через continuity"),
             SemanticReading("substance", "субстанция", "численная тождественность сущности"),
