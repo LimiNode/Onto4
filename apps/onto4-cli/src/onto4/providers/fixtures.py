@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from onto4.reasoning import ConceptualDepth, FormalizationCandidate, InterpretationSpace
 
-from .protocols import FormalizationRequest, InterpretationRequest
+from .protocols import (
+    DecisionProfile,
+    FormalizationRequest,
+    InterpretationRequest,
+    TypedDecision,
+    TypedDecisionBatchProvider,
+    TypedDecisionProvider,
+    TypedDecisionRequest,
+)
 
 
 @dataclass(frozen=True)
@@ -49,3 +57,43 @@ class FixtureFormalizationProvider:
                     f"{request.interpretation.id!r}."
                 )
         return candidates
+
+
+@dataclass(frozen=True)
+class FixtureDecisionProvider(TypedDecisionProvider):
+    """Return bounded decisions by exact question text for one profile."""
+
+    profile: DecisionProfile
+    decisions: Mapping[str, TypedDecision]
+
+    def decide(self, request: TypedDecisionRequest) -> TypedDecision:
+        if (
+            request.profile != self.profile.id
+            or request.profile_version != self.profile.version
+            or request.choices != self.profile.choices
+        ):
+            raise ValueError(
+                "Decision request does not match fixture profile "
+                f"{self.profile.id!r} v{self.profile.version}."
+            )
+        try:
+            decision = self.decisions[request.question]
+        except KeyError as exc:
+            raise KeyError(f"No decision fixture for question {request.question!r}.") from exc
+        self.profile.validate(decision)
+        return decision
+
+
+@dataclass(frozen=True)
+class FixtureBatchDecisionProvider(FixtureDecisionProvider, TypedDecisionBatchProvider):
+    """Optional deterministic fan-out provider over a shared state."""
+
+    def decide_many(
+        self, requests: Sequence[TypedDecisionRequest]
+    ) -> tuple[TypedDecision, ...]:
+        if not requests:
+            return ()
+        shared_state = requests[0].state
+        if any(request.state != shared_state for request in requests[1:]):
+            raise ValueError("A decision batch must use one shared state.")
+        return tuple(self.decide(request) for request in requests)

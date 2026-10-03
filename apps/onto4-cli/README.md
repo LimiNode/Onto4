@@ -146,3 +146,21 @@ the next workflow action; no global confidence threshold is assumed, and any
 future threshold belongs to a versioned decision profile. Batched typed
 questions remain possible over one shared state. These engineering constraints
 do not define canonical Onto4 semantics.
+
+## Typed decision substrate
+
+`TypedDecisionProvider` is a bounded, profile-scoped signal source. A
+`DecisionProfile` owns the stable schema identity (`id` + `version`), choices,
+calibration metadata and abstention policy. Confidence is not a universal
+probability and no global acceptance threshold is applied. The deterministic
+consumer may use a valid choice, or handle explicit abstention, but it never
+produces `T/F/U/C`.
+
+Decision results carry mandatory profile id/version provenance. A valid
+decision is either a profile choice or an explicit abstention (`choice=None`);
+the two states are not inferred from one another. `TypedDecisionBatchProvider`
+is optional: providers that support it answer several typed questions over one
+shared state and reject mixed-state batches. `FixtureDecisionProvider` is
+question-keyed and intentionally does not model a state-sensitive scorer;
+`FixtureBatchDecisionProvider` covers the shared-state contract without
+selecting a real model or implementing KEV/Jev behavior.
