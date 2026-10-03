@@ -194,7 +194,7 @@ def test_mixed_dependence_uses_reading_ids_for_meaning_question():
     assert result.clarification_question.choices == ("continuity", "substance")
 
 
-def test_unresolved_formalization_requests_reference_clarification():
+def test_unresolved_formalization_requests_formalization_clarification():
     result = run(
         space(),
         [candidate("missing", "missing", "fixture", None)],
