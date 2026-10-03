@@ -19,6 +19,8 @@ class ClarificationKind(str, Enum):
     Presupposition = "Presupposition"
     Evidence = "Evidence"
     Perspective = "Perspective"
+    Context = "Context"
+    Formalization = "Formalization"
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,12 @@ class ClarificationState:
         answer: str,
         successor_interpretation_id: str,
     ) -> "ClarificationState":
+        if self.turns and previous_interpretation_id != self.turns[-1].successor_interpretation_id:
+            raise ValueError(
+                "Clarification history is discontinuous: expected previous "
+                f"interpretation {self.turns[-1].successor_interpretation_id!r}, "
+                f"got {previous_interpretation_id!r}."
+            )
         return ClarificationState(
             turns=(
                 *self.turns,
@@ -89,10 +97,10 @@ class FixtureClarificationPolicy:
         if interpretation.ambiguities:
             ambiguity = interpretation.ambiguities[0]
             return ClarificationQuestion(
-                id=f"meaning:{ambiguity.term}",
+                id=f"meaning:{ambiguity.id}",
                 kind=ClarificationKind.Meaning,
                 text=f"Что именно означает «{ambiguity.term}» в этом вопросе?",
-                target_ids=(ambiguity.term,),
+                target_ids=(ambiguity.id,),
             )
 
         landscape = context.landscape
@@ -102,8 +110,14 @@ class FixtureClarificationPolicy:
                 for item in context.assessments
                 if item.candidate.id in landscape.unresolved_candidate_ids
             )
-            kind = ClarificationKind.Reference
+            kind = ClarificationKind.Formalization
             if any(
+                diagnostic.code == "unknown_symbol"
+                for item in unresolved
+                for diagnostic in item.result.diagnostics
+            ):
+                kind = ClarificationKind.Reference
+            elif any(
                 diagnostic.code == "unknown_predicate"
                 for item in unresolved
                 for diagnostic in item.result.diagnostics
@@ -120,8 +134,8 @@ class FixtureClarificationPolicy:
             contexts = tuple(dict.fromkeys(item.context_id for item in context.assessments))
             return ClarificationQuestion(
                 id="context:disambiguate",
-                kind=ClarificationKind.Perspective,
-                text="Какой контекст должен определять оценку этого утверждения?",
+                kind=ClarificationKind.Context,
+                text="Какой из представленных контекстов следует использовать для оценки?",
                 target_ids=contexts,
                 choices=contexts,
             )
@@ -141,17 +155,16 @@ class FixtureClarificationPolicy:
         if landscape.status is CrossCandidateStatus.MixedDependence:
             targets = tuple(
                 dict.fromkeys(
-                    [
-                        *(f"formalization:{item.candidate.formalization_id}" for item in context.assessments),
-                        *(f"context:{item.context_id}" for item in context.assessments),
-                    ]
+                    f"formalization:{item.candidate.formalization_id}"
+                    for item in context.assessments
                 )
             )
             return ClarificationQuestion(
                 id="mixed:disambiguate",
                 kind=ClarificationKind.Meaning,
-                text="Нужно отдельно уточнить смысловое чтение и контекст оценки.",
+                text="Какое смысловое чтение утверждения вы имеете в виду?",
                 target_ids=targets,
+                choices=targets,
             )
 
         return None

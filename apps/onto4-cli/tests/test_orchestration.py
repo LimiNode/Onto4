@@ -4,6 +4,7 @@ from onto4.core import (
     PredicateCall,
     PredicateExpr,
     PredicateSignature,
+    Term,
     Verdict,
 )
 from onto4.core.evidence import AtomicVerdictStore
@@ -93,14 +94,14 @@ def test_unambiguous_assessed_candidate_is_complete():
 
 def test_material_ambiguity_requests_meaning_clarification():
     result = run(
-        space(ambiguities=(Ambiguity("тот же", "критерий тождества"),)),
+        space(ambiguities=(Ambiguity("identity-term", "тот же", "критерий тождества"),)),
         [candidate("a", "formal-a", "fixture", atom("a"))],
         {"fixture": context(verdicts={"a()": Verdict.T})},
     )
 
     assert result.disposition is PipelineDisposition.AskClarification
     assert result.clarification_question.kind is ClarificationKind.Meaning
-    assert result.clarification_question.target_ids == ("тот же",)
+    assert result.clarification_question.target_ids == ("identity-term",)
 
 
 def test_context_dependence_requests_perspective_clarification():
@@ -117,7 +118,7 @@ def test_context_dependence_requests_perspective_clarification():
     )
 
     assert result.disposition is PipelineDisposition.AskClarification
-    assert result.clarification_question.kind is ClarificationKind.Perspective
+    assert result.clarification_question.kind is ClarificationKind.Context
     assert result.clarification_question.choices == ("present", "eternal")
 
 
@@ -154,10 +155,10 @@ def test_mixed_dependence_preserves_both_axes_in_question_targets():
     )
 
     assert result.disposition is PipelineDisposition.AskClarification
-    assert "formalization:present-formal" in result.clarification_question.target_ids
-    assert "context:present" in result.clarification_question.target_ids
-    assert "formalization:eternal-formal" in result.clarification_question.target_ids
-    assert "context:eternal" in result.clarification_question.target_ids
+    assert result.clarification_question.target_ids == (
+        "formalization:present-formal",
+        "formalization:eternal-formal",
+    )
 
 
 def test_unresolved_formalization_requests_reference_clarification():
@@ -165,6 +166,32 @@ def test_unresolved_formalization_requests_reference_clarification():
         space(),
         [candidate("missing", "missing", "fixture", None)],
         {"fixture": context()},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+    assert result.clarification_question.kind is ClarificationKind.Formalization
+
+
+def test_unknown_symbol_unresolved_requests_reference_clarification():
+    reference_context = AssessmentContext(
+        ontology=OntologyProfile(
+            name="fixture",
+            types={},
+            predicates={"knows": PredicateSignature(("Person",))},
+        ),
+        verdicts=AtomicVerdictStore(),
+    )
+    result = run(
+        space(),
+        [
+            candidate(
+                "reference",
+                "reference-formal",
+                "fixture",
+                PredicateExpr(PredicateCall("knows", (Term("missing"),))),
+            )
+        ],
+        {"fixture": reference_context},
     )
 
     assert result.disposition is PipelineDisposition.AskClarification
@@ -241,3 +268,24 @@ def test_fixture_transition_preserves_clarification_provenance():
 
     assert next_space is successor
     assert state.turns[0] == turn
+
+
+def test_clarification_state_rejects_discontinuous_history():
+    state = ClarificationState().record(
+        previous_interpretation_id="initial",
+        question_id="q1",
+        answer="answer",
+        successor_interpretation_id="successor",
+    )
+
+    try:
+        state.record(
+            previous_interpretation_id="unrelated",
+            question_id="q2",
+            answer="answer",
+            successor_interpretation_id="next",
+        )
+    except ValueError as exc:
+        assert "discontinuous" in str(exc)
+    else:
+        raise AssertionError("discontinuous clarification history must fail closed")

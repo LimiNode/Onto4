@@ -15,6 +15,7 @@ class ConceptualDepth(str, Enum):
 
 @dataclass(frozen=True)
 class Ambiguity:
+    id: str
     term: str
     description: str
 
