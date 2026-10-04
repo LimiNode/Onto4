@@ -1,6 +1,14 @@
 import pytest
 
-from onto4.core import PredicateCall, PredicateExpr
+from onto4.core import (
+    AssessmentResult,
+    AssessmentState,
+    PredicateCall,
+    PredicateExpr,
+    SemanticStatus,
+    Verdict,
+)
+from onto4.core.values import UnknownReason
 from onto4.pipeline import build_clarification_request, decide_clarification
 from onto4.providers import (
     AbstentionPolicy,
@@ -24,12 +32,22 @@ def profile():
     return DecisionProfile(
         id="clarification-disposition",
         version="1",
-        choices=tuple(disposition.value for disposition in PipelineDisposition),
+        choices=(
+            "NeedMeaningClarification",
+            "NeedOntologyClarification",
+            "NeedReferenceClarification",
+            "NeedContextClarification",
+            "NeedPresuppositionClarification",
+            "SelectEvidencePath",
+            "PresentResult",
+            "ReportFailure",
+            *(disposition.value for disposition in PipelineDisposition),
+        ),
         abstention_policy=AbstentionPolicy.Allowed,
     )
 
 
-def context():
+def context(status=CrossCandidateStatus.FormalizationConflict, result=None):
     candidate = FormalizationCandidate(
         id="candidate",
         label="candidate",
@@ -42,10 +60,20 @@ def context():
         source_text="Question",
         conceptual_depth=ConceptualDepth.Philosophical,
     )
-    assessment = CandidateAssessment(candidate, "context", object())
+    assessment = CandidateAssessment(
+        candidate,
+        "context",
+        result
+        or AssessmentResult(
+            state=AssessmentState.Assessed,
+            semantic_status=SemanticStatus.Admitted,
+            verdict=Verdict.T,
+            evidence=None,
+        ),
+    )
     landscape = AssessmentLandscape(
         assessments=(assessment,),
-        status=CrossCandidateStatus.FormalizationConflict,
+        status=status,
     )
     return ClarificationContext(
         interpretation=interpretation,
@@ -70,10 +98,16 @@ def test_bridge_builds_profile_scoped_meta_request():
 
     assert request.profile == decision_profile.id
     assert request.profile_version == decision_profile.version
-    assert request.choices == decision_profile.choices
+    assert set(request.choices).issubset(decision_profile.choices)
     assert request.state["interpretation_id"] == "interpretation"
     assert request.state["landscape_status"] == "FormalizationConflict"
-    assert not any(choice in {"T", "F", "U", "C"} for choice in request.choices)
+    assert request.choices == (
+        "NeedMeaningClarification",
+        "NeedOntologyClarification",
+        "NeedReferenceClarification",
+        "NeedContextClarification",
+        "NeedPresuppositionClarification",
+    )
 
 
 def test_bridge_maps_bounded_choice_to_workflow_disposition():
@@ -81,14 +115,14 @@ def test_bridge_maps_bounded_choice_to_workflow_disposition():
     request = build_clarification_request(context(), decision_profile)
     provider = FixtureDecisionProvider(
         decision_profile,
-        {request.question: decision(decision_profile, "AskClarification")},
+        {request.question: decision(decision_profile, "NeedMeaningClarification")},
     )
 
     result = decide_clarification(
         context(), profile=decision_profile, provider=provider
     )
 
-    assert result.selected_choice == "AskClarification"
+    assert result.selected_choice == "NeedMeaningClarification"
     assert result.disposition is PipelineDisposition.AskClarification
     assert not hasattr(result.decision, "verdict")
 
@@ -110,15 +144,54 @@ def test_bridge_preserves_explicit_provider_abstention():
     assert result.disposition is None
 
 
-def test_provider_cannot_submit_onto4_verdict_as_bridge_choice():
+def test_formalization_conflict_rejects_provider_complete_override():
     decision_profile = profile()
     request = build_clarification_request(context(), decision_profile)
     provider = FixtureDecisionProvider(
         decision_profile,
-        {request.question: decision(decision_profile, "T")},
+        {request.question: decision(decision_profile, "Complete")},
     )
 
-    with pytest.raises(ValueError, match="not valid"):
+    with pytest.raises(ValueError, match="not admissible"):
         decide_clarification(
             context(), profile=decision_profile, provider=provider
+        )
+
+
+def test_invalid_request_rejects_provider_clarification_override():
+    decision_profile = profile()
+    invalid_context = context(status=CrossCandidateStatus.InvalidRequest)
+    request = build_clarification_request(invalid_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {request.question: decision(decision_profile, "AskClarification")},
+    )
+
+    with pytest.raises(ValueError, match="not admissible"):
+        decide_clarification(
+            invalid_context, profile=decision_profile, provider=provider
+        )
+
+
+def test_evidence_gap_rejects_provider_complete_override():
+    decision_profile = profile()
+    evidence_context = context(
+        status=CrossCandidateStatus.StableAcrossCandidates,
+        result=AssessmentResult(
+            state=AssessmentState.Assessed,
+            semantic_status=SemanticStatus.Admitted,
+            verdict=Verdict.U,
+            evidence=None,
+            unknown_reasons=(UnknownReason.InsufficientEvidence,),
+        ),
+    )
+    request = build_clarification_request(evidence_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {request.question: decision(decision_profile, "Complete")},
+    )
+
+    with pytest.raises(ValueError, match="not admissible"):
+        decide_clarification(
+            evidence_context, profile=decision_profile, provider=provider
         )

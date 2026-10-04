@@ -70,7 +70,7 @@ class FixtureDecisionProvider(TypedDecisionProvider):
         if (
             request.profile != self.profile.id
             or request.profile_version != self.profile.version
-            or request.choices != self.profile.choices
+            or not set(request.choices).issubset(self.profile.choices)
         ):
             raise ValueError(
                 "Decision request does not match fixture profile "

@@ -59,7 +59,7 @@ def ask(
         assessments=assessments,
         landscape=landscape,
     )
-    disposition, reason = _disposition(context)
+    disposition, reason = determine_disposition(context)
     question = (
         clarification_policy.choose(context)
         if disposition is PipelineDisposition.AskClarification
@@ -76,7 +76,7 @@ def ask(
     )
 
 
-def _disposition(context: ClarificationContext) -> tuple[PipelineDisposition, str]:
+def determine_disposition(context: ClarificationContext) -> tuple[PipelineDisposition, str]:
     landscape = context.landscape
     if landscape.status is CrossCandidateStatus.InvalidRequest:
         return PipelineDisposition.CannotProceed, "invalid_request"

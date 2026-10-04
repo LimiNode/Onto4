@@ -175,6 +175,8 @@ ClarificationContext
     -> PipelineDisposition
 ```
 
-The request contains interpretation and landscape metadata only. A provider
-choice can select a workflow action or abstain, but it cannot become an Onto4
-verdict; `T/F/U/C` remain exclusively produced by the core evaluator.
+The request contains interpretation and landscape metadata only. The
+deterministic layer derives the admissible workflow branch first; the provider
+can refine that branch (for example, choose a clarification kind) or abstain,
+but cannot replace it with another disposition or become an Onto4 verdict.
+`T/F/U/C` remain exclusively produced by the core evaluator.
