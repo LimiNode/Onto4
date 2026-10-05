@@ -12,7 +12,11 @@ from onto4.providers import (
     TypedDecisionProvider,
     TypedDecisionRequest,
 )
-from onto4.reasoning import ClarificationContext, PipelineDisposition
+from onto4.reasoning import (
+    ClarificationContext,
+    CrossCandidateStatus,
+    PipelineDisposition,
+)
 
 from .ask import determine_disposition
 
@@ -22,6 +26,7 @@ CLARIFICATION_REFINEMENT_CHOICES = (
     "NeedReferenceClarification",
     "NeedContextClarification",
     "NeedPresuppositionClarification",
+    "NeedFormalizationClarification",
 )
 EVIDENCE_REFINEMENT_CHOICES = ("SelectEvidencePath",)
 COMPLETE_REFINEMENT_CHOICES = ("PresentResult",)
@@ -37,9 +42,64 @@ class ClarificationDecisionResult:
     disposition: PipelineDisposition | None
 
 
-def _refinement_choices(disposition: PipelineDisposition) -> tuple[str, ...]:
+def _clarification_refinement_choices(
+    context: ClarificationContext,
+) -> tuple[str, ...]:
+    interpretation = context.interpretation
+    landscape = context.landscape
+    if interpretation.ambiguities:
+        return ("NeedMeaningClarification",)
+    if landscape.status is CrossCandidateStatus.FormalizationConflict:
+        reading_ids = tuple(
+            item.candidate.reading_id
+            for item in context.assessments
+            if item.candidate.reading_id is not None
+        )
+        if len(reading_ids) == len(context.assessments):
+            return ("NeedMeaningClarification",)
+        return ("NeedFormalizationClarification",)
+    if landscape.status is CrossCandidateStatus.ContextDependent:
+        return ("NeedContextClarification",)
+    if landscape.status is CrossCandidateStatus.MixedDependence:
+        reading_ids = tuple(
+            item.candidate.reading_id
+            for item in context.assessments
+            if item.candidate.reading_id is not None
+        )
+        if len(reading_ids) == len(context.assessments):
+            return ("NeedMeaningClarification",)
+        return ("NeedFormalizationClarification",)
+    if landscape.status is CrossCandidateStatus.FormalizationUnresolved:
+        diagnostic_codes = {
+            diagnostic.code
+            for item in context.assessments
+            if item.candidate.id in landscape.unresolved_candidate_ids
+            for diagnostic in item.result.diagnostics
+        }
+        diagnostic_refinements = (
+            ("unknown_symbol", "NeedReferenceClarification"),
+            ("unknown_predicate", "NeedMeaningClarification"),
+            ("ontology_unresolved", "NeedOntologyClarification"),
+            ("presupposition_unresolved", "NeedPresuppositionClarification"),
+        )
+        refinements = tuple(
+            refinement
+            for code, refinement in diagnostic_refinements
+            if code in diagnostic_codes
+        )
+        return refinements or ("NeedFormalizationClarification",)
+    raise ValueError(
+        "AskClarification has no provenance-bound refinement source for "
+        f"landscape {landscape.status.value!r}."
+    )
+
+
+def _refinement_choices(
+    context: ClarificationContext,
+    disposition: PipelineDisposition,
+) -> tuple[str, ...]:
     if disposition is PipelineDisposition.AskClarification:
-        return CLARIFICATION_REFINEMENT_CHOICES
+        return _clarification_refinement_choices(context)
     if disposition is PipelineDisposition.NeedEvidence:
         return EVIDENCE_REFINEMENT_CHOICES
     if disposition is PipelineDisposition.Complete:
@@ -77,7 +137,7 @@ def build_clarification_request(
             f"{context.landscape.status.value!r}."
         ),
         state=state,
-        choices=_refinement_choices(admissible_disposition),
+        choices=_refinement_choices(context, admissible_disposition),
     )
 
 
