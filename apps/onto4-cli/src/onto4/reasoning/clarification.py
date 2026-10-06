@@ -84,6 +84,19 @@ class ClarificationPolicy(Protocol):
         ...
 
 
+class KindAwareClarificationPolicy(ClarificationPolicy, Protocol):
+    """Resolve a requested kind without inventing question provenance."""
+
+    def choose_for_kind(
+        self,
+        context: ClarificationContext,
+        kind: ClarificationKind,
+    ) -> ClarificationQuestion | None:
+        """Return a justified question of the requested kind, if one exists."""
+
+        ...
+
+
 @dataclass(frozen=True)
 class FixtureClarificationPolicy:
     """Choose a provenance-aware question using deterministic rules."""
@@ -92,15 +105,21 @@ class FixtureClarificationPolicy:
         default_factory=dict
     )
 
-    def choose(self, context: ClarificationContext) -> ClarificationQuestion | None:
+    def questions(
+        self, context: ClarificationContext
+    ) -> tuple[ClarificationQuestion, ...]:
+        """List deterministic questions justified by the supplied provenance."""
+
         interpretation = context.interpretation
         if interpretation.ambiguities:
             ambiguity = interpretation.ambiguities[0]
-            return ClarificationQuestion(
-                id=f"meaning:{ambiguity.id}",
-                kind=ClarificationKind.Meaning,
-                text=f"Что именно означает «{ambiguity.term}» в этом вопросе?",
-                target_ids=(ambiguity.id,),
+            return (
+                ClarificationQuestion(
+                    id=f"meaning:{ambiguity.id}",
+                    kind=ClarificationKind.Meaning,
+                    text=f"Что именно означает «{ambiguity.term}» в этом вопросе?",
+                    target_ids=(ambiguity.id,),
+                ),
             )
 
         landscape = context.landscape
@@ -110,49 +129,100 @@ class FixtureClarificationPolicy:
                 for item in context.assessments
                 if item.candidate.id in landscape.unresolved_candidate_ids
             )
-            kind = ClarificationKind.Formalization
-            text = "Что нужно уточнить, чтобы завершить формализацию этого чтения?"
-            if any(
-                diagnostic.code == "unknown_symbol"
+            diagnostic_codes = {
+                diagnostic.code
                 for item in unresolved
                 for diagnostic in item.result.diagnostics
-            ):
-                kind = ClarificationKind.Reference
-                text = "Какой объект или референс имеется в виду?"
-            elif any(
-                diagnostic.code == "unknown_predicate"
-                for item in unresolved
-                for diagnostic in item.result.diagnostics
-            ):
-                kind = ClarificationKind.Meaning
-                text = "Как следует понимать этот предикат или термин?"
-            return ClarificationQuestion(
-                id=f"unresolved:{','.join(landscape.unresolved_candidate_ids)}",
-                kind=kind,
-                text=text,
-                target_ids=landscape.unresolved_candidate_ids,
+            }
+            question_specs = (
+                (
+                    "unknown_symbol",
+                    ClarificationKind.Reference,
+                    "Какой объект или референс имеется в виду?",
+                ),
+                (
+                    "unknown_predicate",
+                    ClarificationKind.Meaning,
+                    "Как следует понимать этот предикат или термин?",
+                ),
+                (
+                    "ontology_unresolved",
+                    ClarificationKind.Ontology,
+                    "Какие онтологические допущения следует использовать?",
+                ),
+                (
+                    "presupposition_unresolved",
+                    ClarificationKind.Presupposition,
+                    "Какую предпосылку следует принять или отвергнуть?",
+                ),
+            )
+            questions = tuple(
+                ClarificationQuestion(
+                    id=(
+                        f"unresolved:{kind.value.lower()}:"
+                        f"{','.join(landscape.unresolved_candidate_ids)}"
+                    ),
+                    kind=kind,
+                    text=text,
+                    target_ids=landscape.unresolved_candidate_ids,
+                )
+                for code, kind, text in question_specs
+                if code in diagnostic_codes
+            )
+            if questions:
+                return questions
+            return (
+                ClarificationQuestion(
+                    id=f"unresolved:{','.join(landscape.unresolved_candidate_ids)}",
+                    kind=ClarificationKind.Formalization,
+                    text="Что нужно уточнить, чтобы завершить формализацию этого чтения?",
+                    target_ids=landscape.unresolved_candidate_ids,
+                ),
             )
 
         if landscape.status is CrossCandidateStatus.ContextDependent:
             contexts = tuple(dict.fromkeys(item.context_id for item in context.assessments))
-            return ClarificationQuestion(
-                id="context:disambiguate",
-                kind=ClarificationKind.Context,
-                text="Какой из представленных контекстов следует использовать для оценки?",
-                target_ids=contexts,
-                choices=contexts,
+            return (
+                ClarificationQuestion(
+                    id="context:disambiguate",
+                    kind=ClarificationKind.Context,
+                    text="Какой из представленных контекстов следует использовать для оценки?",
+                    target_ids=contexts,
+                    choices=contexts,
+                ),
             )
 
         if landscape.status is CrossCandidateStatus.FormalizationConflict:
-            targets = tuple(
-                item.candidate.reading_id or item.candidate.id for item in context.assessments
+            reading_targets = tuple(
+                dict.fromkeys(
+                    item.candidate.reading_id
+                    for item in context.assessments
+                    if item.candidate.reading_id is not None
+                )
             )
-            return ClarificationQuestion(
-                id="meaning:formalization",
-                kind=ClarificationKind.Meaning,
-                text="Какое смысловое чтение утверждения вы имеете в виду?",
-                target_ids=targets,
-                choices=targets,
+            has_reading_provenance = bool(context.assessments) and all(
+                item.candidate.reading_id is not None
+                for item in context.assessments
+            )
+            if has_reading_provenance:
+                return (
+                    ClarificationQuestion(
+                        id="meaning:formalization",
+                        kind=ClarificationKind.Meaning,
+                        text="Какое смысловое чтение утверждения вы имеете в виду?",
+                        target_ids=reading_targets,
+                        choices=reading_targets,
+                    ),
+                )
+            targets = tuple(item.candidate.id for item in context.assessments)
+            return (
+                ClarificationQuestion(
+                    id="formalization:disambiguate",
+                    kind=ClarificationKind.Formalization,
+                    text="Какой вариант формализации следует рассматривать?",
+                    target_ids=targets,
+                    choices=targets,
+                ),
             )
 
         if landscape.status is CrossCandidateStatus.MixedDependence:
@@ -163,24 +233,46 @@ class FixtureClarificationPolicy:
                     if item.candidate.reading_id is not None
                 )
             )
-            if len(reading_targets) == len(context.assessments):
-                return ClarificationQuestion(
-                    id="mixed:meaning",
-                    kind=ClarificationKind.Meaning,
-                    text="Какое смысловое чтение утверждения вы имеете в виду?",
-                    target_ids=reading_targets,
-                    choices=reading_targets,
+            has_reading_provenance = bool(context.assessments) and all(
+                item.candidate.reading_id is not None
+                for item in context.assessments
+            )
+            if has_reading_provenance:
+                return (
+                    ClarificationQuestion(
+                        id="mixed:meaning",
+                        kind=ClarificationKind.Meaning,
+                        text="Какое смысловое чтение утверждения вы имеете в виду?",
+                        target_ids=reading_targets,
+                        choices=reading_targets,
+                    ),
                 )
             targets = tuple(dict.fromkeys(item.candidate.id for item in context.assessments))
-            return ClarificationQuestion(
-                id="mixed:formalization",
-                kind=ClarificationKind.Formalization,
-                text="Какой вариант формализации следует рассматривать?",
-                target_ids=targets,
-                choices=targets,
+            return (
+                ClarificationQuestion(
+                    id="mixed:formalization",
+                    kind=ClarificationKind.Formalization,
+                    text="Какой вариант формализации следует рассматривать?",
+                    target_ids=targets,
+                    choices=targets,
+                ),
             )
 
-        return None
+        return ()
+
+    def choose(self, context: ClarificationContext) -> ClarificationQuestion | None:
+        questions = self.questions(context)
+        return questions[0] if questions else None
+
+    def choose_for_kind(
+        self,
+        context: ClarificationContext,
+        kind: ClarificationKind,
+    ) -> ClarificationQuestion | None:
+        return next(
+            (question for question in self.questions(context) if question.kind is kind),
+            None,
+        )
 
     def successor(
         self,

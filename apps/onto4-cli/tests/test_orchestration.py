@@ -141,6 +141,21 @@ def test_formalization_conflict_requests_reading_clarification():
     assert result.clarification_question.target_ids == ("continuity", "substance")
 
 
+def test_formalization_conflict_without_reading_provenance_stays_formalization():
+    result = run(
+        space(),
+        [
+            candidate("first", "formal-a", "fixture", atom("a")),
+            candidate("second", "formal-b", "fixture", atom("b")),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T, "b()": Verdict.F})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+    assert result.clarification_question.kind is ClarificationKind.Formalization
+    assert result.clarification_question.choices == ("first", "second")
+
+
 def test_mixed_dependence_preserves_both_axes_in_question_targets():
     result = run(
         space(),

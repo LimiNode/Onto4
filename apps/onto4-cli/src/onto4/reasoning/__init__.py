@@ -10,6 +10,7 @@ from .clarification import (
     ClarificationState,
     ClarificationTurn,
     FixtureClarificationPolicy,
+    KindAwareClarificationPolicy,
 )
 from .cross_candidate import AssessmentLandscape, CrossCandidateStatus, aggregate_assessments
 from .disposition import PipelineDisposition
@@ -41,6 +42,7 @@ __all__ = [
     "Presupposition",
     "SemanticReading",
     "FixtureClarificationPolicy",
+    "KindAwareClarificationPolicy",
     "aggregate_assessments",
     "assess_candidate",
     "assess_candidates",

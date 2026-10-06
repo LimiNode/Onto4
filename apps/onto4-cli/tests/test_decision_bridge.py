@@ -8,9 +8,13 @@ from onto4.core import (
     SemanticStatus,
     Verdict,
 )
-from onto4.core.values import UnknownReason
 from onto4.core.admission import Diagnostic
-from onto4.pipeline import build_clarification_request, decide_clarification
+from onto4.core.values import UnknownReason
+from onto4.pipeline import (
+    build_clarification_request,
+    decide_clarification,
+    decide_clarification_question,
+)
 from onto4.providers import (
     AbstentionPolicy,
     DecisionProfile,
@@ -21,10 +25,13 @@ from onto4.reasoning import (
     AssessmentLandscape,
     Ambiguity,
     CandidateAssessment,
+    ClarificationKind,
+    ClarificationQuestion,
     ClarificationContext,
     ConceptualDepth,
     CrossCandidateStatus,
     FormalizationCandidate,
+    FixtureClarificationPolicy,
     InterpretationSpace,
     PipelineDisposition,
 )
@@ -293,6 +300,128 @@ def test_explicit_ambiguity_exposes_meaning_refinement():
     )
     request = build_clarification_request(ambiguous, decision_profile)
     assert request.choices == ("NeedMeaningClarification",)
+
+
+def test_provider_selects_question_kind_within_provenance_bound_options():
+    decision_profile = profile()
+    unresolved = context(
+        status=CrossCandidateStatus.FormalizationUnresolved,
+        result=AssessmentResult(
+            state=AssessmentState.FormalizationUnresolved,
+            semantic_status=None,
+            verdict=None,
+            evidence=None,
+            diagnostics=(
+                Diagnostic("unknown_symbol", "missing symbol"),
+                Diagnostic("unknown_predicate", "missing predicate"),
+            ),
+        ),
+        unresolved_candidate_ids=("candidate",),
+    )
+    request = build_clarification_request(unresolved, decision_profile)
+    assert request.choices == (
+        "NeedReferenceClarification",
+        "NeedMeaningClarification",
+    )
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {request.question: decision(decision_profile, "NeedMeaningClarification")},
+    )
+
+    result = decide_clarification_question(
+        unresolved,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+
+    assert result.question is not None
+    assert result.question.kind is ClarificationKind.Meaning
+    assert result.question.target_ids == ("candidate",)
+    assert result.decision_result.disposition is PipelineDisposition.AskClarification
+
+
+def test_question_bridge_preserves_abstention_without_fallback_question():
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {request.question: decision(decision_profile, abstained=True)},
+    )
+
+    result = decide_clarification_question(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+
+    assert result.question is None
+    assert result.decision_result.selected_choice is None
+    assert result.decision_result.disposition is None
+
+
+def test_question_bridge_fails_closed_when_policy_cannot_realize_kind():
+    class EmptyQuestionPolicy:
+        def choose(self, context):
+            return None
+
+        def choose_for_kind(self, context, kind):
+            return None
+
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match="cannot produce"):
+        decide_clarification_question(
+            clarification_context,
+            profile=decision_profile,
+            provider=provider,
+            clarification_policy=EmptyQuestionPolicy(),
+        )
+
+
+def test_question_bridge_rejects_policy_kind_mismatch():
+    class WrongKindPolicy:
+        def choose(self, context):
+            return None
+
+        def choose_for_kind(self, context, kind):
+            return ClarificationQuestion(
+                id="wrong-kind",
+                kind=ClarificationKind.Formalization,
+                text="wrong kind",
+                target_ids=("candidate",),
+            )
+
+    decision_profile = profile()
+    ambiguous = context(
+        status=CrossCandidateStatus.StableAcrossCandidates,
+        ambiguities=(Ambiguity("same", "тот же", "identity ambiguity"),),
+    )
+    request = build_clarification_request(ambiguous, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {request.question: decision(decision_profile, "NeedMeaningClarification")},
+    )
+
+    with pytest.raises(ValueError, match="cannot produce"):
+        decide_clarification_question(
+            ambiguous,
+            profile=decision_profile,
+            provider=provider,
+            clarification_policy=WrongKindPolicy(),
+        )
 
 
 def test_invalid_request_rejects_provider_clarification_override():
