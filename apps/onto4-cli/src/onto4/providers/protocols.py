@@ -65,12 +65,18 @@ class DecisionProfile:
         question: str,
         *,
         state: Mapping[str, Any] | None = None,
+        choices: tuple[str, ...] | None = None,
     ) -> TypedDecisionRequest:
+        request_choices = self.choices if choices is None else choices
+        if not request_choices or not set(request_choices).issubset(self.choices):
+            raise ValueError(
+                "Request choices must be a non-empty subset of the decision profile choices."
+            )
         return TypedDecisionRequest(
             profile=self.id,
             profile_version=self.version,
             question=question,
-            choices=self.choices,
+            choices=request_choices,
             state=state or {},
         )
 

@@ -110,7 +110,7 @@ def test_profile_version_or_choice_schema_mismatch_fails_closed():
                 profile=request.profile,
                 profile_version=request.profile_version,
                 question=request.question,
-                choices=("NeedClarification",),
+                choices=("NotInProfile",),
             )
         )
 
