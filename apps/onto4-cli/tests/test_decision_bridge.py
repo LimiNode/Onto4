@@ -34,6 +34,7 @@ from onto4.reasoning import (
     FixtureClarificationPolicy,
     InterpretationSpace,
     PipelineDisposition,
+    SemanticReading,
 )
 
 
@@ -100,6 +101,55 @@ def context(
         candidates=(candidate,),
         assessments=(assessment,),
         landscape=landscape,
+    )
+
+
+def comparison_context(status, candidates):
+    formalization_candidates = tuple(
+        FormalizationCandidate(
+            id=identifier,
+            label=identifier,
+            formalization_id=formalization_id,
+            context_id=context_id,
+            formalization=PredicateExpr(PredicateCall(identifier, ())),
+            reading_id=reading_id,
+        )
+        for identifier, formalization_id, context_id, reading_id, _ in candidates
+    )
+    assessments = tuple(
+        CandidateAssessment(
+            candidate,
+            candidate.context_id,
+            AssessmentResult(
+                state=AssessmentState.Assessed,
+                semantic_status=SemanticStatus.Admitted,
+                verdict=spec[-1],
+                evidence=None,
+            ),
+        )
+        for candidate, spec in zip(formalization_candidates, candidates)
+    )
+    reading_ids = tuple(
+        dict.fromkeys(
+            candidate.reading_id
+            for candidate in formalization_candidates
+            if candidate.reading_id is not None
+        )
+    )
+    interpretation = InterpretationSpace(
+        id="comparison",
+        source_text="Question",
+        conceptual_depth=ConceptualDepth.Philosophical,
+        readings=tuple(
+            SemanticReading(reading_id, reading_id, reading_id)
+            for reading_id in reading_ids
+        ),
+    )
+    return ClarificationContext(
+        interpretation=interpretation,
+        candidates=formalization_candidates,
+        assessments=assessments,
+        landscape=AssessmentLandscape(assessments=assessments, status=status),
     )
 
 
@@ -190,12 +240,96 @@ def test_formalization_conflict_rejects_unjustified_reference_refinement():
         decide_clarification(context(), profile=decision_profile, provider=provider)
 
 
-def test_formalization_conflict_with_reading_provenance_exposes_meaning_only():
+def test_formalization_conflict_with_discriminating_readings_exposes_meaning_only():
     decision_profile = profile()
-    reading_context = context(reading_id="reading:one")
+    reading_context = comparison_context(
+        CrossCandidateStatus.FormalizationConflict,
+        (
+            ("first", "formal-a", "context", "reading-a", Verdict.T),
+            ("second", "formal-b", "context", "reading-b", Verdict.F),
+        ),
+    )
     request = build_clarification_request(reading_context, decision_profile)
 
     assert request.choices == ("NeedMeaningClarification",)
+
+
+@pytest.mark.parametrize(
+    "status",
+    (
+        CrossCandidateStatus.FormalizationConflict,
+        CrossCandidateStatus.MixedDependence,
+    ),
+)
+def test_shared_reading_does_not_misattribute_formalization_conflict_to_meaning(
+    status,
+):
+    decision_profile = profile()
+    shared_reading = comparison_context(
+        status,
+        (
+            ("first", "formal-a", "context-a", "continuity", Verdict.T),
+            ("second", "formal-b", "context-b", "continuity", Verdict.F),
+        ),
+    )
+
+    request = build_clarification_request(shared_reading, decision_profile)
+    question = FixtureClarificationPolicy().choose(shared_reading)
+
+    assert request.choices == ("NeedFormalizationClarification",)
+    assert question.kind is ClarificationKind.Formalization
+    assert question.choices == ("first", "second")
+
+
+@pytest.mark.parametrize(
+    "status",
+    (
+        CrossCandidateStatus.FormalizationConflict,
+        CrossCandidateStatus.MixedDependence,
+    ),
+)
+def test_one_to_one_readings_discriminate_competing_formalizations(status):
+    decision_profile = profile()
+    discriminated = comparison_context(
+        status,
+        (
+            ("first", "formal-a", "context-a", "continuity", Verdict.T),
+            ("second", "formal-b", "context-b", "substance", Verdict.F),
+        ),
+    )
+
+    request = build_clarification_request(discriminated, decision_profile)
+    question = FixtureClarificationPolicy().choose(discriminated)
+
+    assert request.choices == ("NeedMeaningClarification",)
+    assert question.kind is ClarificationKind.Meaning
+    assert question.choices == ("continuity", "substance")
+
+
+@pytest.mark.parametrize(
+    "status",
+    (
+        CrossCandidateStatus.FormalizationConflict,
+        CrossCandidateStatus.MixedDependence,
+    ),
+)
+def test_partially_collapsed_readings_stay_formalization_clarification(status):
+    decision_profile = profile()
+    collapsed = comparison_context(
+        status,
+        (
+            ("first", "formal-a", "context-a", "reading-1", Verdict.T),
+            ("second", "formal-b", "context-b", "reading-1", Verdict.F),
+            ("third", "formal-c", "context-c", "reading-2", Verdict.T),
+        ),
+    )
+
+    request = build_clarification_request(collapsed, decision_profile)
+    question = FixtureClarificationPolicy().choose(collapsed)
+
+    assert request.choices == ("NeedFormalizationClarification",)
+    assert question.kind is ClarificationKind.Formalization
+    assert len(question.choices) == 3
 
 
 def test_context_dependence_exposes_context_and_rejects_meaning():

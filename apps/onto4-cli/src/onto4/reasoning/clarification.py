@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Mapping, Protocol
+from typing import Iterable, Mapping, Protocol
 
 from .assessment import CandidateAssessment
 from .candidates import FormalizationCandidate
@@ -77,6 +77,37 @@ class ClarificationContext:
     candidates: tuple[FormalizationCandidate, ...]
     assessments: tuple[CandidateAssessment, ...]
     landscape: AssessmentLandscape
+
+
+def has_discriminating_reading_provenance(
+    assessments: Iterable[CandidateAssessment],
+) -> bool:
+    """Return whether readings distinguish the competing formalizations.
+
+    Every candidate must carry a reading, each formalization identity must map
+    to exactly one reading, and the distinct formalization/readings sets must
+    have the same cardinality. This deliberately rejects shared-reading
+    conflicts instead of attributing them to the meaning axis.
+    """
+
+    collected = tuple(assessments)
+    if not collected:
+        return False
+    readings_by_formalization: dict[str, set[str]] = {}
+    for item in collected:
+        reading_id = item.candidate.reading_id
+        if reading_id is None:
+            return False
+        readings_by_formalization.setdefault(
+            item.candidate.formalization_id, set()
+        ).add(reading_id)
+    if any(len(readings) != 1 for readings in readings_by_formalization.values()):
+        return False
+    formalization_ids = set(readings_by_formalization)
+    reading_ids = {
+        next(iter(readings)) for readings in readings_by_formalization.values()
+    }
+    return len(formalization_ids) > 1 and len(formalization_ids) == len(reading_ids)
 
 
 class ClarificationPolicy(Protocol):
@@ -200,11 +231,7 @@ class FixtureClarificationPolicy:
                     if item.candidate.reading_id is not None
                 )
             )
-            has_reading_provenance = bool(context.assessments) and all(
-                item.candidate.reading_id is not None
-                for item in context.assessments
-            )
-            if has_reading_provenance:
+            if has_discriminating_reading_provenance(context.assessments):
                 return (
                     ClarificationQuestion(
                         id="meaning:formalization",
@@ -233,11 +260,7 @@ class FixtureClarificationPolicy:
                     if item.candidate.reading_id is not None
                 )
             )
-            has_reading_provenance = bool(context.assessments) and all(
-                item.candidate.reading_id is not None
-                for item in context.assessments
-            )
-            if has_reading_provenance:
+            if has_discriminating_reading_provenance(context.assessments):
                 return (
                     ClarificationQuestion(
                         id="mixed:meaning",

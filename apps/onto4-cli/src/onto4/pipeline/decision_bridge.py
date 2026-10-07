@@ -19,6 +19,7 @@ from onto4.reasoning import (
     CrossCandidateStatus,
     KindAwareClarificationPolicy,
     PipelineDisposition,
+    has_discriminating_reading_provenance,
 )
 
 from .ask import determine_disposition
@@ -69,19 +70,13 @@ def _clarification_refinement_choices(
     if interpretation.ambiguities:
         return ("NeedMeaningClarification",)
     if landscape.status is CrossCandidateStatus.FormalizationConflict:
-        has_reading_provenance = bool(context.assessments) and all(
-            item.candidate.reading_id is not None for item in context.assessments
-        )
-        if has_reading_provenance:
+        if has_discriminating_reading_provenance(context.assessments):
             return ("NeedMeaningClarification",)
         return ("NeedFormalizationClarification",)
     if landscape.status is CrossCandidateStatus.ContextDependent:
         return ("NeedContextClarification",)
     if landscape.status is CrossCandidateStatus.MixedDependence:
-        has_reading_provenance = bool(context.assessments) and all(
-            item.candidate.reading_id is not None for item in context.assessments
-        )
-        if has_reading_provenance:
+        if has_discriminating_reading_provenance(context.assessments):
             return ("NeedMeaningClarification",)
         return ("NeedFormalizationClarification",)
     if landscape.status is CrossCandidateStatus.FormalizationUnresolved:
