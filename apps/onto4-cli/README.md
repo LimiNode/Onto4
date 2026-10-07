@@ -186,3 +186,11 @@ question text, targets and user-facing choices. If it cannot realize the
 selected kind from the same provenance, the bridge fails closed; an abstention
 does not silently fall back to another question.
 `T/F/U/C` remain exclusively produced by the core evaluator.
+
+A selected question may remain pending until the user answers it. When an
+answer is supplied, `decide_clarification_turn()` validates it against the
+question choices and records an immutable `ClarificationTurn` leading to a new
+`InterpretationSpace` snapshot. The answer, transition record and successor
+snapshot are not a new assessment: the caller must start the next explicit
+formalization and assessment pass. Inconsistent transition provenance is
+rejected instead of being repaired implicitly.

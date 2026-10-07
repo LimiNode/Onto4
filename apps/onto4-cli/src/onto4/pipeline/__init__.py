@@ -7,15 +7,21 @@ from .decision_bridge import (
     decide_clarification,
     decide_clarification_question,
 )
-from .orchestration import orchestrate_once
+from .orchestration import (
+    ClarificationTurnResult,
+    decide_clarification_turn,
+    orchestrate_once,
+)
 
 __all__ = [
     "AskResult",
     "ClarificationDecisionResult",
     "ClarificationQuestionDecision",
+    "ClarificationTurnResult",
     "ask",
     "build_clarification_request",
     "decide_clarification",
     "decide_clarification_question",
+    "decide_clarification_turn",
     "orchestrate_once",
 ]

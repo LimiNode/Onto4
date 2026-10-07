@@ -14,6 +14,7 @@ from onto4.pipeline import (
     build_clarification_request,
     decide_clarification,
     decide_clarification_question,
+    decide_clarification_turn,
 )
 from onto4.providers import (
     AbstentionPolicy,
@@ -27,6 +28,7 @@ from onto4.reasoning import (
     CandidateAssessment,
     ClarificationKind,
     ClarificationQuestion,
+    ClarificationTurn,
     ClarificationContext,
     ConceptualDepth,
     CrossCandidateStatus,
@@ -555,6 +557,162 @@ def test_question_bridge_rejects_policy_kind_mismatch():
             profile=decision_profile,
             provider=provider,
             clarification_policy=WrongKindPolicy(),
+        )
+
+
+def test_clarification_turn_can_remain_pending_without_transition():
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+
+    result = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+
+    assert result.decision.question is not None
+    assert result.successor is None
+    assert result.turn is None
+
+
+def test_clarification_turn_records_answer_and_successor_snapshot():
+    decision_profile = profile()
+    clarification_context = context()
+    question = FixtureClarificationPolicy().choose(clarification_context)
+    successor = InterpretationSpace(
+        id="successor",
+        source_text="Question clarified",
+        conceptual_depth=ConceptualDepth.Philosophical,
+    )
+    clarification_policy = FixtureClarificationPolicy(
+        transitions={
+            (
+                clarification_context.interpretation.id,
+                question.id,
+                "candidate",
+            ): successor
+        }
+    )
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+
+    result = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=clarification_policy,
+        answer="candidate",
+    )
+
+    assert result.successor is successor
+    assert result.turn.previous_interpretation_id == "interpretation"
+    assert result.turn.question_id == question.id
+    assert result.turn.answer == "candidate"
+    assert result.turn.successor_interpretation_id == "successor"
+
+
+def test_clarification_turn_rejects_answer_outside_question_choices():
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match="not one of"):
+        decide_clarification_turn(
+            clarification_context,
+            profile=decision_profile,
+            provider=provider,
+            clarification_policy=FixtureClarificationPolicy(),
+            answer="unavailable-candidate",
+        )
+
+
+def test_clarification_turn_rejects_answer_after_provider_abstention():
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {request.question: decision(decision_profile, abstained=True)},
+    )
+
+    with pytest.raises(ValueError, match="without a question"):
+        decide_clarification_turn(
+            clarification_context,
+            profile=decision_profile,
+            provider=provider,
+            clarification_policy=FixtureClarificationPolicy(),
+            answer="candidate",
+        )
+
+
+def test_clarification_turn_rejects_inconsistent_transition_provenance():
+    clarification_context = context()
+    successor = InterpretationSpace(
+        id="successor",
+        source_text="Question clarified",
+        conceptual_depth=ConceptualDepth.Philosophical,
+    )
+
+    class InconsistentTransitionPolicy:
+        def choose(self, supplied_context):
+            return FixtureClarificationPolicy().choose(supplied_context)
+
+        def choose_for_kind(self, supplied_context, kind):
+            return FixtureClarificationPolicy().choose_for_kind(
+                supplied_context, kind
+            )
+
+        def successor(self, *, interpretation, question, answer):
+            return successor, ClarificationTurn(
+                previous_interpretation_id="unrelated",
+                question_id=question.id,
+                answer=answer,
+                successor_interpretation_id=successor.id,
+            )
+
+    decision_profile = profile()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match="inconsistent turn provenance"):
+        decide_clarification_turn(
+            clarification_context,
+            profile=decision_profile,
+            provider=provider,
+            clarification_policy=InconsistentTransitionPolicy(),
+            answer="candidate",
         )
 
 
