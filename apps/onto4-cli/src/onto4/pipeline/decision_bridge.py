@@ -14,8 +14,12 @@ from onto4.providers import (
 )
 from onto4.reasoning import (
     ClarificationContext,
+    ClarificationKind,
+    ClarificationQuestion,
     CrossCandidateStatus,
+    KindAwareClarificationPolicy,
     PipelineDisposition,
+    has_discriminating_reading_provenance,
 )
 
 from .ask import determine_disposition
@@ -31,6 +35,14 @@ CLARIFICATION_REFINEMENT_CHOICES = (
 EVIDENCE_REFINEMENT_CHOICES = ("SelectEvidencePath",)
 COMPLETE_REFINEMENT_CHOICES = ("PresentResult",)
 FAILURE_REFINEMENT_CHOICES = ("ReportFailure",)
+CLARIFICATION_KIND_BY_REFINEMENT = {
+    "NeedMeaningClarification": ClarificationKind.Meaning,
+    "NeedOntologyClarification": ClarificationKind.Ontology,
+    "NeedReferenceClarification": ClarificationKind.Reference,
+    "NeedContextClarification": ClarificationKind.Context,
+    "NeedPresuppositionClarification": ClarificationKind.Presupposition,
+    "NeedFormalizationClarification": ClarificationKind.Formalization,
+}
 
 
 @dataclass(frozen=True)
@@ -42,6 +54,14 @@ class ClarificationDecisionResult:
     disposition: PipelineDisposition | None
 
 
+@dataclass(frozen=True)
+class ClarificationQuestionDecision:
+    """A bounded decision resolved to one deterministic clarification question."""
+
+    decision_result: ClarificationDecisionResult
+    question: ClarificationQuestion | None
+
+
 def _clarification_refinement_choices(
     context: ClarificationContext,
 ) -> tuple[str, ...]:
@@ -50,23 +70,13 @@ def _clarification_refinement_choices(
     if interpretation.ambiguities:
         return ("NeedMeaningClarification",)
     if landscape.status is CrossCandidateStatus.FormalizationConflict:
-        reading_ids = tuple(
-            item.candidate.reading_id
-            for item in context.assessments
-            if item.candidate.reading_id is not None
-        )
-        if len(reading_ids) == len(context.assessments):
+        if has_discriminating_reading_provenance(context.assessments):
             return ("NeedMeaningClarification",)
         return ("NeedFormalizationClarification",)
     if landscape.status is CrossCandidateStatus.ContextDependent:
         return ("NeedContextClarification",)
     if landscape.status is CrossCandidateStatus.MixedDependence:
-        reading_ids = tuple(
-            item.candidate.reading_id
-            for item in context.assessments
-            if item.candidate.reading_id is not None
-        )
-        if len(reading_ids) == len(context.assessments):
+        if has_discriminating_reading_provenance(context.assessments):
             return ("NeedMeaningClarification",)
         return ("NeedFormalizationClarification",)
     if landscape.status is CrossCandidateStatus.FormalizationUnresolved:
@@ -173,3 +183,44 @@ def decide_clarification(
         admissible_disposition=admissible_disposition,
         disposition=admissible_disposition,
     )
+
+
+def decide_clarification_question(
+    context: ClarificationContext,
+    *,
+    profile: DecisionProfile,
+    provider: TypedDecisionProvider,
+    clarification_policy: KindAwareClarificationPolicy,
+) -> ClarificationQuestionDecision:
+    """Resolve a bounded refinement to a provenance-aware question.
+
+    Abstention remains explicit and produces no question. Non-clarification
+    workflow branches also produce no question. The provider selects only a
+    question kind; the deterministic policy owns its wording and targets.
+    """
+
+    decision_result = decide_clarification(
+        context,
+        profile=profile,
+        provider=provider,
+    )
+    if (
+        decision_result.disposition is not PipelineDisposition.AskClarification
+        or decision_result.selected_choice is None
+    ):
+        return ClarificationQuestionDecision(decision_result, None)
+
+    try:
+        kind = CLARIFICATION_KIND_BY_REFINEMENT[decision_result.selected_choice]
+    except KeyError as exc:
+        raise ValueError(
+            "Selected workflow refinement does not identify a clarification kind: "
+            f"{decision_result.selected_choice!r}."
+        ) from exc
+    question = clarification_policy.choose_for_kind(context, kind)
+    if question is None or question.kind is not kind:
+        raise ValueError(
+            "Clarification policy cannot produce a provenance-aware question "
+            f"for selected kind {kind.value!r}."
+        )
+    return ClarificationQuestionDecision(decision_result, question)

@@ -173,10 +173,16 @@ ClarificationContext
     -> TypedDecisionProvider
     -> DeterministicDecisionPolicy
     -> PipelineDisposition
+    -> ClarificationQuestion
 ```
 
 The request contains interpretation and landscape metadata only. The
 deterministic layer derives the admissible workflow branch first; the provider
 can refine that branch (for example, choose a clarification kind) or abstain,
 but cannot replace it with another disposition or become an Onto4 verdict.
+When several diagnostics justify different questions, the provider selects
+only among those justified kinds. `FixtureClarificationPolicy` still owns the
+question text, targets and user-facing choices. If it cannot realize the
+selected kind from the same provenance, the bridge fails closed; an abstention
+does not silently fall back to another question.
 `T/F/U/C` remain exclusively produced by the core evaluator.
