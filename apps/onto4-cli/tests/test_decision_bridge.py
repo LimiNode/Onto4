@@ -637,7 +637,38 @@ def test_clarification_turn_records_answer_and_successor_snapshot():
     assert result.turn.question_id == question.id
     assert result.turn.answer == "candidate"
     assert result.turn.successor_interpretation_id == "successor"
+    assert result.pending is None
+
+
+def test_applying_no_answer_preserves_pending_without_transition():
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+    issued = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+
+    result = apply_clarification_answer(
+        clarification_context,
+        pending=issued.pending,
+        clarification_policy=FixtureClarificationPolicy(),
+        answer=None,
+    )
+
     assert result.pending is issued.pending
+    assert result.successor is None
+    assert result.turn is None
 
 
 def test_clarification_turn_rejects_answer_outside_question_choices():

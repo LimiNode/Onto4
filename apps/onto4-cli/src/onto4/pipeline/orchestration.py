@@ -152,7 +152,7 @@ def apply_clarification_answer(
         raise ValueError(
             "Clarification transition returned inconsistent turn provenance."
         )
-    return ClarificationTurnResult(decision, successor, turn, pending)
+    return ClarificationTurnResult(decision, successor, turn, None)
 
 
 __all__ = [
