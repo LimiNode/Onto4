@@ -101,6 +101,8 @@ def apply_clarification_answer(
 ) -> ClarificationTurnResult:
     """Apply an answer to the exact immutable question previously issued."""
 
+    if pending is None:
+        raise ValueError("PendingClarification is required to apply an answer.")
     if pending.interpretation_id != context.interpretation.id:
         raise ValueError(
             "Pending clarification belongs to a different interpretation."
