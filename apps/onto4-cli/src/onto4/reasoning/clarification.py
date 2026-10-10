@@ -128,6 +128,19 @@ class KindAwareClarificationPolicy(ClarificationPolicy, Protocol):
         ...
 
 
+class TransitionAwareClarificationPolicy(KindAwareClarificationPolicy, Protocol):
+    """Apply an answer as an immutable interpretation transition."""
+
+    def successor(
+        self,
+        *,
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+        answer: str,
+    ) -> tuple[InterpretationSpace, ClarificationTurn]:
+        ...
+
+
 @dataclass(frozen=True)
 class FixtureClarificationPolicy:
     """Choose a provenance-aware question using deterministic rules."""

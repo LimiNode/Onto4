@@ -60,6 +60,8 @@ class ClarificationQuestionDecision:
 
     decision_result: ClarificationDecisionResult
     question: ClarificationQuestion | None
+    issued_question_id: str | None = None
+    issued_question_kind: ClarificationKind | None = None
 
 
 def _clarification_refinement_choices(
@@ -223,4 +225,9 @@ def decide_clarification_question(
             "Clarification policy cannot produce a provenance-aware question "
             f"for selected kind {kind.value!r}."
         )
-    return ClarificationQuestionDecision(decision_result, question)
+    return ClarificationQuestionDecision(
+        decision_result,
+        question,
+        issued_question_id=question.id,
+        issued_question_kind=question.kind,
+    )
