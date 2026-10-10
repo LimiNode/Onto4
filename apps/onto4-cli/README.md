@@ -187,10 +187,12 @@ selected kind from the same provenance, the bridge fails closed; an abstention
 does not silently fall back to another question.
 `T/F/U/C` remain exclusively produced by the core evaluator.
 
-A selected question may remain pending until the user answers it. When an
-answer is supplied, `decide_clarification_turn()` validates it against the
-question choices and records an immutable `ClarificationTurn` leading to a new
-`InterpretationSpace` snapshot. The answer, transition record and successor
-snapshot are not a new assessment: the caller must start the next explicit
-formalization and assessment pass. Inconsistent transition provenance is
-rejected instead of being repaired implicitly.
+A selected question is stored as an immutable `PendingClarification` before it
+is shown to the user. The later `apply_clarification_answer()` call uses that
+exact question and does not invoke the provider again. It checks the current
+interpretation, question identity, selected refinement and allowed answers,
+then records a `ClarificationTurn` leading to a new `InterpretationSpace`
+snapshot. The answer, transition record and successor snapshot are not a new
+assessment: the caller must start the next explicit formalization and
+assessment pass. Inconsistent provenance is rejected instead of being repaired
+implicitly.

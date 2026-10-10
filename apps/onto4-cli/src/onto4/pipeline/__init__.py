@@ -8,7 +8,9 @@ from .decision_bridge import (
     decide_clarification_question,
 )
 from .orchestration import (
+    PendingClarification,
     ClarificationTurnResult,
+    apply_clarification_answer,
     decide_clarification_turn,
     orchestrate_once,
 )
@@ -18,6 +20,8 @@ __all__ = [
     "ClarificationDecisionResult",
     "ClarificationQuestionDecision",
     "ClarificationTurnResult",
+    "PendingClarification",
+    "apply_clarification_answer",
     "ask",
     "build_clarification_request",
     "decide_clarification",

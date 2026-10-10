@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from onto4.core import (
@@ -11,6 +13,7 @@ from onto4.core import (
 from onto4.core.admission import Diagnostic
 from onto4.core.values import UnknownReason
 from onto4.pipeline import (
+    apply_clarification_answer,
     build_clarification_request,
     decide_clarification,
     decide_clarification_question,
@@ -581,6 +584,9 @@ def test_clarification_turn_can_remain_pending_without_transition():
     )
 
     assert result.decision.question is not None
+    assert result.pending is not None
+    assert result.pending.interpretation_id == "interpretation"
+    assert result.pending.decision is result.decision
     assert result.successor is None
     assert result.turn is None
 
@@ -613,10 +619,15 @@ def test_clarification_turn_records_answer_and_successor_snapshot():
         },
     )
 
-    result = decide_clarification_turn(
+    issued = decide_clarification_turn(
         clarification_context,
         profile=decision_profile,
         provider=provider,
+        clarification_policy=clarification_policy,
+    )
+    result = apply_clarification_answer(
+        clarification_context,
+        pending=issued.pending,
         clarification_policy=clarification_policy,
         answer="candidate",
     )
@@ -626,6 +637,7 @@ def test_clarification_turn_records_answer_and_successor_snapshot():
     assert result.turn.question_id == question.id
     assert result.turn.answer == "candidate"
     assert result.turn.successor_interpretation_id == "successor"
+    assert result.pending is issued.pending
 
 
 def test_clarification_turn_rejects_answer_outside_question_choices():
@@ -641,17 +653,23 @@ def test_clarification_turn_rejects_answer_outside_question_choices():
         },
     )
 
+    issued = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+
     with pytest.raises(ValueError, match="not one of"):
-        decide_clarification_turn(
+        apply_clarification_answer(
             clarification_context,
-            profile=decision_profile,
-            provider=provider,
+            pending=issued.pending,
             clarification_policy=FixtureClarificationPolicy(),
             answer="unavailable-candidate",
         )
 
 
-def test_clarification_turn_rejects_answer_after_provider_abstention():
+def test_provider_abstention_produces_no_pending_clarification():
     decision_profile = profile()
     clarification_context = context()
     request = build_clarification_request(clarification_context, decision_profile)
@@ -660,7 +678,33 @@ def test_clarification_turn_rejects_answer_after_provider_abstention():
         {request.question: decision(decision_profile, abstained=True)},
     )
 
-    with pytest.raises(ValueError, match="without a question"):
+    result = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+
+    assert result.decision.question is None
+    assert result.pending is None
+    assert result.successor is None
+    assert result.turn is None
+
+
+def test_answer_submission_requires_previously_issued_pending_question():
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match="requires the PendingClarification"):
         decide_clarification_turn(
             clarification_context,
             profile=decision_profile,
@@ -706,12 +750,146 @@ def test_clarification_turn_rejects_inconsistent_transition_provenance():
         },
     )
 
+    issued = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=InconsistentTransitionPolicy(),
+    )
+
     with pytest.raises(ValueError, match="inconsistent turn provenance"):
-        decide_clarification_turn(
+        apply_clarification_answer(
             clarification_context,
-            profile=decision_profile,
-            provider=provider,
+            pending=issued.pending,
             clarification_policy=InconsistentTransitionPolicy(),
+            answer="candidate",
+        )
+
+
+def test_answering_pending_question_does_not_invoke_provider_again():
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+
+    class MutableProvider:
+        calls = 0
+        next_decision = decision(
+            decision_profile, "NeedFormalizationClarification"
+        )
+
+        def decide(self, supplied_request):
+            self.calls += 1
+            assert supplied_request.question == request.question
+            return self.next_decision
+
+    provider = MutableProvider()
+    question = FixtureClarificationPolicy().choose(clarification_context)
+    successor = InterpretationSpace(
+        id="successor",
+        source_text="Question clarified",
+        conceptual_depth=ConceptualDepth.Philosophical,
+    )
+    policy = FixtureClarificationPolicy(
+        transitions={
+            ("interpretation", question.id, "candidate"): successor,
+        }
+    )
+    issued = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=policy,
+    )
+    provider.next_decision = decision(
+        decision_profile, "NeedReferenceClarification"
+    )
+
+    result = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=policy,
+        pending=issued.pending,
+        answer="candidate",
+    )
+
+    assert provider.calls == 1
+    assert result.decision.question.id == question.id
+    assert result.successor is successor
+    assert not hasattr(result, "assessments")
+
+
+def test_pending_question_from_another_interpretation_is_rejected():
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+    issued = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+    other_context = replace(
+        clarification_context,
+        interpretation=replace(
+            clarification_context.interpretation,
+            id="other-interpretation",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="different interpretation"):
+        apply_clarification_answer(
+            other_context,
+            pending=issued.pending,
+            clarification_policy=FixtureClarificationPolicy(),
+            answer="candidate",
+        )
+
+
+@pytest.mark.parametrize(
+    "tampered_question",
+    (
+        lambda question: replace(question, id="tampered-id"),
+        lambda question: replace(question, kind=ClarificationKind.Reference),
+    ),
+)
+def test_tampered_pending_question_identity_is_rejected(tampered_question):
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+    issued = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+    tampered_decision = replace(
+        issued.pending.decision,
+        question=tampered_question(issued.pending.decision.question),
+    )
+    tampered_pending = replace(issued.pending, decision=tampered_decision)
+
+    with pytest.raises(ValueError, match="question (id|kind) provenance"):
+        apply_clarification_answer(
+            clarification_context,
+            pending=tampered_pending,
+            clarification_policy=FixtureClarificationPolicy(),
             answer="candidate",
         )
 
