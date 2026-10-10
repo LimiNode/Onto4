@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from onto4.providers import DecisionProfile, TypedDecisionProvider
 from onto4.reasoning import (
     ClarificationContext,
+    ClarificationState,
     ClarificationTurn,
     InterpretationSpace,
     PipelineDisposition,
@@ -155,6 +156,31 @@ def apply_clarification_answer(
     return ClarificationTurnResult(decision, successor, turn, None)
 
 
+def record_clarification_turn(
+    history: ClarificationState,
+    result: ClarificationTurnResult,
+) -> ClarificationState:
+    """Record exactly one answered turn, preserving pending/no-op states."""
+
+    if result.turn is None:
+        if result.successor is not None:
+            raise ValueError(
+                "A clarification result cannot have a successor without a turn."
+            )
+        return history
+    if result.pending is not None or result.successor is None:
+        raise ValueError(
+            "An answered clarification result must clear pending and provide a successor."
+        )
+    turn = result.turn
+    return history.record(
+        previous_interpretation_id=turn.previous_interpretation_id,
+        question_id=turn.question_id,
+        answer=turn.answer,
+        successor_interpretation_id=turn.successor_interpretation_id,
+    )
+
+
 __all__ = [
     "AskResult",
     "PendingClarification",
@@ -162,4 +188,5 @@ __all__ = [
     "apply_clarification_answer",
     "decide_clarification_turn",
     "orchestrate_once",
+    "record_clarification_turn",
 ]

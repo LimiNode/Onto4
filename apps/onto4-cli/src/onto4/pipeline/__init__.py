@@ -13,6 +13,7 @@ from .orchestration import (
     apply_clarification_answer,
     decide_clarification_turn,
     orchestrate_once,
+    record_clarification_turn,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "decide_clarification_question",
     "decide_clarification_turn",
     "orchestrate_once",
+    "record_clarification_turn",
 ]
