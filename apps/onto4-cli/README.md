@@ -196,3 +196,9 @@ snapshot. The answer, transition record and successor snapshot are not a new
 assessment: the caller must start the next explicit formalization and
 assessment pass. Inconsistent provenance is rejected instead of being repaired
 implicitly.
+
+`record_clarification_turn()` is the deterministic history boundary for this
+pass. It appends only an answered result with both a `ClarificationTurn` and a
+successor; pending or abstained results leave the existing `ClarificationState`
+unchanged. The recorded turn is a transition record, not evidence and not an
+Onto4 verdict.

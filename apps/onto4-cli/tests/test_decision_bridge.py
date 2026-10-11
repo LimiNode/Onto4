@@ -18,6 +18,7 @@ from onto4.pipeline import (
     decide_clarification,
     decide_clarification_question,
     decide_clarification_turn,
+    record_clarification_turn,
 )
 from onto4.providers import (
     AbstentionPolicy,
@@ -33,6 +34,7 @@ from onto4.reasoning import (
     ClarificationQuestion,
     ClarificationTurn,
     ClarificationContext,
+    ClarificationState,
     ConceptualDepth,
     CrossCandidateStatus,
     FormalizationCandidate,
@@ -671,6 +673,153 @@ def test_applying_no_answer_preserves_pending_without_transition():
     assert result.turn is None
 
 
+def test_answered_turn_is_recorded_in_clarification_state():
+    decision_profile = profile()
+    clarification_context = context()
+    question = FixtureClarificationPolicy().choose(clarification_context)
+    successor = InterpretationSpace(
+        id="successor",
+        source_text="Question clarified",
+        conceptual_depth=ConceptualDepth.Philosophical,
+    )
+    policy = FixtureClarificationPolicy(
+        transitions={
+            ("interpretation", question.id, "candidate"): successor,
+        }
+    )
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+    issued = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=policy,
+    )
+    answered = apply_clarification_answer(
+        clarification_context,
+        pending=issued.pending,
+        clarification_policy=policy,
+        answer="candidate",
+    )
+
+    history = record_clarification_turn(ClarificationState(), answered)
+
+    assert len(history.turns) == 1
+    assert history.turns[0] == answered.turn
+
+
+def test_pending_result_does_not_append_to_clarification_state():
+    decision_profile = profile()
+    clarification_context = context()
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+    waiting = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+    history = ClarificationState()
+
+    assert record_clarification_turn(history, waiting) is history
+
+
+def test_history_record_rejects_result_with_pending_after_answer():
+    decision_profile = profile()
+    clarification_context = context()
+    question = FixtureClarificationPolicy().choose(clarification_context)
+    successor = InterpretationSpace(
+        id="successor",
+        source_text="Question clarified",
+        conceptual_depth=ConceptualDepth.Philosophical,
+    )
+    policy = FixtureClarificationPolicy(
+        transitions={("interpretation", question.id, "candidate"): successor}
+    )
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+    issued = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=policy,
+    )
+    answered = apply_clarification_answer(
+        clarification_context,
+        pending=issued.pending,
+        clarification_policy=policy,
+        answer="candidate",
+    )
+
+    with pytest.raises(ValueError, match="must clear pending"):
+        record_clarification_turn(
+            ClarificationState(), replace(answered, pending=issued.pending)
+        )
+
+
+def test_history_record_rejects_successor_provenance_mismatch():
+    decision_profile = profile()
+    clarification_context = context()
+    question = FixtureClarificationPolicy().choose(clarification_context)
+    successor = InterpretationSpace(
+        id="successor-a",
+        source_text="Question clarified",
+        conceptual_depth=ConceptualDepth.Philosophical,
+    )
+    policy = FixtureClarificationPolicy(
+        transitions={("interpretation", question.id, "candidate"): successor}
+    )
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+    issued = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=policy,
+    )
+    answered = apply_clarification_answer(
+        clarification_context,
+        pending=issued.pending,
+        clarification_policy=policy,
+        answer="candidate",
+    )
+    malformed = replace(
+        answered,
+        successor=replace(answered.successor, id="successor-b"),
+    )
+
+    with pytest.raises(ValueError, match="successor provenance"):
+        record_clarification_turn(ClarificationState(), malformed)
+
+
 def test_clarification_turn_rejects_answer_outside_question_choices():
     decision_profile = profile()
     clarification_context = context()
@@ -720,6 +869,8 @@ def test_provider_abstention_produces_no_pending_clarification():
     assert result.pending is None
     assert result.successor is None
     assert result.turn is None
+    history = ClarificationState()
+    assert record_clarification_turn(history, result) is history
 
 
 def test_answer_submission_requires_previously_issued_pending_question():
