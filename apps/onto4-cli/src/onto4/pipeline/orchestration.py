@@ -173,6 +173,10 @@ def record_clarification_turn(
             "An answered clarification result must clear pending and provide a successor."
         )
     turn = result.turn
+    if result.successor.id != turn.successor_interpretation_id:
+        raise ValueError(
+            "Clarification turn successor provenance does not match the result snapshot."
+        )
     return history.record(
         previous_interpretation_id=turn.previous_interpretation_id,
         question_id=turn.question_id,

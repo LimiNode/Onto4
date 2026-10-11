@@ -778,6 +778,48 @@ def test_history_record_rejects_result_with_pending_after_answer():
         )
 
 
+def test_history_record_rejects_successor_provenance_mismatch():
+    decision_profile = profile()
+    clarification_context = context()
+    question = FixtureClarificationPolicy().choose(clarification_context)
+    successor = InterpretationSpace(
+        id="successor-a",
+        source_text="Question clarified",
+        conceptual_depth=ConceptualDepth.Philosophical,
+    )
+    policy = FixtureClarificationPolicy(
+        transitions={("interpretation", question.id, "candidate"): successor}
+    )
+    request = build_clarification_request(clarification_context, decision_profile)
+    provider = FixtureDecisionProvider(
+        decision_profile,
+        {
+            request.question: decision(
+                decision_profile, "NeedFormalizationClarification"
+            )
+        },
+    )
+    issued = decide_clarification_turn(
+        clarification_context,
+        profile=decision_profile,
+        provider=provider,
+        clarification_policy=policy,
+    )
+    answered = apply_clarification_answer(
+        clarification_context,
+        pending=issued.pending,
+        clarification_policy=policy,
+        answer="candidate",
+    )
+    malformed = replace(
+        answered,
+        successor=replace(answered.successor, id="successor-b"),
+    )
+
+    with pytest.raises(ValueError, match="successor provenance"):
+        record_clarification_turn(ClarificationState(), malformed)
+
+
 def test_clarification_turn_rejects_answer_outside_question_choices():
     decision_profile = profile()
     clarification_context = context()
@@ -827,6 +869,8 @@ def test_provider_abstention_produces_no_pending_clarification():
     assert result.pending is None
     assert result.successor is None
     assert result.turn is None
+    history = ClarificationState()
+    assert record_clarification_turn(history, result) is history
 
 
 def test_answer_submission_requires_previously_issued_pending_question():
