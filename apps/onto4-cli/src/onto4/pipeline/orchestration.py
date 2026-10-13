@@ -36,8 +36,14 @@ class ClarificationTurnResult:
 class PendingClarification:
     """Immutable question identity carried from issuance to answer."""
 
-    interpretation_id: str
+    interpretation: InterpretationSpace
     decision: ClarificationQuestionDecision
+
+    @property
+    def interpretation_id(self) -> str:
+        """Compatibility view of the bound snapshot's stable identifier."""
+
+        return self.interpretation.id
 
 
 @dataclass(frozen=True)
@@ -59,10 +65,10 @@ class ClarificationSession:
             )
         if (
             self.pending is not None
-            and self.pending.interpretation_id != self.interpretation.id
+            and self.pending.interpretation != self.interpretation
         ):
             raise ValueError(
-                "Pending clarification does not belong to the session interpretation."
+                "Pending clarification snapshot does not match the session interpretation."
             )
 
 
@@ -113,7 +119,7 @@ def decide_clarification_turn(
             clarification_policy=clarification_policy,
         )
         issued_pending = (
-            PendingClarification(context.interpretation.id, decision)
+            PendingClarification(context.interpretation, decision)
             if decision.question is not None
             else None
         )
@@ -138,9 +144,10 @@ def apply_clarification_answer(
 
     if pending is None:
         raise ValueError("PendingClarification is required to apply an answer.")
-    if pending.interpretation_id != context.interpretation.id:
+    if pending.interpretation != context.interpretation:
         raise ValueError(
-            "Pending clarification belongs to a different interpretation."
+            "Pending clarification snapshot does not match the current interpretation "
+            "(different interpretation snapshot)."
         )
     decision = pending.decision
     question = decision.question

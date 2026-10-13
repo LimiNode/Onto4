@@ -12,6 +12,7 @@ from onto4.core import (
 )
 from onto4.pipeline import (
     ClarificationSession,
+    apply_clarification_answer,
     answer_session_clarification,
     build_clarification_request,
     issue_session_clarification,
@@ -266,6 +267,51 @@ def test_session_rejects_history_whose_tail_is_not_the_current_interpretation():
 
     with pytest.raises(ValueError, match="does not match its history"):
         ClarificationSession(context.interpretation, history=history)
+
+
+def test_session_rejects_pending_from_stale_same_id_snapshot():
+    original = clarification_context()
+    profile = decision_profile()
+    issued = issue_session_clarification(
+        ClarificationSession(original.interpretation),
+        original,
+        profile=profile,
+        provider=provider_for(original, profile),
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+    stale_snapshot = replace(
+        original.interpretation,
+        source_text="Changed question",
+    )
+
+    with pytest.raises(ValueError, match="snapshot"):
+        ClarificationSession(stale_snapshot, pending=issued.session.pending)
+
+
+def test_answer_rejects_pending_from_stale_same_id_snapshot():
+    original = clarification_context()
+    profile = decision_profile()
+    issued = issue_session_clarification(
+        ClarificationSession(original.interpretation),
+        original,
+        profile=profile,
+        provider=provider_for(original, profile),
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+    changed_snapshot = replace(
+        original.interpretation,
+        readings=(),
+        source_text="Changed question",
+    )
+    changed_context = clarification_context(changed_snapshot)
+
+    with pytest.raises(ValueError, match="snapshot"):
+        apply_clarification_answer(
+            changed_context,
+            pending=issued.session.pending,
+            answer="candidate",
+            clarification_policy=FixtureClarificationPolicy(),
+        )
 
 
 def test_session_rejects_answer_without_a_pending_question():
