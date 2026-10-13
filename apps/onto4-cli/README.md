@@ -211,3 +211,12 @@ question cannot be issued while the first remains pending, and a context with
 the same identifier but different interpretation data is rejected. Session
 advancement still performs no formalization or assessment: those remain an
 explicit subsequent pass.
+
+`reassess_session()` is that explicit pass. It formalizes the session's exact
+current snapshot again, assesses the newly returned candidates and builds a new
+`AskResult`; it does not reuse the previous candidates or assessments. The
+result is wrapped in `SessionAssessment`, which retains the same immutable
+interpretation snapshot and rejects use after the session has advanced. Thus a
+clarification answer records a transition, while a new Onto4 assessment appears
+only when the caller explicitly starts reassessment. A pending question blocks
+reassessment until it has been answered or the provider has abstained.

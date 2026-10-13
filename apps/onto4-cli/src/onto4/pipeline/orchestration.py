@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Mapping
 
-from onto4.providers import DecisionProfile, TypedDecisionProvider
+from onto4.core import AssessmentContext
+from onto4.providers import (
+    DecisionProfile,
+    FormalizationProvider,
+    TypedDecisionProvider,
+)
 from onto4.reasoning import (
     ClarificationContext,
+    ClarificationPolicy,
     ClarificationState,
     ClarificationTurn,
     InterpretationSpace,
@@ -14,7 +21,7 @@ from onto4.reasoning import (
     TransitionAwareClarificationPolicy,
 )
 
-from .ask import AskResult, ask
+from .ask import AskResult, ask, assess_interpretation
 from .decision_bridge import (
     CLARIFICATION_KIND_BY_REFINEMENT,
     ClarificationQuestionDecision,
@@ -78,6 +85,33 @@ class ClarificationSessionResult:
 
     session: ClarificationSession
     turn_result: ClarificationTurnResult
+
+
+@dataclass(frozen=True)
+class SessionAssessment:
+    """One fresh assessment pass bound to its exact interpretation snapshot."""
+
+    interpretation: InterpretationSpace
+    ask_result: AskResult
+
+    def __post_init__(self) -> None:
+        if self.ask_result.interpretation != self.interpretation:
+            raise ValueError(
+                "Session assessment snapshot does not match its AskResult."
+            )
+
+
+def require_current_session_assessment(
+    session: ClarificationSession,
+    assessment: SessionAssessment,
+) -> AskResult:
+    """Return an assessment only when it belongs to the session snapshot."""
+
+    if assessment.interpretation != session.interpretation:
+        raise ValueError(
+            "Session assessment snapshot does not match the current interpretation."
+        )
+    return assessment.ask_result
 
 
 def orchestrate_once(*args, **kwargs) -> AskResult:
@@ -286,6 +320,30 @@ def answer_session_clarification(
     return ClarificationSessionResult(next_session, turn_result)
 
 
+def reassess_session(
+    session: ClarificationSession,
+    context: ClarificationContext,
+    *,
+    formalization_provider: FormalizationProvider,
+    contexts: Mapping[str, AssessmentContext],
+    clarification_policy: ClarificationPolicy,
+) -> SessionAssessment:
+    """Run one explicit fresh pass for the session's current interpretation."""
+
+    _require_current_session_context(session, context)
+    if session.pending is not None:
+        raise ValueError(
+            "Cannot reassess a clarification session while a question is pending."
+        )
+    result = assess_interpretation(
+        session.interpretation,
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+        clarification_policy=clarification_policy,
+    )
+    return SessionAssessment(session.interpretation, result)
+
+
 def _require_current_session_context(
     session: ClarificationSession,
     context: ClarificationContext,
@@ -300,6 +358,7 @@ __all__ = [
     "AskResult",
     "ClarificationSession",
     "ClarificationSessionResult",
+    "SessionAssessment",
     "PendingClarification",
     "ClarificationTurnResult",
     "answer_session_clarification",
@@ -307,5 +366,7 @@ __all__ = [
     "decide_clarification_turn",
     "issue_session_clarification",
     "orchestrate_once",
+    "reassess_session",
     "record_clarification_turn",
+    "require_current_session_assessment",
 ]
