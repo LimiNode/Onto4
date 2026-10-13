@@ -48,6 +48,23 @@ def ask(
     clarification_policy: ClarificationPolicy,
 ) -> AskResult:
     interpretation = interpretation_provider.interpret(request)
+    return assess_interpretation(
+        interpretation,
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+        clarification_policy=clarification_policy,
+    )
+
+
+def assess_interpretation(
+    interpretation: InterpretationSpace,
+    *,
+    formalization_provider: FormalizationProvider,
+    contexts: Mapping[str, AssessmentContext],
+    clarification_policy: ClarificationPolicy,
+) -> AskResult:
+    """Run one explicit formalization and assessment pass for a snapshot."""
+
     candidates = tuple(
         formalization_provider.formalize(FormalizationRequest(interpretation))
     )
