@@ -140,14 +140,6 @@ def test_reassessment_loop_replaces_stale_assessment_after_answer():
 
     first_assessment = reassess_session(
         session,
-        ClarificationContext(
-            interpretation=initial,
-            candidates=(),
-            assessments=(),
-            landscape=AssessmentLandscape(
-                (), CrossCandidateStatus.FormalizationConflict
-            ),
-        ),
         formalization_provider=formalization_provider,
         contexts=contexts,
         clarification_policy=policy,
@@ -181,14 +173,6 @@ def test_reassessment_loop_replaces_stale_assessment_after_answer():
 
     second_assessment = reassess_session(
         answered.session,
-        ClarificationContext(
-            interpretation=successor,
-            candidates=(),
-            assessments=(),
-            landscape=AssessmentLandscape(
-                (), CrossCandidateStatus.FormalizationUnresolved
-            ),
-        ),
         formalization_provider=formalization_provider,
         contexts=contexts,
         clarification_policy=policy,
@@ -201,7 +185,7 @@ def test_reassessment_loop_replaces_stale_assessment_after_answer():
     )
 
 
-def test_reassessment_rejects_pending_session_and_stale_context():
+def test_reassessment_rejects_pending_session():
     initial = interpretation("initial")
     formalization_provider = FixtureFormalizationProvider(
         {initial.id: (candidate("first", "formal-first", atom("a")),)}
@@ -210,14 +194,6 @@ def test_reassessment_rejects_pending_session_and_stale_context():
     session = ClarificationSession(initial)
     baseline = reassess_session(
         session,
-        ClarificationContext(
-            interpretation=initial,
-            candidates=(),
-            assessments=(),
-            landscape=AssessmentLandscape(
-                (), CrossCandidateStatus.FormalizationUnresolved
-            ),
-        ),
         formalization_provider=formalization_provider,
         contexts=contexts,
         clarification_policy=FixtureClarificationPolicy(),
@@ -241,25 +217,10 @@ def test_reassessment_rejects_pending_session_and_stale_context():
     with pytest.raises(ValueError, match="pending"):
         reassess_session(
             issued.session,
-            pending_context,
             formalization_provider=formalization_provider,
             contexts=contexts,
             clarification_policy=FixtureClarificationPolicy(),
         )
-
-    stale_context = replace(
-        context_from(baseline),
-        interpretation=replace(initial, source_text="Changed question"),
-    )
-    with pytest.raises(ValueError, match="does not match the session"):
-        reassess_session(
-            session,
-            stale_context,
-            formalization_provider=formalization_provider,
-            contexts=contexts,
-            clarification_policy=FixtureClarificationPolicy(),
-        )
-
 
 def test_reassessment_builds_fresh_result_without_reusing_old_candidates():
     initial = interpretation("initial")
@@ -306,14 +267,6 @@ def test_abstention_does_not_advance_session_before_reassessment():
     )
     assessment = reassess_session(
         ClarificationSession(initial),
-        ClarificationContext(
-            interpretation=initial,
-            candidates=(),
-            assessments=(),
-            landscape=AssessmentLandscape(
-                (), CrossCandidateStatus.FormalizationUnresolved
-            ),
-        ),
         formalization_provider=formalization_provider,
         contexts=contexts,
         clarification_policy=FixtureClarificationPolicy(),

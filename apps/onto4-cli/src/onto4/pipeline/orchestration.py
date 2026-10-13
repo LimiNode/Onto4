@@ -322,7 +322,6 @@ def answer_session_clarification(
 
 def reassess_session(
     session: ClarificationSession,
-    context: ClarificationContext,
     *,
     formalization_provider: FormalizationProvider,
     contexts: Mapping[str, AssessmentContext],
@@ -330,7 +329,6 @@ def reassess_session(
 ) -> SessionAssessment:
     """Run one explicit fresh pass for the session's current interpretation."""
 
-    _require_current_session_context(session, context)
     if session.pending is not None:
         raise ValueError(
             "Cannot reassess a clarification session while a question is pending."
