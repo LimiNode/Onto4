@@ -100,6 +100,41 @@ class SessionAssessment:
                 "Session assessment snapshot does not match its AskResult."
             )
 
+    def clarification_context(self) -> ClarificationContext:
+        """Expose the context produced by this exact assessment pass."""
+
+        result = self.ask_result
+        return ClarificationContext(
+            interpretation=result.interpretation,
+            candidates=result.candidates,
+            assessments=result.assessments,
+            landscape=result.landscape,
+        )
+
+
+@dataclass(frozen=True)
+class ReasoningSession:
+    """Clarification state paired with its latest explicit assessment, if any."""
+
+    clarification: ClarificationSession
+    assessment: SessionAssessment | None = None
+
+    def __post_init__(self) -> None:
+        if self.assessment is not None:
+            require_current_session_assessment(self.clarification, self.assessment)
+        if self.clarification.pending is not None and self.assessment is None:
+            raise ValueError(
+                "A reasoning session with a pending question requires a current assessment."
+            )
+
+
+@dataclass(frozen=True)
+class ReasoningSessionResult:
+    """Immutable reasoning state and the optional clarification transition result."""
+
+    session: ReasoningSession
+    clarification: ClarificationSessionResult | None = None
+
 
 def require_current_session_assessment(
     session: ClarificationSession,
@@ -112,6 +147,98 @@ def require_current_session_assessment(
             "Session assessment snapshot does not match the current interpretation."
         )
     return assessment.ask_result
+
+
+def start_reasoning_session(
+    session: ClarificationSession,
+    *,
+    formalization_provider: FormalizationProvider,
+    contexts: Mapping[str, AssessmentContext],
+    clarification_policy: ClarificationPolicy,
+) -> ReasoningSessionResult:
+    """Create a reasoning session with one explicit initial assessment."""
+
+    assessment = reassess_session(
+        session,
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+        clarification_policy=clarification_policy,
+    )
+    return ReasoningSessionResult(ReasoningSession(session, assessment))
+
+
+def reassess_reasoning_session(
+    session: ReasoningSession,
+    *,
+    formalization_provider: FormalizationProvider,
+    contexts: Mapping[str, AssessmentContext],
+    clarification_policy: ClarificationPolicy,
+) -> ReasoningSessionResult:
+    """Replace the latest assessment with a fresh pass for the current snapshot."""
+
+    assessment = reassess_session(
+        session.clarification,
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+        clarification_policy=clarification_policy,
+    )
+    return ReasoningSessionResult(ReasoningSession(session.clarification, assessment))
+
+
+def issue_reasoning_clarification(
+    session: ReasoningSession,
+    *,
+    profile: DecisionProfile,
+    provider: TypedDecisionProvider,
+    clarification_policy: TransitionAwareClarificationPolicy,
+) -> ReasoningSessionResult:
+    """Issue one question from the current assessment without reassessing."""
+
+    if session.assessment is None:
+        raise ValueError("A current assessment is required to issue clarification.")
+    require_current_session_assessment(session.clarification, session.assessment)
+    result = issue_session_clarification(
+        session.clarification,
+        session.assessment.clarification_context(),
+        profile=profile,
+        provider=provider,
+        clarification_policy=clarification_policy,
+    )
+    next_session = (
+        session
+        if result.session is session.clarification
+        else ReasoningSession(result.session, session.assessment)
+    )
+    return ReasoningSessionResult(
+        next_session,
+        result,
+    )
+
+
+def answer_reasoning_clarification(
+    session: ReasoningSession,
+    *,
+    answer: str | None,
+    clarification_policy: TransitionAwareClarificationPolicy,
+) -> ReasoningSessionResult:
+    """Apply the issued answer and invalidate assessment until explicit reassessment."""
+
+    if session.assessment is None:
+        raise ValueError("A current assessment is required to answer clarification.")
+    require_current_session_assessment(session.clarification, session.assessment)
+    result = answer_session_clarification(
+        session.clarification,
+        session.assessment.clarification_context(),
+        answer=answer,
+        clarification_policy=clarification_policy,
+    )
+    if result.session is session.clarification and result.turn_result.turn is None:
+        return ReasoningSessionResult(session, result)
+    next_assessment = session.assessment if result.turn_result.turn is None else None
+    return ReasoningSessionResult(
+        ReasoningSession(result.session, next_assessment),
+        result,
+    )
 
 
 def orchestrate_once(*args, **kwargs) -> AskResult:
@@ -356,6 +483,8 @@ __all__ = [
     "AskResult",
     "ClarificationSession",
     "ClarificationSessionResult",
+    "ReasoningSession",
+    "ReasoningSessionResult",
     "SessionAssessment",
     "PendingClarification",
     "ClarificationTurnResult",
@@ -363,8 +492,12 @@ __all__ = [
     "apply_clarification_answer",
     "decide_clarification_turn",
     "issue_session_clarification",
+    "issue_reasoning_clarification",
     "orchestrate_once",
     "reassess_session",
+    "reassess_reasoning_session",
     "record_clarification_turn",
     "require_current_session_assessment",
+    "answer_reasoning_clarification",
+    "start_reasoning_session",
 ]

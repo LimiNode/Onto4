@@ -220,3 +220,11 @@ interpretation snapshot and rejects use after the session has advanced. Thus a
 clarification answer records a transition, while a new Onto4 assessment appears
 only when the caller explicitly starts reassessment. A pending question blocks
 reassessment until it has been answered or the provider has abstained.
+
+`ReasoningSession` binds these two boundaries into one immutable workflow state:
+the current `ClarificationSession` and its latest `SessionAssessment`. Issuing
+a question uses the existing assessment and does not create another one;
+answering records a transition but clears the assessment because it belongs to
+the previous snapshot. The next `reassess_reasoning_session()` explicitly
+builds a fresh assessment. A transition and an assessment therefore remain
+different events even in the end-to-end deterministic workflow.

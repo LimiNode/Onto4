@@ -14,11 +14,15 @@ from onto4.core.evidence import AtomicVerdictStore
 from onto4.pipeline import (
     ClarificationSession,
     SessionAssessment,
+    answer_reasoning_clarification,
     assess_interpretation,
     build_clarification_request,
     issue_session_clarification,
+    issue_reasoning_clarification,
+    reassess_reasoning_session,
     reassess_session,
     require_current_session_assessment,
+    start_reasoning_session,
     answer_session_clarification,
 )
 from onto4.providers import (
@@ -294,3 +298,96 @@ def test_abstention_does_not_advance_session_before_reassessment():
 
     assert issued.session is session
     assert issued.turn_result.pending is None
+
+
+def test_reasoning_session_facade_closes_explicit_reassessment_loop():
+    initial = interpretation("initial")
+    successor = interpretation("successor")
+    formalization_provider = FixtureFormalizationProvider(
+        {
+            initial.id: (
+                candidate("first", "formal-first", atom("a")),
+                candidate("second", "formal-second", atom("b")),
+            ),
+            successor.id: (candidate("resolved", "formal-resolved", atom("a")),),
+        }
+    )
+    contexts = {"fixture": assessment_context({"a": Verdict.T, "b": Verdict.F})}
+    policy = FixtureClarificationPolicy(
+        transitions={("initial", "formalization:disambiguate", "first"): successor}
+    )
+    initial_result = start_reasoning_session(
+        ClarificationSession(initial),
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+        clarification_policy=policy,
+    )
+    decision_profile = profile()
+    issued = issue_reasoning_clarification(
+        initial_result.session,
+        profile=decision_profile,
+        provider=provider_for(
+            initial_result.session.assessment.clarification_context(),
+            decision_profile,
+        ),
+        clarification_policy=policy,
+    )
+    answered = answer_reasoning_clarification(
+        issued.session,
+        answer="first",
+        clarification_policy=policy,
+    )
+
+    assert answered.session.clarification.interpretation is successor
+    assert answered.session.assessment is None
+    reassessed = reassess_reasoning_session(
+        answered.session,
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+        clarification_policy=policy,
+    )
+
+    assert reassessed.session.assessment is not None
+    assert (
+        reassessed.session.assessment.ask_result.landscape.status
+        is CrossCandidateStatus.StableAcrossCandidates
+    )
+    assert reassessed.session.assessment.ask_result.disposition is PipelineDisposition.Complete
+
+
+def test_reasoning_session_answer_none_keeps_assessment_and_pending():
+    initial = interpretation("initial")
+    provider = FixtureFormalizationProvider(
+        {
+            initial.id: (
+                candidate("first", "formal-first", atom("a")),
+                candidate("second", "formal-second", atom("b")),
+            )
+        }
+    )
+    contexts = {"fixture": assessment_context({"a": Verdict.T, "b": Verdict.F})}
+    policy = FixtureClarificationPolicy()
+    base = start_reasoning_session(
+        ClarificationSession(initial),
+        formalization_provider=provider,
+        contexts=contexts,
+        clarification_policy=policy,
+    )
+    decision_profile = profile()
+    issued = issue_reasoning_clarification(
+        base.session,
+        profile=decision_profile,
+        provider=provider_for(
+            base.session.assessment.clarification_context(), decision_profile
+        ),
+        clarification_policy=policy,
+    )
+    waiting = answer_reasoning_clarification(
+        issued.session,
+        answer=None,
+        clarification_policy=policy,
+    )
+
+    assert waiting.session is issued.session
+    assert waiting.session.assessment is base.session.assessment
+    assert waiting.session.clarification.pending is not None
