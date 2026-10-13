@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from onto4.providers import DecisionProfile, TypedDecisionProvider
 from onto4.reasoning import (
@@ -36,8 +36,48 @@ class ClarificationTurnResult:
 class PendingClarification:
     """Immutable question identity carried from issuance to answer."""
 
-    interpretation_id: str
+    interpretation: InterpretationSpace
     decision: ClarificationQuestionDecision
+
+    @property
+    def interpretation_id(self) -> str:
+        """Compatibility view of the bound snapshot's stable identifier."""
+
+        return self.interpretation.id
+
+
+@dataclass(frozen=True)
+class ClarificationSession:
+    """Current interpretation, history, and at most one issued question."""
+
+    interpretation: InterpretationSpace
+    history: ClarificationState = field(default_factory=ClarificationState)
+    pending: PendingClarification | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            self.history.turns
+            and self.history.turns[-1].successor_interpretation_id
+            != self.interpretation.id
+        ):
+            raise ValueError(
+                "Clarification session interpretation does not match its history."
+            )
+        if (
+            self.pending is not None
+            and self.pending.interpretation != self.interpretation
+        ):
+            raise ValueError(
+                "Pending clarification snapshot does not match the session interpretation."
+            )
+
+
+@dataclass(frozen=True)
+class ClarificationSessionResult:
+    """Session state paired with the bounded result that produced it."""
+
+    session: ClarificationSession
+    turn_result: ClarificationTurnResult
 
 
 def orchestrate_once(*args, **kwargs) -> AskResult:
@@ -79,7 +119,7 @@ def decide_clarification_turn(
             clarification_policy=clarification_policy,
         )
         issued_pending = (
-            PendingClarification(context.interpretation.id, decision)
+            PendingClarification(context.interpretation, decision)
             if decision.question is not None
             else None
         )
@@ -104,9 +144,10 @@ def apply_clarification_answer(
 
     if pending is None:
         raise ValueError("PendingClarification is required to apply an answer.")
-    if pending.interpretation_id != context.interpretation.id:
+    if pending.interpretation != context.interpretation:
         raise ValueError(
-            "Pending clarification belongs to a different interpretation."
+            "Pending clarification snapshot does not match the current interpretation "
+            "(different interpretation snapshot)."
         )
     decision = pending.decision
     question = decision.question
@@ -185,12 +226,86 @@ def record_clarification_turn(
     )
 
 
+def issue_session_clarification(
+    session: ClarificationSession,
+    context: ClarificationContext,
+    *,
+    profile: DecisionProfile,
+    provider: TypedDecisionProvider,
+    clarification_policy: TransitionAwareClarificationPolicy,
+) -> ClarificationSessionResult:
+    """Issue at most one question for the session's exact current snapshot."""
+
+    _require_current_session_context(session, context)
+    if session.pending is not None:
+        raise ValueError("Clarification session already has a pending question.")
+    turn_result = decide_clarification_turn(
+        context,
+        profile=profile,
+        provider=provider,
+        clarification_policy=clarification_policy,
+    )
+    if turn_result.pending is None:
+        return ClarificationSessionResult(session, turn_result)
+    next_session = ClarificationSession(
+        interpretation=session.interpretation,
+        history=session.history,
+        pending=turn_result.pending,
+    )
+    return ClarificationSessionResult(next_session, turn_result)
+
+
+def answer_session_clarification(
+    session: ClarificationSession,
+    context: ClarificationContext,
+    *,
+    answer: str | None,
+    clarification_policy: TransitionAwareClarificationPolicy,
+) -> ClarificationSessionResult:
+    """Apply the session's issued question without invoking a provider."""
+
+    _require_current_session_context(session, context)
+    if session.pending is None:
+        raise ValueError("Clarification session has no pending question to answer.")
+    turn_result = apply_clarification_answer(
+        context,
+        pending=session.pending,
+        answer=answer,
+        clarification_policy=clarification_policy,
+    )
+    if turn_result.turn is None:
+        return ClarificationSessionResult(session, turn_result)
+    history = record_clarification_turn(session.history, turn_result)
+    if turn_result.successor is None:
+        raise ValueError("Answered clarification did not provide a successor.")
+    next_session = ClarificationSession(
+        interpretation=turn_result.successor,
+        history=history,
+        pending=None,
+    )
+    return ClarificationSessionResult(next_session, turn_result)
+
+
+def _require_current_session_context(
+    session: ClarificationSession,
+    context: ClarificationContext,
+) -> None:
+    if context.interpretation != session.interpretation:
+        raise ValueError(
+            "Clarification context does not match the session interpretation snapshot."
+        )
+
+
 __all__ = [
     "AskResult",
+    "ClarificationSession",
+    "ClarificationSessionResult",
     "PendingClarification",
     "ClarificationTurnResult",
+    "answer_session_clarification",
     "apply_clarification_answer",
     "decide_clarification_turn",
+    "issue_session_clarification",
     "orchestrate_once",
     "record_clarification_turn",
 ]

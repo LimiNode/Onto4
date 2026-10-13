@@ -202,3 +202,12 @@ pass. It appends only an answered result with both a `ClarificationTurn` and a
 successor; pending or abstained results leave the existing `ClarificationState`
 unchanged. The recorded turn is a transition record, not evidence and not an
 Onto4 verdict.
+
+`ClarificationSession` binds that history to the exact current interpretation
+snapshot and to at most one pending question. Issuing a question preserves the
+current snapshot and history; applying its answer consumes the pending question,
+appends the validated turn and advances to the returned successor. A second
+question cannot be issued while the first remains pending, and a context with
+the same identifier but different interpretation data is rejected. Session
+advancement still performs no formalization or assessment: those remain an
+explicit subsequent pass.
