@@ -163,3 +163,27 @@ def test_ask_command_reports_missing_context_without_traceback(capsys, tmp_path)
     assert captured.out == ""
     assert "Ask error:" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_ask_command_reports_invalid_context_yaml_without_traceback(capsys, tmp_path):
+    invalid_context = tmp_path / "invalid.yaml"
+    invalid_context.write_text("ontology: [", encoding="utf-8")
+
+    code = main(
+        [
+            "ask",
+            "What is the mass of integer 7?",
+            "--endpoint",
+            "http://example.test/v1",
+            "--model",
+            "fixture-model",
+            "--context",
+            str(invalid_context),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert "Ask error:" in captured.err
+    assert "Traceback" not in captured.err

@@ -10,6 +10,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from onto4.core import AssessmentResult
 from onto4.pipeline.ask import ask
 from onto4.pipeline.compare import compare_files
@@ -140,7 +142,14 @@ def _run_ask(args: argparse.Namespace) -> int:
             contexts=contexts,
             clarification_policy=FixtureClarificationPolicy(),
         )
-    except (KeyError, OSError, ProviderTransportError, ProviderSchemaError, ValueError) as exc:
+    except (
+        KeyError,
+        OSError,
+        ProviderTransportError,
+        ProviderSchemaError,
+        ValueError,
+        yaml.YAMLError,
+    ) as exc:
         print(f"Ask error: {exc}", file=sys.stderr)
         return 1
     if args.format == "json":
