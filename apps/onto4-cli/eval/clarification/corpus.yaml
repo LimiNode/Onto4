@@ -1,0 +1,152 @@
+version: 1
+name: everyday-clarification-v1
+visibility:
+  model_input: utterance_only
+  hidden_fields: [hidden_interpretation, expected_clarification, expected_after_answer]
+scoring:
+  exact_question_text: false
+  require_discriminating_question: true
+  require_no_hidden_answer_leak: true
+  require_successor_provenance: true
+  require_explicit_reassessment: true
+cases:
+  - case_id: door-closed-01
+    utterance: "Дверь закрыта."
+    hidden_interpretation:
+      meaning:
+        closed: "полотно двери не находится в открытом положении"
+      rejected_readings: [locked]
+      ontology: {door: physical_door}
+    expected_clarification:
+      kind: Meaning
+      discriminates: [closed_position, locked]
+    expected_after_answer:
+      answer: closed_position
+      selected_reading: closed_position
+
+  - case_id: door-closed-02
+    utterance: "Дверь закрыта."
+    hidden_interpretation:
+      meaning:
+        closed: "дверь заперта замком"
+      rejected_readings: [closed_position]
+      ontology: {door: physical_door}
+    expected_clarification:
+      kind: Meaning
+      discriminates: [closed_position, locked]
+    expected_after_answer:
+      answer: locked
+      selected_reading: locked
+
+  - case_id: has-book-01
+    utterance: "У Пети есть книга."
+    hidden_interpretation:
+      meaning:
+        has: "владеет книгой"
+      rejected_readings: [currently_holds]
+    expected_clarification:
+      kind: Meaning
+      discriminates: [owns, currently_holds]
+    expected_after_answer:
+      answer: owns
+      selected_reading: owns
+
+  - case_id: server-works-01
+    utterance: "Сервер работает."
+    hidden_interpretation:
+      meaning:
+        works: "процесс запущен"
+      rejected_readings: [service_responds_correctly]
+    expected_clarification:
+      kind: Meaning
+      discriminates: [process_running, service_responds_correctly]
+    expected_after_answer:
+      answer: process_running
+      selected_reading: process_running
+
+  - case_id: same-file-path
+    utterance: "Это тот же файл."
+    hidden_interpretation:
+      meaning:
+        same: "тот же путь в файловой системе"
+      rejected_readings: [byte_identical, same_filesystem_object]
+    expected_clarification:
+      kind: Meaning
+      discriminates: [same_path, byte_identical, same_filesystem_object]
+    expected_after_answer:
+      answer: same_path
+      selected_reading: same_path
+
+  - case_id: same-file-bytes
+    utterance: "Это тот же файл."
+    hidden_interpretation:
+      meaning:
+        same: "содержимое побайтно идентично"
+      rejected_readings: [same_path, same_filesystem_object]
+    expected_clarification:
+      kind: Meaning
+      discriminates: [same_path, byte_identical, same_filesystem_object]
+    expected_after_answer:
+      answer: byte_identical
+      selected_reading: byte_identical
+
+  - case_id: lamp-on-01
+    utterance: "Лампа включена."
+    hidden_interpretation:
+      meaning:
+        on: "лампа получает питание"
+      rejected_readings: [emits_light]
+    expected_clarification:
+      kind: Meaning
+      discriminates: [powered, emits_light]
+    expected_after_answer:
+      answer: powered
+      selected_reading: powered
+
+  - case_id: program-finished-01
+    utterance: "Программа закончилась."
+    hidden_interpretation:
+      meaning:
+        finished: "процесс завершён"
+      rejected_readings: [task_succeeded]
+    expected_clarification:
+      kind: Meaning
+      discriminates: [process_terminated, task_succeeded]
+    expected_after_answer:
+      answer: process_terminated
+      selected_reading: process_terminated
+
+  - case_id: arithmetic-control
+    utterance: "2 больше 1."
+    context: fully_specified_arithmetic
+    expected_clarification: none
+    expected_after_answer:
+      disposition: formalize_and_assess
+
+  - case_id: geometry-control
+    utterance: "Треугольник имеет три стороны."
+    context: fully_specified_euclidean_geometry
+    expected_clarification: none
+    expected_after_answer:
+      disposition: formalize_and_assess
+
+  - case_id: file-extension-control
+    utterance: "Файл имеет расширение .txt."
+    context: fully_specified_filesystem
+    expected_clarification: none
+    expected_after_answer:
+      disposition: formalize_and_assess
+
+  - case_id: variable-control
+    utterance: "Значение переменной x равно 5."
+    context: fully_specified_program_state
+    expected_clarification: none
+    expected_after_answer:
+      disposition: formalize_and_assess
+
+  - case_id: evidence-not-meaning
+    utterance: "Сервер сейчас доступен."
+    context: current_observation_required
+    expected_clarification: none
+    expected_after_answer:
+      disposition: need_evidence
