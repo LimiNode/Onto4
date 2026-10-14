@@ -117,3 +117,49 @@ def test_ask_command_runs_model_backed_pass_without_model_verdict(monkeypatch, c
     assert code == 0
     assert '"disposition": "Complete"' in output
     assert '"verdict": "C"' in output
+
+
+def test_ask_command_reports_missing_bearer_token_without_traceback(monkeypatch, capsys):
+    monkeypatch.delenv("ONTO4_API_TOKEN", raising=False)
+
+    code = main(
+        [
+            "ask",
+            "What is the mass of integer 7?",
+            "--endpoint",
+            "http://example.test/v1",
+            "--model",
+            "fixture-model",
+            "--auth",
+            "bearer",
+            "--context",
+            str(ROOT / "profiles/contexts/physical_objects.yaml"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert "Ask error:" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_ask_command_reports_missing_context_without_traceback(capsys, tmp_path):
+    code = main(
+        [
+            "ask",
+            "What is the mass of integer 7?",
+            "--endpoint",
+            "http://example.test/v1",
+            "--model",
+            "fixture-model",
+            "--context",
+            str(tmp_path / "missing.yaml"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert "Ask error:" in captured.err
+    assert "Traceback" not in captured.err

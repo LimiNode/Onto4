@@ -111,36 +111,37 @@ def _print_ask_result(result: Any) -> None:
 
 
 def _run_ask(args: argparse.Namespace) -> int:
-    auth = EndpointAuthKind(args.auth)
-    profile = ProviderProfile(
-        base_url=args.endpoint,
-        model=args.model,
-        auth=auth,
-        timeout_seconds=args.timeout,
-    )
-    token = os.environ.get(args.token_env) if auth is EndpointAuthKind.Bearer else None
-    client = OpenAICompatibleClient(profile, bearer_token=token)
-    depth = None if args.depth == "auto" else ConceptualDepth(args.depth)
-    contexts = {}
-    for context_path in args.context:
-        path = Path(context_path)
-        context_id = path.stem
-        if context_id in contexts:
-            raise ValueError(f"Duplicate context id from --context: {context_id!r}.")
-        contexts[context_id] = load_context(path)
     try:
+        auth = EndpointAuthKind(args.auth)
+        profile = ProviderProfile(
+            base_url=args.endpoint,
+            model=args.model,
+            auth=auth,
+            timeout_seconds=args.timeout,
+        )
+        token = os.environ.get(args.token_env) if auth is EndpointAuthKind.Bearer else None
+        client = OpenAICompatibleClient(profile, bearer_token=token)
+        depth = None if args.depth == "auto" else ConceptualDepth(args.depth)
+        contexts = {}
+        for context_path in args.context:
+            path = Path(context_path)
+            context_id = path.stem
+            if context_id in contexts:
+                raise ValueError(f"Duplicate context id from --context: {context_id!r}.")
+            contexts[context_id] = load_context(path)
+
         result = ask(
             InterpretationRequest(args.text, conceptual_depth=depth),
             interpretation_provider=OpenAICompatibleInterpretationProvider(client),
-        formalization_provider=OpenAICompatibleFormalizationProvider(
-            client,
-            context_ids=tuple(contexts),
-        ),
+            formalization_provider=OpenAICompatibleFormalizationProvider(
+                client,
+                context_ids=tuple(contexts),
+            ),
             contexts=contexts,
             clarification_policy=FixtureClarificationPolicy(),
         )
-    except (KeyError, ProviderTransportError, ProviderSchemaError, ValueError) as exc:
-        print(f"Provider error: {exc}", file=sys.stderr)
+    except (KeyError, OSError, ProviderTransportError, ProviderSchemaError, ValueError) as exc:
+        print(f"Ask error: {exc}", file=sys.stderr)
         return 1
     if args.format == "json":
         print(json.dumps(_ask_dict(result), ensure_ascii=False, indent=2))
