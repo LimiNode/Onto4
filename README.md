@@ -338,6 +338,16 @@ See:
 - [Liar paradox](docs/examples/liar-paradox.md)
 - [Distinction and the liar paradox](docs/distinction-liar-paradox.md)
 
+## Path to the web interface
+
+The plan for a user-facing web interface, user-supplied local or remote models,
+and the implementation experiments is documented in
+[Path to an interactive web interface](docs/web-roadmap.md).
+
+The first connection protocol will be OpenAI-compatible. Endpoint and model
+remain infrastructure configuration rather than part of Onto4 semantics, and
+the language model does not gain authority to emit `T/F/U/C` directly.
+
 ## In short
 
 ```text
