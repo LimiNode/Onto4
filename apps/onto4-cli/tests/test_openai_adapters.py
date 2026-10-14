@@ -10,7 +10,14 @@ from onto4.providers import (
     OpenAICompatibleInterpretationProvider,
     ProviderSchemaError,
 )
-from onto4.reasoning import ConceptualDepth, InterpretationSpace, SemanticReading
+from onto4.reasoning import (
+    Ambiguity,
+    ConceptualDepth,
+    InterpretationSpace,
+    OntologyCandidate,
+    Presupposition,
+    SemanticReading,
+)
 
 
 class FakeClient:
@@ -54,6 +61,29 @@ def test_interpretation_adapter_parses_structured_space_and_requests_json_mode()
     assert result.conceptual_depth is ConceptualDepth.Ordinary
     assert result.readings[0].id == "closed-position"
     assert client.messages[0]["role"] == "system"
+
+
+def test_interpretation_adapter_preserves_explicit_requested_depth():
+    client = FakeClient(interpretation_payload())
+
+    result = OpenAICompatibleInterpretationProvider(client).interpret(
+        InterpretationRequest(
+            "The door is closed.", conceptual_depth=ConceptualDepth.Ordinary
+        )
+    )
+
+    assert result.conceptual_depth is ConceptualDepth.Ordinary
+
+
+def test_interpretation_adapter_rejects_explicit_depth_mismatch():
+    client = FakeClient(interpretation_payload())
+
+    with pytest.raises(ProviderSchemaError, match="conceptual_depth"):
+        OpenAICompatibleInterpretationProvider(client).interpret(
+            InterpretationRequest(
+                "The door is closed.", conceptual_depth=ConceptualDepth.Philosophical
+            )
+        )
 
 
 def test_interpretation_adapter_rejects_source_text_rebinding():
@@ -118,6 +148,34 @@ def test_formalization_adapter_parses_predicate_candidate():
     assert len(candidates) == 1
     assert isinstance(candidates[0].formalization, PredicateExpr)
     assert candidates[0].reading_id == "closed-position"
+
+
+def test_formalization_prompt_exposes_complete_interpretation_provenance():
+    space = InterpretationSpace(
+        id="door-space",
+        source_text="The door is closed.",
+        conceptual_depth=ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("closed", "closed", "position or lock"),),
+        presuppositions=(Presupposition("door-present", "a door is present"),),
+        ontologies=(OntologyCandidate("physical-door", "physical door", "a door object"),),
+        readings=(
+            SemanticReading(
+                "closed-position",
+                "closed position",
+                "the leaf is not open",
+                ("door-present",),
+            ),
+        ),
+    )
+    client = FakeClient({"candidates": []})
+
+    OpenAICompatibleFormalizationProvider(client).formalize(FormalizationRequest(space))
+
+    prompt = client.messages[1]["content"]
+    assert '"closed-position"' in prompt
+    assert '"door-present"' in prompt
+    assert "position or lock" in prompt
+    assert "Use only the supplied reading IDs" in prompt
 
 
 def test_formalization_adapter_rejects_unknown_reading_provenance():

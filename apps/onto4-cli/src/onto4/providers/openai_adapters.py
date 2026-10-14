@@ -87,8 +87,11 @@ def _parse_description_items(
     result = []
     for index, raw in enumerate(value):
         item = _object(raw, f"{path}[{index}]")
-        optional = {"term"} if constructor is Ambiguity else set()
-        _keys(item, f"{path}[{index}]", {"id", "description"}, optional)
+        optional = set()
+        required = {"id", "description"}
+        if constructor is Ambiguity:
+            required.add("term")
+        _keys(item, f"{path}[{index}]", required, optional)
         identifier = _string(item["id"], f"{path}[{index}].id")
         description = _string(item["description"], f"{path}[{index}].description")
         if constructor is Ambiguity:
@@ -146,6 +149,10 @@ def _parse_interpretation(payload: Mapping[str, Any], request: InterpretationReq
         depth = ConceptualDepth(_string(payload["conceptual_depth"], "conceptual_depth"))
     except ValueError as exc:
         raise ProviderSchemaError("conceptual_depth is not a supported ConceptualDepth.") from exc
+    if request.conceptual_depth is not None and depth is not request.conceptual_depth:
+        raise ProviderSchemaError(
+            "Model conceptual_depth does not match the interpretation request."
+        )
     return InterpretationSpace(
         id=_string(payload["id"], "id"),
         source_text=source_text,
@@ -213,6 +220,37 @@ def _parse_candidates(payload: Mapping[str, Any], request: FormalizationRequest)
     return tuple(result)
 
 
+def _interpretation_projection(interpretation: InterpretationSpace) -> dict[str, Any]:
+    """Return the complete deterministic input projection for a formalizer."""
+
+    return {
+        "id": interpretation.id,
+        "source_text": interpretation.source_text,
+        "conceptual_depth": interpretation.conceptual_depth.value,
+        "ambiguities": [
+            {"id": item.id, "term": item.term, "description": item.description}
+            for item in interpretation.ambiguities
+        ],
+        "presuppositions": [
+            {"id": item.id, "description": item.description}
+            for item in interpretation.presuppositions
+        ],
+        "ontologies": [
+            {"id": item.id, "label": item.label, "description": item.description}
+            for item in interpretation.ontologies
+        ],
+        "readings": [
+            {
+                "id": item.id,
+                "label": item.label,
+                "description": item.description,
+                "presupposition_ids": list(item.presupposition_ids),
+            }
+            for item in interpretation.readings
+        ],
+    }
+
+
 class OpenAICompatibleInterpretationProvider(InterpretationProvider):
     """Build one immutable interpretation space from a structured model reply."""
 
@@ -245,6 +283,11 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
         self.client = client
 
     def formalize(self, request: FormalizationRequest) -> tuple[FormalizationCandidate, ...]:
+        interpretation_json = json.dumps(
+            _interpretation_projection(request.interpretation),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
         payload = _response_json(
             self.client,
             (
@@ -254,9 +297,10 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
                     "content": (
                         "Formalize the supplied interpretation into a JSON object with "
                         "a candidates array. Each formalization expression uses kind "
-                        "predicate/not/and/or/implies/equivalent. Do not return an Onto4 verdict.\n\n"
-                        f"interpretation_id: {request.interpretation.id}\n"
-                        f"source_text: {request.interpretation.source_text}"
+                        "predicate/not/and/or/implies/equivalent. Use only the supplied "
+                        "reading IDs; do not invent, rename or merge readings. Do not "
+                        "return an Onto4 verdict.\n\n"
+                        f"interpretation: {interpretation_json}"
                     ),
                 },
             ),

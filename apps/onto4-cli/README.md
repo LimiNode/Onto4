@@ -126,6 +126,13 @@ adapters remain the next explicit boundary. The default transport does not
 follow HTTP redirects, so a runtime credential cannot be forwarded to an
 unexpected origin.
 
+The formalization adapter receives a deterministic projection of the complete
+`InterpretationSpace`, including ambiguity, ontology, presupposition and
+reading IDs plus `presupposition_ids`. It must bind candidates to those supplied
+readings rather than inventing or renaming provenance. An explicitly requested
+`conceptual_depth` is likewise preserved by the interpretation adapter; a model
+response that changes it is rejected.
+
 ## Clarification-aware orchestration
 
 The next deterministic layer treats `ask` as an iterative workflow rather
