@@ -190,7 +190,22 @@ starts.
 - preserve conceptual-depth, reading, assumption and candidate provenance;
 - do not connect the model to deterministic `T/F/U/C` computation.
 
-### 3. Minimal Onto4 HTTP API
+### 3. Real interactive CLI scenario
+
+- add `onto4 ask` over the same profiles and provider boundaries;
+- exercise the complete path from natural language through a real model to an
+  `InterpretationSpace`, candidates and deterministic assessment;
+- present a clarification, apply the answer to the fixed pending question and
+  start reassessment separately;
+- collect real questions and failures before designing the HTTP API;
+- do not turn the CLI into a separate implementation of the orchestration
+  contract.
+
+This stage is a low-cost test of the complete vertical slice. Schema
+violations, lost provenance and consistently unusable formalizations should
+become visible before another network and user-interface layer is introduced.
+
+### 4. Minimal Onto4 HTTP API
 
 - expose reasoning-session creation, pending clarification answers and explicit
   reassessment;
@@ -199,7 +214,7 @@ starts.
 - keep provider profiles at the session boundary, outside Onto4 semantic
   context.
 
-### 4. Minimal static web interface
+### 5. Minimal static web interface
 
 - add `apps/onto4-web`;
 - let the user configure the Onto4 runtime, LLM `base_url`, model and
@@ -208,7 +223,7 @@ starts.
 - store profiles without credentials;
 - surface CORS, mixed-content, timeout and unavailable-endpoint errors.
 
-### 5. Interactive `ReasoningSession`
+### 6. Interactive `ReasoningSession`
 
 - show pending clarifications and allowed answers;
 - show the transition to a successor snapshot after an answer;
@@ -216,7 +231,7 @@ starts.
 - display landscape, verdict, Evidence4 and alternative readings without
   conflating those levels.
 
-### 6. Direct-browser experiment
+### 7. Direct-browser experiment
 
 - test CORS-enabled OpenAI-compatible endpoints on `localhost` and remote HTTPS
   origins;
@@ -226,7 +241,7 @@ starts.
 - mark it supported only after the complete workflow, rather than a single
   model call, has been verified.
 
-### 7. Provider expansion and operational protection
+### 8. Provider expansion and operational protection
 
 - add custom headers and native protocols in response to real use cases;
 - permit distinct profiles for interpretation, formalization and rendering;
