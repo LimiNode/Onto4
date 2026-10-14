@@ -71,6 +71,20 @@ class ProviderTransportError(RuntimeError):
 UrlOpen = Callable[..., Any]
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Make endpoint redirects visible instead of forwarding credentials."""
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+
+
+def _urlopen_without_redirects(request: urllib.request.Request, *, timeout: float) -> Any:
+    return _NO_REDIRECT_OPENER.open(request, timeout=timeout)
+
+
 class OpenAICompatibleClient:
     """Issue bounded requests to an OpenAI-compatible chat endpoint."""
 
@@ -79,7 +93,7 @@ class OpenAICompatibleClient:
         profile: ProviderProfile,
         *,
         bearer_token: str | None = None,
-        urlopen: UrlOpen = urllib.request.urlopen,
+        urlopen: UrlOpen | None = None,
     ) -> None:
         if profile.auth is EndpointAuthKind.Bearer and not bearer_token:
             raise ValueError("A bearer token is required by this provider profile.")
@@ -87,7 +101,7 @@ class OpenAICompatibleClient:
             raise ValueError("A bearer token cannot be supplied for unauthenticated profile.")
         self.profile = profile
         self._bearer_token = bearer_token
-        self._urlopen = urlopen
+        self._urlopen = _urlopen_without_redirects if urlopen is None else urlopen
 
     def list_models(self) -> tuple[str, ...]:
         """Run a non-generative connection check against ``GET /models``."""
@@ -168,6 +182,10 @@ class OpenAICompatibleClient:
         except ProviderTransportError:
             raise
         except urllib.error.HTTPError as exc:
+            if 300 <= exc.code <= 399:
+                raise ProviderTransportError(
+                    "Provider endpoint redirects are not followed."
+                ) from exc
             raise ProviderTransportError(
                 f"Provider endpoint returned HTTP {exc.code}."
             ) from exc

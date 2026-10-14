@@ -122,7 +122,9 @@ The first runtime-backed connection layer is `ProviderProfile` plus
 passed to the client at runtime and is not part of the profile object. This
 transport returns a validated JSON envelope only; it does not construct an
 `InterpretationSpace`, formalization candidates or an Onto4 verdict. Those
-adapters remain the next explicit boundary.
+adapters remain the next explicit boundary. The default transport does not
+follow HTTP redirects, so a runtime credential cannot be forwarded to an
+unexpected origin.
 
 ## Clarification-aware orchestration
 

@@ -1,4 +1,6 @@
 import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -150,3 +152,47 @@ def test_transport_rejects_invalid_json_and_oversized_response():
             ProviderProfile(base_url="http://example.test/v1", model="bonsai"),
             urlopen=lambda request, *, timeout: InvalidJsonResponse(),
         ).list_models()
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_bearer_redirect_is_rejected_without_forwarding_a_second_request(status):
+    forwarded_headers = []
+
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/v1/models":
+                self.send_response(status)
+                self.send_header("Location", "/collect")
+                self.end_headers()
+                return
+            if self.path == "/collect":
+                forwarded_headers.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"data": []}')
+
+        def log_message(self, format, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        client = OpenAICompatibleClient(
+            ProviderProfile(
+                base_url=f"http://{host}:{port}/v1",
+                model="bonsai",
+                auth=EndpointAuthKind.Bearer,
+            ),
+            bearer_token="secret",
+        )
+        with pytest.raises(ProviderTransportError, match="redirect"):
+            client.list_models()
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+    assert forwarded_headers == []
