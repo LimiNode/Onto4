@@ -202,6 +202,10 @@ def _parse_candidates(payload: Mapping[str, Any], request: FormalizationRequest)
         item = _object(raw, path)
         _keys(item, path, {"id", "label", "formalization_id", "context_id", "formalization"}, {"reading_id", "assumptions"})
         reading_id = _optional_string(item.get("reading_id"), f"{path}.reading_id")
+        if request.interpretation.readings and reading_id is None:
+            raise ProviderSchemaError(
+                f"{path}.reading_id is required when the interpretation supplies readings."
+            )
         if reading_id is not None and reading_id not in reading_ids:
             raise ProviderSchemaError(f"{path}.reading_id refers to an unknown interpretation reading.")
         formalization = item["formalization"]

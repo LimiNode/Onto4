@@ -203,6 +203,56 @@ def test_formalization_adapter_rejects_unknown_reading_provenance():
         )
 
 
+def test_formalization_adapter_requires_reading_provenance_when_readings_exist():
+    space = InterpretationSpace(
+        id="door-space",
+        source_text="The door is closed.",
+        conceptual_depth=ConceptualDepth.Ordinary,
+        readings=(SemanticReading("closed-position", "closed", "not open"),),
+    )
+    payload = {
+        "candidates": [
+            {
+                "id": "position",
+                "label": "closed position",
+                "formalization_id": "closed-position",
+                "context_id": "door-context",
+                "formalization": None,
+            }
+        ]
+    }
+
+    with pytest.raises(ProviderSchemaError, match="required"):
+        OpenAICompatibleFormalizationProvider(FakeClient(payload)).formalize(
+            FormalizationRequest(space)
+        )
+
+
+def test_formalization_adapter_allows_missing_reading_provenance_without_readings():
+    space = InterpretationSpace(
+        id="door-space",
+        source_text="The door is closed.",
+        conceptual_depth=ConceptualDepth.Ordinary,
+    )
+    payload = {
+        "candidates": [
+            {
+                "id": "position",
+                "label": "closed position",
+                "formalization_id": "closed-position",
+                "context_id": "door-context",
+                "formalization": None,
+            }
+        ]
+    }
+
+    candidates = OpenAICompatibleFormalizationProvider(FakeClient(payload)).formalize(
+        FormalizationRequest(space)
+    )
+
+    assert candidates[0].reading_id is None
+
+
 def test_formalization_adapter_rejects_unknown_expression_kind():
     space = InterpretationSpace(
         id="space",
