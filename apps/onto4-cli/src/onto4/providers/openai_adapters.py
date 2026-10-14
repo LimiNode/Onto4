@@ -283,7 +283,18 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                         "id, source_text, conceptual_depth, ambiguities, presuppositions, "
                         "ontologies and readings. Do not choose a verdict. "
                         f"requested_conceptual_depth: {requested_depth}. "
-                        f"{depth_instruction}\n\n"
+                        f"{depth_instruction} conceptual_depth must be exactly one of "
+                        "ordinary, reflective, philosophical or ontology_sensitive. "
+                        "ambiguities, presuppositions, ontologies and readings must "
+                        "be arrays of JSON objects with the fields defined by their "
+                        "names; readings use id, label, description and "
+                        "presupposition_ids. Use this shape even when arrays are empty: "
+                        "ambiguities:[{id,term,description}], "
+                        "presuppositions:[{id,description}], "
+                        "ontologies:[{id,label,description}], "
+                        "readings:[{id,label,description,presupposition_ids}]. "
+                        "Do not use arrays of prose strings. "
+                        "Return JSON only.\n\n"
                         f"source_text: {request.source_text}"
                     ),
                 },
@@ -295,8 +306,14 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
 class OpenAICompatibleFormalizationProvider(FormalizationProvider):
     """Build explicit formalization candidates from a structured model reply."""
 
-    def __init__(self, client: OpenAICompatibleClient) -> None:
+    def __init__(
+        self,
+        client: OpenAICompatibleClient,
+        *,
+        context_ids: Sequence[str] = (),
+    ) -> None:
         self.client = client
+        self.context_ids = tuple(context_ids)
 
     def formalize(self, request: FormalizationRequest) -> tuple[FormalizationCandidate, ...]:
         interpretation_json = json.dumps(
@@ -315,13 +332,30 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
                         "a candidates array. Each formalization expression uses kind "
                         "predicate/not/and/or/implies/equivalent. Use only the supplied "
                         "reading IDs; do not invent, rename or merge readings. Do not "
-                        "return an Onto4 verdict.\n\n"
+                        "return an Onto4 verdict. Each candidate must contain id, label, "
+                        "formalization_id, context_id, formalization, optional reading_id "
+                        "and assumptions. A predicate expression is an object with kind, "
+                        "name and args; each arg has name and optional declared_type. "
+                        + (
+                            f"Use only these supplied context IDs: {', '.join(self.context_ids)}. "
+                            if self.context_ids
+                            else ""
+                        )
+                        + "Return JSON only.\n\n"
                         f"interpretation: {interpretation_json}"
                     ),
                 },
             ),
         )
-        return _parse_candidates(payload, request)
+        candidates = _parse_candidates(payload, request)
+        if self.context_ids:
+            allowed = set(self.context_ids)
+            for candidate in candidates:
+                if candidate.context_id not in allowed:
+                    raise ProviderSchemaError(
+                        f"Candidate {candidate.id!r} refers to an unavailable assessment context."
+                    )
+        return candidates
 
 
 __all__ = [

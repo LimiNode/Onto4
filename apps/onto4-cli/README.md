@@ -23,7 +23,19 @@ onto4 eval examples/formalizations/has_mass_integer_7.yaml \
 onto4 compare examples/formalizations/identity_substance.yaml \
   --context profiles/contexts/continuity.yaml \
   --context profiles/contexts/process.yaml
+
+# One model-backed interpretation/formalization/assessment pass
+onto4 ask "What is the mass of integer 7?" \
+  --endpoint http://127.0.0.1:8080/v1 \
+  --model bonsai \
+  --context profiles/contexts/physical_objects.yaml
 ```
+
+`onto4 ask` performs one explicit pass and reports the deterministic landscape
+and Onto4 assessments. It does not treat the model's text as a verdict. A
+pending clarification and answer loop will be added as a subsequent CLI slice;
+the current command is intentionally useful for inspecting model/schema
+behavior before that loop is automated.
 
 The semantic contract is:
 

@@ -290,3 +290,27 @@ def test_formalization_adapter_rejects_unknown_expression_kind():
         OpenAICompatibleFormalizationProvider(FakeClient(payload)).formalize(
             FormalizationRequest(space)
         )
+
+
+def test_formalization_adapter_rejects_context_outside_runtime_projection():
+    space = InterpretationSpace(
+        id="space",
+        source_text="Question",
+        conceptual_depth=ConceptualDepth.Ordinary,
+    )
+    payload = {
+        "candidates": [
+            {
+                "id": "candidate",
+                "label": "candidate",
+                "formalization_id": "formal",
+                "context_id": "not-available",
+                "formalization": None,
+            }
+        ]
+    }
+
+    with pytest.raises(ProviderSchemaError, match="unavailable assessment context"):
+        OpenAICompatibleFormalizationProvider(
+            FakeClient(payload), context_ids=("physical_objects",)
+        ).formalize(FormalizationRequest(space))

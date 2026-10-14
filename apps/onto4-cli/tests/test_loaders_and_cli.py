@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from onto4.cli.main import main
@@ -61,3 +62,58 @@ def test_json_renderer_handles_uncomputed_evidence(capsys):
     assert code == 0
     assert '"verdict": "C"' in output
     assert '"evidence": null' in output
+
+
+def test_ask_command_runs_model_backed_pass_without_model_verdict(monkeypatch, capsys):
+    import onto4.cli.main as cli_main
+
+    class FakeClient:
+        def complete(self, messages, **kwargs):
+            if "Formalize the supplied interpretation" in messages[1]["content"]:
+                payload = {
+                    "candidates": [
+                        {
+                            "id": "mass",
+                            "label": "mass of integer 7",
+                            "formalization_id": "has-mass",
+                            "context_id": "physical_objects",
+                            "formalization": {
+                                "kind": "predicate",
+                                "name": "has_mass",
+                                "args": [{"name": "integer_7"}],
+                            },
+                        }
+                    ]
+                }
+            else:
+                payload = {
+                    "id": "ask-space",
+                    "source_text": "What is the mass of integer 7?",
+                    "conceptual_depth": "ordinary",
+                    "ambiguities": [],
+                    "presuppositions": [],
+                    "ontologies": [],
+                    "readings": [],
+                }
+            return {"choices": [{"message": {"content": json.dumps(payload)}}]}
+
+    monkeypatch.setattr(cli_main, "OpenAICompatibleClient", lambda profile, bearer_token=None: FakeClient())
+    code = cli_main.main(
+        [
+            "ask",
+            "What is the mass of integer 7?",
+            "--endpoint",
+            "http://example.test/v1",
+            "--model",
+            "fixture-model",
+            "--context",
+            str(ROOT / "profiles/contexts/physical_objects.yaml"),
+            "--format",
+            "json",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert '"disposition": "Complete"' in output
+    assert '"verdict": "C"' in output
