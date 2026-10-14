@@ -115,6 +115,15 @@ assumptions provenance is a normative contract and is not machine-validated in
 this slice. These fixtures do not implement natural-language understanding,
 LLM behavior or KEV behavior.
 
+The first runtime-backed connection layer is `ProviderProfile` plus
+`OpenAICompatibleClient`. It accepts an `http(s)` `base_url`, model name and
+`none`/`bearer` authentication mode, and can test `/models` or call
+`/chat/completions`. The profile is deliberately non-secret: a Bearer token is
+passed to the client at runtime and is not part of the profile object. This
+transport returns a validated JSON envelope only; it does not construct an
+`InterpretationSpace`, formalization candidates or an Onto4 verdict. Those
+adapters remain the next explicit boundary.
+
 ## Clarification-aware orchestration
 
 The next deterministic layer treats `ask` as an iterative workflow rather
