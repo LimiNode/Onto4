@@ -13,6 +13,11 @@ from .openai_compatible import (
     ProviderProfile,
     ProviderTransportError,
 )
+from .openai_adapters import (
+    OpenAICompatibleFormalizationProvider,
+    OpenAICompatibleInterpretationProvider,
+    ProviderSchemaError,
+)
 from .protocols import (
     FormalizationProvider,
     FormalizationRequest,
@@ -40,7 +45,10 @@ __all__ = [
     "InterpretationProvider",
     "InterpretationRequest",
     "OpenAICompatibleClient",
+    "OpenAICompatibleFormalizationProvider",
+    "OpenAICompatibleInterpretationProvider",
     "ProviderProfile",
+    "ProviderSchemaError",
     "ProviderTransportError",
     "TypedDecision",
     "TypedDecisionBatchProvider",
