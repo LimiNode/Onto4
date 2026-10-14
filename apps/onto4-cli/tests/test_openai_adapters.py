@@ -73,6 +73,21 @@ def test_interpretation_adapter_preserves_explicit_requested_depth():
     )
 
     assert result.conceptual_depth is ConceptualDepth.Ordinary
+    assert "requested_conceptual_depth: ordinary" in client.messages[1]["content"]
+    assert "Preserve this requested conceptual_depth exactly" in client.messages[1]["content"]
+
+
+def test_interpretation_adapter_allows_model_depth_selection_when_unspecified():
+    client = FakeClient(interpretation_payload())
+
+    OpenAICompatibleInterpretationProvider(client).interpret(
+        InterpretationRequest("The door is closed.")
+    )
+
+    prompt = client.messages[1]["content"]
+    assert "requested_conceptual_depth: auto" in prompt
+    assert "Select one supported ConceptualDepth" in prompt
+    assert "requested_conceptual_depth: ordinary" not in prompt
 
 
 def test_interpretation_adapter_rejects_explicit_depth_mismatch():

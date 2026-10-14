@@ -262,6 +262,16 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
         self.client = client
 
     def interpret(self, request: InterpretationRequest) -> InterpretationSpace:
+        requested_depth = (
+            request.conceptual_depth.value
+            if request.conceptual_depth is not None
+            else "auto"
+        )
+        depth_instruction = (
+            "Preserve this requested conceptual_depth exactly."
+            if request.conceptual_depth is not None
+            else "Select one supported ConceptualDepth; do not infer an unsupported value."
+        )
         payload = _response_json(
             self.client,
             (
@@ -271,7 +281,9 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                     "content": (
                         "Interpret this source text into the exact JSON fields "
                         "id, source_text, conceptual_depth, ambiguities, presuppositions, "
-                        "ontologies and readings. Do not choose a verdict.\n\n"
+                        "ontologies and readings. Do not choose a verdict. "
+                        f"requested_conceptual_depth: {requested_depth}. "
+                        f"{depth_instruction}\n\n"
                         f"source_text: {request.source_text}"
                     ),
                 },
