@@ -7,6 +7,12 @@ from .fixtures import (
     FixtureInterpretationProvider,
 )
 from .decision import DeterministicDecisionPolicy
+from .openai_compatible import (
+    EndpointAuthKind,
+    OpenAICompatibleClient,
+    ProviderProfile,
+    ProviderTransportError,
+)
 from .protocols import (
     FormalizationProvider,
     FormalizationRequest,
@@ -24,6 +30,7 @@ __all__ = [
     "AbstentionPolicy",
     "DecisionProfile",
     "DeterministicDecisionPolicy",
+    "EndpointAuthKind",
     "FixtureBatchDecisionProvider",
     "FixtureDecisionProvider",
     "FixtureFormalizationProvider",
@@ -32,6 +39,9 @@ __all__ = [
     "FormalizationRequest",
     "InterpretationProvider",
     "InterpretationRequest",
+    "OpenAICompatibleClient",
+    "ProviderProfile",
+    "ProviderTransportError",
     "TypedDecision",
     "TypedDecisionBatchProvider",
     "TypedDecisionProvider",
