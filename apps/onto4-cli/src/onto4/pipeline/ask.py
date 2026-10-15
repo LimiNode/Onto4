@@ -93,6 +93,93 @@ def assess_interpretation(
     )
 
 
+def formalize_per_reading_and_context(
+    interpretation: InterpretationSpace,
+    *,
+    formalization_provider: FormalizationProvider,
+    contexts: Mapping[str, AssessmentContext],
+) -> tuple[FormalizationCandidate, ...]:
+    """Fan out host-bound formalization requests for one reading/context pair.
+
+    The provider receives exact immutable reading and context identity.  It may
+    propose expression content, but the orchestration boundary rejects any
+    returned candidate whose provenance does not match the request.
+    """
+
+    candidates: list[FormalizationCandidate] = []
+    if not interpretation.readings:
+        return tuple(formalization_provider.formalize(FormalizationRequest(interpretation)))
+    for reading in interpretation.readings:
+        for context_id in contexts:
+            returned = tuple(
+                formalization_provider.formalize(
+                    FormalizationRequest(
+                        interpretation,
+                        reading=reading,
+                        context_id=context_id,
+                    )
+                )
+            )
+            if len(returned) != 1:
+                raise ValueError(
+                    "Per-reading formalization must return exactly one candidate "
+                    f"for reading {reading.id!r} and context {context_id!r}."
+                )
+            candidate = returned[0]
+            if candidate.reading_id != reading.id:
+                raise ValueError(
+                    "Formalization candidate reading provenance does not match the request."
+                )
+            if candidate.context_id != context_id:
+                raise ValueError(
+                    "Formalization candidate context provenance does not match the request."
+                )
+            candidates.append(candidate)
+    candidate_ids = [candidate.id for candidate in candidates]
+    if len(set(candidate_ids)) != len(candidate_ids):
+        raise ValueError("Per-reading formalization returned duplicate candidate identities.")
+    return tuple(candidates)
+
+
+def assess_interpretation_per_reading(
+    interpretation: InterpretationSpace,
+    *,
+    formalization_provider: FormalizationProvider,
+    contexts: Mapping[str, AssessmentContext],
+    clarification_policy: ClarificationPolicy,
+) -> AskResult:
+    """Assess a snapshot after deterministic reading/context fan-out."""
+
+    candidates = formalize_per_reading_and_context(
+        interpretation,
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+    )
+    assessments = assess_candidates(candidates, contexts)
+    landscape = aggregate_assessments(assessments)
+    context = ClarificationContext(
+        interpretation=interpretation,
+        candidates=candidates,
+        assessments=assessments,
+        landscape=landscape,
+    )
+    disposition, reason = determine_disposition(context)
+    question = (
+        clarification_policy.choose(context)
+        if disposition is PipelineDisposition.AskClarification
+        else None
+    )
+    return AskResult(
+        interpretation=interpretation,
+        candidates=candidates,
+        assessments=assessments,
+        landscape=landscape,
+        disposition=disposition,
+        clarification_question=question,
+        reason=reason,
+    )
+
+
 def determine_disposition(context: ClarificationContext) -> tuple[PipelineDisposition, str]:
     landscape = context.landscape
     if landscape.status is CrossCandidateStatus.InvalidRequest:
