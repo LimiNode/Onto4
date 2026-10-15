@@ -308,6 +308,11 @@ host supplies the exact assessment-bound snapshot, admissible target IDs and
 the successor ID. The host then validates references and applies the delta to
 an immutable `InterpretationSpace`.
 
+Reading selection names the ambiguities it resolves; unrelated ambiguities are
+preserved. Batch application returns the complete ordered commitment list and
+publishes no partial result if any operation is rejected. A changed snapshot
+ID alone is explicitly a no-effect transition.
+
 This layer records structural admission and provenance; it does not establish
 that a model understood the user's meaning, and it never produces `T`, `F`,
 `U` or `C`. `retain_ambiguity` is explicitly represented as a no-effect

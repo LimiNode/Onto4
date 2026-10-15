@@ -53,7 +53,11 @@ def test_select_reading_is_host_bound_and_preserves_source_and_depth():
     request = _request()
     result = apply_refinement_delta(
         request,
-        RefinementDelta(RefinementOperation.SELECT_READING, target_id="reading-1"),
+        RefinementDelta(
+            RefinementOperation.SELECT_READING,
+            target_id="reading-1",
+            resolved_ambiguity_ids=("ambiguity-0",),
+        ),
         successor_id="successor",
     )
 
@@ -132,6 +136,9 @@ def test_stale_assessment_and_stale_target_are_rejected():
             RefinementDelta(RefinementOperation.SELECT_READING, target_id="missing"),
             successor_id="next",
         )
+
+    with pytest.raises(RefinementValidationError, match="absent from the snapshot"):
+        replace(request, allowed_reading_ids=frozenset({"reading-missing"}))
 
 
 def test_abstention_preserves_snapshot_without_inventing_commitment():
@@ -222,3 +229,103 @@ def test_batch_applies_multiple_nonconflicting_operations_atomically():
     assert result.successor.id == "successor"
     assert result.successor.ambiguities[0].description == "refined meaning"
     assert len(result.successor.presuppositions) == 2
+    assert result.source_interpretation_id == request.interpretation.id
+    assert len(result.commitments) == 2
+    assert [item.operation for item in result.commitments] == [
+        RefinementOperation.REFINE_AMBIGUITY,
+        RefinementOperation.ADD_PRESUPPOSITION,
+    ]
+
+
+@pytest.mark.parametrize(
+    "delta",
+    (
+        RefinementDelta(
+            RefinementOperation.REFINE_AMBIGUITY,
+            target_id="ambiguity-0",
+            text="term",
+            description="two meanings",
+        ),
+        RefinementDelta(
+            RefinementOperation.QUALIFY_ONTOLOGY_CANDIDATE,
+            target_id="ontology-0",
+            description="ordinary objects",
+        ),
+    ),
+)
+def test_new_snapshot_id_alone_is_no_effect(delta):
+    request = _request()
+    result = apply_refinement_delta(request, delta, successor_id="new-id")
+
+    assert result.successor is request.interpretation
+    assert result.commitment.effect is RefinementEffect.NO_EFFECT
+
+
+def test_changed_content_requires_distinct_successor_id():
+    request = _request()
+    with pytest.raises(RefinementValidationError, match="distinct successor_id"):
+        apply_refinement_delta(
+            request,
+            RefinementDelta(
+                RefinementOperation.REFINE_AMBIGUITY,
+                target_id="ambiguity-0",
+                text="term",
+                description="one meaning",
+            ),
+            successor_id=request.interpretation.id,
+        )
+
+
+def test_select_reading_removes_only_declared_resolved_ambiguities():
+    space = replace(
+        _space(),
+        ambiguities=(
+            Ambiguity("ambiguity-0", "determines", "cause or essence"),
+            Ambiguity("ambiguity-1", "personality", "traits or identity"),
+        ),
+    )
+    request = _request(space)
+    result = apply_refinement_delta(
+        request,
+        RefinementDelta(
+            RefinementOperation.SELECT_READING,
+            target_id="reading-1",
+            resolved_ambiguity_ids=("ambiguity-0",),
+        ),
+        successor_id="successor",
+    )
+
+    assert tuple(item.id for item in result.successor.ambiguities) == ("ambiguity-1",)
+
+
+def test_operation_specific_schema_rejects_ignored_fields():
+    with pytest.raises(RefinementValidationError, match="does not accept"):
+        RefinementDelta(
+            RefinementOperation.SELECT_READING,
+            target_id="reading-0",
+            description="silently ignored before the fix",
+        )
+
+
+def test_batch_failure_does_not_publish_partial_commitments():
+    request = _request()
+    with pytest.raises(RefinementValidationError, match="Unknown or inadmissible"):
+        apply_refinement_batch(
+            request,
+            (
+                RefinementDelta(
+                    RefinementOperation.ADD_PRESUPPOSITION,
+                    description="valid first operation",
+                ),
+                RefinementDelta(
+                    RefinementOperation.REFINE_AMBIGUITY,
+                    target_id="missing",
+                    text="term",
+                    description="invalid second operation",
+                ),
+            ),
+            successor_id="successor",
+            batch_id="batch-0",
+        )
+
+    assert request.interpretation == _space()
