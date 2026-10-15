@@ -37,6 +37,16 @@ class ClarificationTurnResult:
     successor: InterpretationSpace | None
     turn: ClarificationTurn | None
     pending: "PendingClarification" | None = None
+    prepared: "PreparedClarificationTransition | None" = None
+
+
+@dataclass(frozen=True)
+class PreparedClarificationTransition:
+    """Validated provider transition awaiting orchestration commit."""
+
+    successor: InterpretationSpace
+    turn: ClarificationTurn
+    progress: object | None = None
 
 
 @dataclass(frozen=True)
@@ -256,6 +266,7 @@ def answer_reasoning_clarification(
     *,
     answer: str | None,
     clarification_policy: TransitionAwareClarificationPolicy,
+    allow_freeform_answers: bool = False,
 ) -> ReasoningSessionResult:
     """Apply the issued answer and invalidate assessment until explicit reassessment."""
 
@@ -267,6 +278,7 @@ def answer_reasoning_clarification(
         session.assessment.clarification_context(),
         answer=answer,
         clarification_policy=clarification_policy,
+        allow_freeform_answers=allow_freeform_answers,
     )
     if result.session is session.clarification and result.turn_result.turn is None:
         return ReasoningSessionResult(session, result)
@@ -291,6 +303,7 @@ def decide_clarification_turn(
     clarification_policy: TransitionAwareClarificationPolicy,
     answer: str | None = None,
     pending: PendingClarification | None = None,
+    allow_freeform_answers: bool = False,
 ) -> ClarificationTurnResult:
     """Issue a pending question, or apply an already-issued answer.
 
@@ -327,6 +340,7 @@ def decide_clarification_turn(
         pending=pending,
         answer=answer,
         clarification_policy=clarification_policy,
+        allow_freeform_answers=allow_freeform_answers,
     )
 
 
@@ -336,6 +350,7 @@ def apply_clarification_answer(
     pending: PendingClarification,
     answer: str | None,
     clarification_policy: TransitionAwareClarificationPolicy,
+    allow_freeform_answers: bool = False,
 ) -> ClarificationTurnResult:
     """Apply an answer to the exact immutable question previously issued."""
 
@@ -371,16 +386,30 @@ def apply_clarification_answer(
         return ClarificationTurnResult(decision, None, None, pending)
     if not answer:
         raise ValueError("A clarification answer must not be empty.")
-    if question.choices and answer not in question.choices:
+    if (
+        question.choices
+        and not allow_freeform_answers
+        and answer not in question.choices
+    ):
         raise ValueError(
             f"Answer {answer!r} is not one of the clarification choices "
             f"{question.choices!r}."
         )
-    successor, turn = clarification_policy.successor(
-        interpretation=context.interpretation,
-        question=question,
-        answer=answer,
-    )
+    prepare = getattr(clarification_policy, "prepare_successor", None)
+    if prepare is not None:
+        prepared = prepare(
+            interpretation=context.interpretation,
+            question=question,
+            answer=answer,
+        )
+        successor, turn = prepared.successor, prepared.turn
+    else:
+        prepared = None
+        successor, turn = clarification_policy.successor(
+            interpretation=context.interpretation,
+            question=question,
+            answer=answer,
+        )
     expected_turn = ClarificationTurn(
         previous_interpretation_id=context.interpretation.id,
         question_id=question.id,
@@ -391,7 +420,7 @@ def apply_clarification_answer(
         raise ValueError(
             "Clarification transition returned inconsistent turn provenance."
         )
-    return ClarificationTurnResult(decision, successor, turn, None)
+    return ClarificationTurnResult(decision, successor, turn, None, prepared)
 
 
 def record_clarification_turn(
@@ -458,6 +487,7 @@ def answer_session_clarification(
     *,
     answer: str | None,
     clarification_policy: TransitionAwareClarificationPolicy,
+    allow_freeform_answers: bool = False,
 ) -> ClarificationSessionResult:
     """Apply the session's issued question without invoking a provider."""
 
@@ -469,6 +499,7 @@ def answer_session_clarification(
         pending=session.pending,
         answer=answer,
         clarification_policy=clarification_policy,
+        allow_freeform_answers=allow_freeform_answers,
     )
     if turn_result.turn is None:
         return ClarificationSessionResult(session, turn_result)
@@ -480,7 +511,22 @@ def answer_session_clarification(
         history=history,
         pending=None,
     )
+    _commit_prepared_transition(clarification_policy, turn_result.prepared)
     return ClarificationSessionResult(next_session, turn_result)
+
+
+def _commit_prepared_transition(
+    clarification_policy: TransitionAwareClarificationPolicy,
+    prepared: PreparedClarificationTransition | None,
+) -> None:
+    if prepared is None:
+        return
+    commit = getattr(clarification_policy, "commit_prepared", None)
+    if commit is None:
+        raise ValueError(
+            "Clarification policy returned a prepared transition without a commit hook."
+        )
+    commit(prepared)
 
 
 def reassess_session(
@@ -546,6 +592,7 @@ __all__ = [
     "SessionAssessment",
     "PendingClarification",
     "ClarificationTurnResult",
+    "PreparedClarificationTransition",
     "answer_session_clarification",
     "apply_clarification_answer",
     "decide_clarification_turn",

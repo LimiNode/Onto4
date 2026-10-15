@@ -13,7 +13,11 @@ from typing import Any
 import yaml
 
 from onto4.core import AssessmentResult
-from onto4.pipeline.ask import ask
+from onto4.pipeline import (
+    ModelClarificationPolicy,
+    ask_per_reading,
+    run_interactive_dialogue,
+)
 from onto4.pipeline.compare import compare_files
 from onto4.pipeline.eval import evaluate_files
 from onto4.pipeline.loaders import load_context
@@ -55,8 +59,8 @@ def _print_result(result: AssessmentResult, context_name: str | None = None) -> 
         print(f"Diagnostic [{diagnostic.code}]: {diagnostic.message}")
 
 
-def _ask_dict(result: Any) -> dict[str, Any]:
-    return {
+def _ask_dict(result: Any, *, stop_reason: str | None = None) -> dict[str, Any]:
+    payload = {
         "interpretation": {
             "id": result.interpretation.id,
             "source_text": result.interpretation.source_text,
@@ -95,9 +99,12 @@ def _ask_dict(result: Any) -> dict[str, Any]:
             for item in result.assessments
         ],
     }
+    if stop_reason is not None:
+        payload["stop_reason"] = stop_reason
+    return payload
 
 
-def _print_ask_result(result: Any) -> None:
+def _print_ask_result(result: Any, *, stop_reason: str | None = None) -> None:
     print(f"Interpretation: {result.interpretation.id}")
     print(f"Conceptual depth: {result.interpretation.conceptual_depth.value}")
     print(f"Landscape: {result.landscape.status.value}")
@@ -107,10 +114,15 @@ def _print_ask_result(result: Any) -> None:
     for item in result.assessments:
         verdict = item.result.verdict.value if item.result.verdict else "—"
         print(f"Candidate {item.candidate.id}: Onto4 {verdict}")
-    if result.clarification_question is not None:
+    if (
+        result.clarification_question is not None
+        and stop_reason != "max_turns_reached"
+    ):
         print(f"Clarification: {result.clarification_question.text}")
         if result.clarification_question.choices:
             print("Choices: " + ", ".join(result.clarification_question.choices))
+    if stop_reason is not None:
+        print(f"Stop reason: {stop_reason}")
 
 
 def _print_provider_trace(event: ProviderStageEvent) -> None:
@@ -123,12 +135,19 @@ def _print_provider_trace(event: ProviderStageEvent) -> None:
 
 def _run_ask(args: argparse.Namespace) -> int:
     try:
+        if args.interactive and args.format == "json":
+            raise ValueError(
+                "Interactive ask does not support --format json; use text output."
+            )
         auth = EndpointAuthKind(args.auth)
         profile = ProviderProfile(
             base_url=args.endpoint,
             model=args.model,
             auth=auth,
             timeout_seconds=args.timeout,
+            max_output_tokens=args.max_output_tokens,
+            disable_thinking=not args.enable_thinking,
+            temperature=args.temperature,
         )
         token = os.environ.get(args.token_env) if auth is EndpointAuthKind.Bearer else None
         client = OpenAICompatibleClient(profile, bearer_token=token)
@@ -142,18 +161,45 @@ def _run_ask(args: argparse.Namespace) -> int:
                 raise ValueError(f"Duplicate context id from --context: {context_id!r}.")
             contexts[context_id] = load_context(path)
 
-        result = ask(
-            InterpretationRequest(args.text, conceptual_depth=depth),
-            interpretation_provider=OpenAICompatibleInterpretationProvider(client, trace=trace),
-            formalization_provider=OpenAICompatibleFormalizationProvider(
-                client,
-                context_ids=tuple(contexts),
-                trace=trace,
-            ),
-            contexts=contexts,
-            clarification_policy=FixtureClarificationPolicy(),
+        interpretation_provider = OpenAICompatibleInterpretationProvider(
+            client,
+            trace=trace,
         )
+        formalization_provider = OpenAICompatibleFormalizationProvider(
+            client,
+            context_ids=tuple(contexts),
+            trace=trace,
+        )
+        request = InterpretationRequest(args.text, conceptual_depth=depth)
+        if args.interactive:
+            dialogue_policy = ModelClarificationPolicy(
+                FixtureClarificationPolicy(),
+                interpretation_provider,
+            )
+            dialogue = run_interactive_dialogue(
+                request,
+                interpretation_provider=interpretation_provider,
+                refinement_provider=interpretation_provider,
+                formalization_provider=formalization_provider,
+                contexts=contexts,
+                clarification_policy=dialogue_policy,
+                max_turns=args.max_turns,
+            )
+            if dialogue.session.assessment is None:
+                raise ValueError("Interactive dialogue ended without an assessment.")
+            result = dialogue.session.assessment.ask_result
+            stop_reason = dialogue.stop_reason
+        else:
+            result = ask_per_reading(
+                request,
+                interpretation_provider=interpretation_provider,
+                formalization_provider=formalization_provider,
+                contexts=contexts,
+                clarification_policy=FixtureClarificationPolicy(),
+            )
+            stop_reason = None
     except (
+        EOFError,
         KeyError,
         OSError,
         ProviderTransportError,
@@ -164,9 +210,9 @@ def _run_ask(args: argparse.Namespace) -> int:
         print(f"Ask error: {exc}", file=sys.stderr)
         return 1
     if args.format == "json":
-        print(json.dumps(_ask_dict(result), ensure_ascii=False, indent=2))
+        print(json.dumps(_ask_dict(result, stop_reason=stop_reason), ensure_ascii=False, indent=2))
     else:
-        _print_ask_result(result)
+        _print_ask_result(result, stop_reason=stop_reason)
     return 0
 
 
@@ -196,6 +242,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=30.0,
         help="Provider request timeout in seconds (default: 30).",
     )
+    ask_parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=1024,
+        help="Bound model output per provider request (default: 1024).",
+    )
+    ask_parser.add_argument(
+        "--enable-thinking",
+        action="store_true",
+        help="Allow provider-side hidden reasoning (disabled by default for JSON stages).",
+    )
+    ask_parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="Sampling temperature (default: 0 for reproducible structured output).",
+    )
     ask_parser.add_argument("--auth", choices=("none", "bearer"), default="none")
     ask_parser.add_argument(
         "--token-env",
@@ -213,6 +276,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--debug",
         action="store_true",
         help="Print safe provider-stage timing diagnostics to stderr.",
+    )
+    ask_parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Run bounded clarification, free-form answers and explicit reassessment.",
+    )
+    ask_parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=4,
+        help="Maximum interactive clarification turns (default: 4).",
     )
     return parser
 

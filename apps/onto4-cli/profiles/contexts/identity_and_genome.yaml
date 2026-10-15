@@ -1,0 +1,20 @@
+name: identity_and_genome
+
+ontology:
+  types:
+    person_A: Person
+    person_B: Person
+    genome_A: Genome
+    genome_B: Genome
+  predicates:
+    identity_determined_by_genes:
+      domain: [Person, Genome]
+      returns: Proposition
+    same_person:
+      domain: [Person, Person]
+      returns: Proposition
+    same_genome:
+      domain: [Genome, Genome]
+      returns: Proposition
+
+evidence: {}

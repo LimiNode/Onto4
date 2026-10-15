@@ -156,14 +156,14 @@ class FixtureClarificationPolicy:
 
         interpretation = context.interpretation
         if interpretation.ambiguities:
-            ambiguity = interpretation.ambiguities[0]
-            return (
+            return tuple(
                 ClarificationQuestion(
                     id=f"meaning:{ambiguity.id}",
                     kind=ClarificationKind.Meaning,
                     text=f"Что именно означает «{ambiguity.term}» в этом вопросе?",
                     target_ids=(ambiguity.id,),
-                ),
+                )
+                for ambiguity in interpretation.ambiguities
             )
 
         landscape = context.landscape

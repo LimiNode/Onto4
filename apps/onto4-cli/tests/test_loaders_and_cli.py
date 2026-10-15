@@ -1,9 +1,14 @@
 import json
+import importlib
+from types import SimpleNamespace
 from pathlib import Path
 
 from onto4.cli.main import main
 from onto4.pipeline.loaders import load_context, load_formalization
 from onto4.core import Verdict, evaluate
+
+
+cli_main = importlib.import_module("onto4.cli.main")
 
 
 ROOT = Path(__file__).parents[1]
@@ -243,3 +248,77 @@ def test_ask_command_reports_invalid_context_yaml_without_traceback(capsys, tmp_
     assert captured.out == ""
     assert "Ask error:" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_interactive_ask_reports_stdin_eof_without_traceback(monkeypatch, capsys):
+    def raise_eof(*args, **kwargs):
+        raise EOFError
+
+    monkeypatch.setattr(cli_main, "run_interactive_dialogue", raise_eof)
+
+    code = cli_main.main(
+        [
+            "ask",
+            "What is the mass of integer 7?",
+            "--endpoint",
+            "http://example.test/v1",
+            "--model",
+            "fixture-model",
+            "--context",
+            str(ROOT / "profiles/contexts/physical_objects.yaml"),
+            "--interactive",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert "Ask error:" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_interactive_json_output_is_rejected_before_prompt_output(capsys, tmp_path):
+    context = tmp_path / "context.yaml"
+    context.write_text("ontology: {}\n", encoding="utf-8")
+
+    code = cli_main.main(
+        [
+            "ask",
+            "A statement",
+            "--endpoint",
+            "http://example.test/v1",
+            "--model",
+            "fixture-model",
+            "--context",
+            str(context),
+            "--interactive",
+            "--format",
+            "json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert "Interactive ask does not support --format json" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_max_turns_output_does_not_repeat_unissued_question(capsys):
+    result = SimpleNamespace(
+        interpretation=SimpleNamespace(
+            id="snapshot",
+            conceptual_depth=SimpleNamespace(value="ordinary"),
+        ),
+        landscape=SimpleNamespace(status=SimpleNamespace(value="Mixed")),
+        disposition=SimpleNamespace(value="AskClarification"),
+        reason="material_ambiguity",
+        assessments=(),
+        clarification_question=SimpleNamespace(text="A question that is not issued", choices=()),
+    )
+
+    cli_main._print_ask_result(result, stop_reason="max_turns_reached")
+
+    output = capsys.readouterr().out
+    assert "Stop reason: max_turns_reached" in output
+    assert "A question that is not issued" not in output
