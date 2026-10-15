@@ -23,6 +23,7 @@ from onto4.providers import (
     OpenAICompatibleFormalizationProvider,
     OpenAICompatibleInterpretationProvider,
     ProviderProfile,
+    ProviderStageEvent,
     ProviderSchemaError,
     ProviderTransportError,
 )
@@ -112,6 +113,14 @@ def _print_ask_result(result: Any) -> None:
             print("Choices: " + ", ".join(result.clarification_question.choices))
 
 
+def _print_provider_trace(event: ProviderStageEvent) -> None:
+    detail = f" [{event.detail}]" if event.detail else ""
+    print(
+        f"[onto4] {event.stage}: {event.phase} ({event.elapsed_seconds:.3f}s){detail}",
+        file=sys.stderr,
+    )
+
+
 def _run_ask(args: argparse.Namespace) -> int:
     try:
         auth = EndpointAuthKind(args.auth)
@@ -124,6 +133,7 @@ def _run_ask(args: argparse.Namespace) -> int:
         token = os.environ.get(args.token_env) if auth is EndpointAuthKind.Bearer else None
         client = OpenAICompatibleClient(profile, bearer_token=token)
         depth = None if args.depth == "auto" else ConceptualDepth(args.depth)
+        trace = _print_provider_trace if args.debug else None
         contexts = {}
         for context_path in args.context:
             path = Path(context_path)
@@ -134,10 +144,11 @@ def _run_ask(args: argparse.Namespace) -> int:
 
         result = ask(
             InterpretationRequest(args.text, conceptual_depth=depth),
-            interpretation_provider=OpenAICompatibleInterpretationProvider(client),
+            interpretation_provider=OpenAICompatibleInterpretationProvider(client, trace=trace),
             formalization_provider=OpenAICompatibleFormalizationProvider(
                 client,
                 context_ids=tuple(contexts),
+                trace=trace,
             ),
             contexts=contexts,
             clarification_policy=FixtureClarificationPolicy(),
@@ -198,6 +209,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ask_parser.add_argument("--context", action="append", required=True, type=Path)
     ask_parser.add_argument("--format", choices=("text", "json"), default="text")
+    ask_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print safe provider-stage timing diagnostics to stderr.",
+    )
     return parser
 
 

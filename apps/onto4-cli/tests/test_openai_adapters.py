@@ -63,6 +63,39 @@ def test_interpretation_adapter_parses_structured_space_and_requests_json_mode()
     assert client.messages[0]["role"] == "system"
 
 
+def test_interpretation_adapter_emits_safe_stage_diagnostics():
+    events = []
+    provider = OpenAICompatibleInterpretationProvider(
+        FakeClient(interpretation_payload()), trace=events.append
+    )
+
+    provider.interpret(InterpretationRequest("The door is closed."))
+
+    assert [event.phase for event in events] == [
+        "started",
+        "response_received",
+        "json_valid",
+        "completed",
+    ]
+    assert all(event.elapsed_seconds >= 0 for event in events)
+    assert events[-1].detail == "schema_valid"
+
+
+def test_interpretation_adapter_traces_schema_failure_without_response_body():
+    payload = interpretation_payload()
+    payload["unexpected"] = True
+    events = []
+
+    with pytest.raises(ProviderSchemaError):
+        OpenAICompatibleInterpretationProvider(
+            FakeClient(payload), trace=events.append
+        ).interpret(InterpretationRequest("The door is closed."))
+
+    assert events[-1].phase == "failed"
+    assert events[-1].detail == "schema"
+    assert all("unexpected" not in event.detail for event in events)
+
+
 def test_interpretation_adapter_preserves_explicit_requested_depth():
     client = FakeClient(interpretation_payload())
 
