@@ -211,24 +211,51 @@ def _classify_progress(
         known_targets = tuple(
             target_id for target_id in question.target_ids if target_id in before
         )
-        target_changed = any(
-            before[target_id] != after.get(target_id) for target_id in known_targets
-        )
-        target_removed = any(target_id not in after for target_id in known_targets)
         if not known_targets:
             kind = ClarificationProgressKind.Unverified
-        elif target_removed:
-            # A full snapshot can show that the ambiguity disappeared, but it
-            # cannot prove that the model selected the meaning intended by the
-            # user's free-form answer. Keep this distinct from host-verified
-            # ``Resolved`` until an explicit refinement delta is available.
-            kind = ClarificationProgressKind.StructuralResolution
-        elif target_changed:
-            kind = ClarificationProgressKind.Unresolved
-        elif new_item_ids:
-            kind = ClarificationProgressKind.New
         else:
-            kind = ClarificationProgressKind.NoEffect
+            before_signatures = {
+                target_id: _semantic_signature(before[target_id])
+                for target_id in known_targets
+            }
+            after_signatures = {
+                _semantic_signature(item) for item in after.values()
+            }
+            target_preserved = any(
+                signature in after_signatures
+                for signature in before_signatures.values()
+            )
+            target_removed = any(
+                signature not in after_signatures
+                for signature in before_signatures.values()
+            )
+            same_id_preserved = all(
+                target_id in after
+                and _semantic_signature(after[target_id]) == signature
+                for target_id, signature in before_signatures.items()
+            )
+            if new_item_ids and target_preserved:
+                kind = ClarificationProgressKind.New
+            elif target_preserved:
+                # A target may be re-indexed by the model.  Its semantic
+                # signature, rather than its technical id, is authoritative
+                # for progress classification.
+                kind = (
+                    ClarificationProgressKind.NoEffect
+                    if same_id_preserved and not new_item_ids
+                    else ClarificationProgressKind.Unresolved
+                )
+            elif target_removed:
+                # A full snapshot can show that the ambiguity disappeared, but
+                # it cannot prove that the model selected the meaning intended
+                # by the user's free-form answer. Keep this distinct from
+                # host-verified ``Resolved`` until an explicit refinement delta
+                # is available.
+                kind = ClarificationProgressKind.StructuralResolution
+            elif new_item_ids:
+                kind = ClarificationProgressKind.New
+            else:
+                kind = ClarificationProgressKind.NoEffect
     return ClarificationProgress(
         question_id=question.id,
         question_key=_question_key(previous, question),
@@ -368,7 +395,7 @@ def run_interactive_dialogue(
                 current,
                 formalization_provider=formalization_provider,
                 contexts=contexts,
-                clarification_policy=clarification_policy,
+                clarification_policy=progress_policy,
             ).session
         assessment = current.assessment
         assert assessment is not None
@@ -377,15 +404,13 @@ def run_interactive_dialogue(
             return InteractiveDialogueResult(current, turn_index, progress_policy.ledger)
         if turn_index >= max_turns:
             raise ValueError("Interactive clarification reached max_turns.")
-        question = ask_result.clarification_question
-        if question is None:
+        if ask_result.clarification_question is None:
             return InteractiveDialogueResult(
                 current,
                 turn_index,
                 progress_policy.ledger,
                 "no_new_admissible_question",
             )
-
         issued = issue_reasoning_clarification(
             current,
             profile=profile,
@@ -393,6 +418,16 @@ def run_interactive_dialogue(
             clarification_policy=progress_policy,
         )
         current = issued.session
+        if issued.clarification is None:
+            raise ValueError("Clarification issuance returned no decision result.")
+        question = issued.clarification.turn_result.decision.question
+        if question is None:
+            return InteractiveDialogueResult(
+                current,
+                turn_index,
+                progress_policy.ledger,
+                "no_new_admissible_question",
+            )
         output_fn(f"Clarification: {question.text}")
         if question.choices:
             output_fn("Choices: " + ", ".join(question.choices))

@@ -6,9 +6,15 @@ from onto4.core import AssessmentContext, OntologyProfile, PredicateCall, Predic
 from onto4.core.evidence import AtomicVerdictStore
 from onto4.pipeline import (
     ClarificationProgressKind,
+    ClarificationSession,
+    FirstAdmissibleDecisionProvider,
     ModelClarificationPolicy,
     ProgressAwareClarificationPolicy,
+    answer_reasoning_clarification,
+    interactive_decision_profile,
+    issue_reasoning_clarification,
     run_interactive_dialogue,
+    start_reasoning_session_per_reading,
 )
 from onto4.providers import FormalizationRequest, InterpretationRequest
 from onto4.reasoning import (
@@ -114,6 +120,34 @@ def test_interactive_dialogue_uses_successor_and_reassessment():
     assert refinement.calls == 1
     assert any("Clarification:" in line for line in output)
     assert result.progress.entries[0].kind is ClarificationProgressKind.StructuralResolution
+
+
+def test_interactive_dialogue_stops_cleanly_after_none_of_the_above():
+    initial = _space("initial", ambiguous=True)
+    refinement = _RefinementProvider(_space("unused", ambiguous=False))
+    output = []
+
+    result = run_interactive_dialogue(
+        InterpretationRequest(initial.source_text),
+        interpretation_provider=_InterpretationProvider(initial),
+        refinement_provider=refinement,
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=ModelClarificationPolicy(
+            FixtureClarificationPolicy(), refinement
+        ),
+        input_fn=lambda prompt: "none_of_the_above",
+        output_fn=output.append,
+        max_turns=2,
+    )
+
+    assert result.stop_reason == "no_new_admissible_question"
+    assert result.turns == 1
+    assert result.session.clarification.interpretation is initial
+    assert len(result.session.clarification.history.turns) == 1
+    assert result.session.assessment is not None
+    assert result.progress.entries[0].kind is ClarificationProgressKind.Abstained
+    assert refinement.calls == 0
 
 
 def test_none_of_the_above_preserves_snapshot_without_calling_refinement():
@@ -236,6 +270,46 @@ def test_progress_policy_rejects_no_effect_and_unverifiable_targets():
         )
 
 
+def test_reasoning_session_rejects_no_effect_without_mutating_state():
+    initial = _space("initial", ambiguous=True)
+
+    class _ReturnSame:
+        def refine(self, interpretation, question, answer):
+            return interpretation
+
+    policy = ProgressAwareClarificationPolicy(
+        ModelClarificationPolicy(
+            FixtureClarificationPolicy(), _ReturnSame()
+        )
+    )
+    started = start_reasoning_session_per_reading(
+        ClarificationSession(initial),
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=policy,
+    ).session
+    issued = issue_reasoning_clarification(
+        started,
+        profile=interactive_decision_profile(),
+        provider=FirstAdmissibleDecisionProvider(),
+        clarification_policy=policy,
+    ).session
+    ledger_before = policy.ledger
+
+    with pytest.raises(ValueError, match="progress=no_effect"):
+        answer_reasoning_clarification(
+            issued,
+            answer="an answer",
+            clarification_policy=policy,
+        )
+
+    assert issued.clarification.interpretation is initial
+    assert issued.clarification.pending is not None
+    assert issued.clarification.history.turns == ()
+    assert issued.assessment is started.assessment
+    assert policy.ledger is ledger_before
+
+
 def test_progress_can_resolve_target_and_record_new_semantic_items():
     initial = _space("initial", ambiguous=True)
     successor = InterpretationSpace(
@@ -272,6 +346,45 @@ def test_progress_can_resolve_target_and_record_new_semantic_items():
     entry = policy.ledger.entries[0]
     assert entry.kind is ClarificationProgressKind.StructuralResolution
     assert entry.new_item_ids == ("ontology-0",)
+
+
+def test_progress_classifies_reindexed_target_by_semantic_signature():
+    initial = replace(
+        _space("initial", ambiguous=True),
+        ambiguities=(
+            Ambiguity("ambiguity-0", "term-a", "meaning-a"),
+            Ambiguity("ambiguity-1", "term-b", "meaning-b"),
+        ),
+    )
+    successor = replace(
+        initial,
+        id="successor",
+        ambiguities=(Ambiguity("ambiguity-0", "term-b", "meaning-b"),),
+    )
+
+    class _ReturnSuccessor:
+        def refine(self, interpretation, question, answer):
+            return successor
+
+    policy = ProgressAwareClarificationPolicy(
+        ModelClarificationPolicy(
+            FixtureClarificationPolicy(), _ReturnSuccessor()
+        )
+    )
+    question = ClarificationQuestion(
+        id="meaning:ambiguity-0",
+        kind=ClarificationKind.Meaning,
+        text="What does term-a mean?",
+        target_ids=("ambiguity-0",),
+    )
+
+    policy.successor(
+        interpretation=initial,
+        question=question,
+        answer="Р“РµРЅС‹ СЃРѕРґРµСЂР¶Р°С‚ С‚Рѕ, С‡РµРј С‡РµР»РѕРІРµРє СЏРІР»СЏРµС‚СЃСЏ РЅР° СЃР°РјРѕРј РґРµР»Рµ.",
+    )
+
+    assert policy.ledger.entries[0].kind is ClarificationProgressKind.StructuralResolution
 
 
 def test_progress_allows_reindexed_distinct_target_after_previous_answer():
