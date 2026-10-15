@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+import yaml
+
 from onto4.core import (
     AssessmentContext,
     OntologyProfile,
@@ -123,6 +126,25 @@ cases:
         "utterance": "claim",
         "context": "supplied-context",
     }
+
+
+@pytest.mark.parametrize("invalid_visibility", ("other", [], {}))
+def test_invalid_model_visibility_is_controlled_error(tmp_path, invalid_visibility):
+    corpus_path = tmp_path / "invalid-visibility.yaml"
+    corpus_path.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "name": "invalid",
+                "visibility": {"model_input": invalid_visibility},
+                "cases": [{"case_id": "one", "utterance": "claim", "expected_after_answer": {}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="model_input"):
+        load_clarification_corpus(corpus_path)
 
 
 class CorpusFormalizationProvider:
