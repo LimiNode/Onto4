@@ -64,12 +64,20 @@ claim
   -> another answer or `none_of_the_above`
 ```
 
-The current `onto4 ask` command cannot execute this sequence yet. The case is
-therefore recorded for the future interactive loop and must not be reported as
-a passed model evaluation. A host-controlled loop must own snapshot identity,
-transition provenance and validation; the model may propose only semantic
-content for the next snapshot. Every question must also permit the user to
-reject all listed alternatives rather than forcing a false choice.
+The CLI now has a bounded interactive runner that can execute this sequence
+when supplied with model-backed interpretation, refinement and formalization
+providers. The host-controlled loop owns snapshot identity, transition
+provenance, progress admission and validation; the model may propose only
+semantic content for the next snapshot. Every question must also permit the
+user to reject all listed alternatives rather than forcing a false choice.
+
+The repository's fixture tests establish the transition protocol, including
+successor snapshots, explicit reassessment, abstention and turn limits. They
+are not evidence that Bonsai has produced the intended readings. Real Bonsai
+runs are recorded separately with provider, prompt and transport diagnostics;
+an incomplete, timed-out or schema-invalid case is not a semantic pass or
+failure. Until a reproducible evaluation runner scores the full corpus, this
+file must not be read as claiming that the dialogue corpus has been passed.
 
 The corpus is currently an evaluation fixture. It is loaded and checked for
 oracle isolation by unit tests, but it is not silently folded into the ordinary

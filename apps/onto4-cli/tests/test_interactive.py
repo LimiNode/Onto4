@@ -22,6 +22,7 @@ from onto4.reasoning import (
     Ambiguity,
     ClarificationKind,
     ClarificationQuestion,
+    ClarificationTurn,
     ConceptualDepth,
     FixtureClarificationPolicy,
     FormalizationCandidate,
@@ -121,6 +122,53 @@ def test_interactive_dialogue_uses_successor_and_reassessment():
     assert refinement.calls == 1
     assert any("Clarification:" in line for line in output)
     assert result.progress.entries[0].kind is ClarificationProgressKind.StructuralResolution
+
+
+def test_interactive_dialogue_completes_two_question_fixture_loop():
+    initial = replace(
+        _space("initial", ambiguous=True),
+        ambiguities=(
+            Ambiguity("ambiguity-0", "term-a", "first distinction"),
+            Ambiguity("ambiguity-1", "term-b", "second distinction"),
+        ),
+    )
+    first_successor = replace(
+        initial,
+        id="successor-1",
+        ambiguities=(initial.ambiguities[1],),
+    )
+    final_successor = replace(first_successor, id="successor-2", ambiguities=())
+
+    class _TwoStepRefinement:
+        def __init__(self):
+            self.calls = 0
+
+        def refine(self, interpretation, question, answer):
+            self.calls += 1
+            return (first_successor, final_successor)[self.calls - 1]
+
+    refinement = _TwoStepRefinement()
+    answers = iter(("first answer", "second answer"))
+    result = run_interactive_dialogue(
+        InterpretationRequest(initial.source_text),
+        interpretation_provider=_InterpretationProvider(initial),
+        refinement_provider=refinement,
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=ModelClarificationPolicy(
+            FixtureClarificationPolicy(), refinement
+        ),
+        input_fn=lambda prompt: next(answers),
+        output_fn=lambda line: None,
+        max_turns=2,
+    )
+
+    assert result.stop_reason == "complete"
+    assert result.turns == 2
+    assert result.session.clarification.interpretation is final_successor
+    assert len(result.session.clarification.history.turns) == 2
+    assert len(result.progress.entries) == 2
+    assert refinement.calls == 2
 
 
 def test_interactive_dialogue_stops_cleanly_after_none_of_the_above():
@@ -634,3 +682,138 @@ def test_structural_resolution_is_not_claimed_as_verified_resolution():
 
     assert policy.ledger.entries[0].kind is ClarificationProgressKind.StructuralResolution
     assert policy.ledger.entries[0].kind is not ClarificationProgressKind.Resolved
+
+
+def test_duplicate_target_removal_is_unverified_and_does_not_commit():
+    initial = replace(
+        _space("initial", ambiguous=True),
+        ambiguities=(
+            Ambiguity("ambiguity-a", "term", "same meaning"),
+            Ambiguity("ambiguity-b", "term", "same meaning"),
+        ),
+    )
+    successor = replace(
+        initial,
+        id="successor",
+        ambiguities=(Ambiguity("ambiguity-a", "term", "same meaning"),),
+    )
+
+    class _ReturnSuccessor:
+        def refine(self, interpretation, question, answer):
+            return successor
+
+    policy = ProgressAwareClarificationPolicy(
+        ModelClarificationPolicy(FixtureClarificationPolicy(), _ReturnSuccessor())
+    )
+    question = ClarificationQuestion(
+        id="meaning:ambiguity-a",
+        kind=ClarificationKind.Meaning,
+        text="Which meaning is intended?",
+        target_ids=("ambiguity-a",),
+    )
+    ledger_before = policy.ledger
+
+    with pytest.raises(ValueError, match="progress=unverified"):
+        policy.successor(
+            interpretation=initial,
+            question=question,
+            answer="the answer",
+        )
+
+    assert policy.ledger is ledger_before
+
+
+def test_duplicate_target_multiplicity_change_is_unverified_even_when_added():
+    initial = replace(
+        _space("initial", ambiguous=True),
+        ambiguities=(Ambiguity("ambiguity-a", "term", "same meaning"),),
+    )
+    successor = replace(
+        initial,
+        id="successor",
+        ambiguities=(
+            Ambiguity("ambiguity-a", "term", "same meaning"),
+            Ambiguity("ambiguity-b", "term", "same meaning"),
+        ),
+    )
+
+    class _ReturnSuccessor:
+        def refine(self, interpretation, question, answer):
+            return successor
+
+    policy = ProgressAwareClarificationPolicy(
+        ModelClarificationPolicy(FixtureClarificationPolicy(), _ReturnSuccessor())
+    )
+    question = ClarificationQuestion(
+        id="meaning:ambiguity-a",
+        kind=ClarificationKind.Meaning,
+        text="Which meaning is intended?",
+        target_ids=("ambiguity-a",),
+    )
+
+    progress = _classify_progress(initial, successor, question, "the answer")
+
+    assert progress.kind is ClarificationProgressKind.Unverified
+
+
+def test_direct_policy_successor_rejects_malformed_turn_before_commit():
+    initial = _space("initial", ambiguous=True)
+    successor = replace(initial, id="successor", ambiguities=())
+
+    class _MalformedBase:
+        def successor(self, *, interpretation, question, answer):
+            return successor, ClarificationTurn(
+                previous_interpretation_id=interpretation.id,
+                question_id="wrong-question",
+                answer=answer,
+                successor_interpretation_id=successor.id,
+            )
+
+    policy = ProgressAwareClarificationPolicy(_MalformedBase())
+    question = ClarificationQuestion(
+        id="meaning:ambiguity-0",
+        kind=ClarificationKind.Meaning,
+        text="Which meaning is intended?",
+        target_ids=("ambiguity-0",),
+    )
+    ledger_before = policy.ledger
+
+    with pytest.raises(ValueError, match="inconsistent turn provenance"):
+        policy.successor(
+            interpretation=initial,
+            question=question,
+            answer="the answer",
+        )
+
+    assert policy.ledger is ledger_before
+
+
+def test_repeated_prepared_commit_is_rejected_without_mutating_ledger():
+    initial = _space("initial", ambiguous=True)
+    successor = replace(initial, id="successor", ambiguities=())
+
+    class _ReturnSuccessor:
+        def refine(self, interpretation, question, answer):
+            return successor
+
+    policy = ProgressAwareClarificationPolicy(
+        ModelClarificationPolicy(FixtureClarificationPolicy(), _ReturnSuccessor())
+    )
+    question = ClarificationQuestion(
+        id="meaning:ambiguity-0",
+        kind=ClarificationKind.Meaning,
+        text="Which meaning is intended?",
+        target_ids=("ambiguity-0",),
+    )
+    prepared = policy.prepare_successor(
+        interpretation=initial,
+        question=question,
+        answer="the answer",
+    )
+    policy.commit_prepared(prepared)
+    committed = policy.ledger
+
+    with pytest.raises(ValueError, match="already answered"):
+        policy.commit_prepared(prepared)
+
+    assert policy.ledger is committed

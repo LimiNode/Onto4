@@ -3,10 +3,11 @@
 Experimental Python CLI for evaluating Onto4 formalizations and comparing them
 under different contexts.
 
-The first implementation slice is deliberately deterministic. It contains no
-LLM or KEV integration. Natural-language interpretation and typed decision
-providers will be added behind explicit interfaces after the kernel is covered
-by acceptance tests.
+The semantic kernel is deliberately deterministic. Model-backed interpretation
+and formalization are available behind explicit provider interfaces, while KEV
+integration and model authority over Onto4 verdicts remain out of scope. The
+CLI keeps provider output, host-controlled orchestration and deterministic
+assessment as separate boundaries.
 
 Only the `strict_onto4` semantic profile and `direct_evidence` inference
 profile are implemented at this stage. Other profile values are rejected

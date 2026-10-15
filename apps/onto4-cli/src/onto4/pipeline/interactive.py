@@ -235,6 +235,14 @@ def _classify_progress(
                 target_id: _semantic_signature(before[target_id])
                 for target_id in known_targets
             }
+            target_signature_counts = {
+                signature: before_signature_counts[signature]
+                for signature in before_signatures.values()
+            }
+            target_multiplicity_changed = any(
+                after_signature_counts.get(signature, 0) != count
+                for signature, count in target_signature_counts.items()
+            )
             after_signatures = {
                 _semantic_signature(item) for item in after.values()
             }
@@ -257,6 +265,18 @@ def _classify_progress(
             if semantic_snapshot_unchanged:
                 # A host reindex or permutation is not semantic progress.
                 kind = ClarificationProgressKind.NoEffect
+            elif target_multiplicity_changed and any(
+                max(
+                    count,
+                    after_signature_counts.get(signature, 0),
+                )
+                > 1
+                for signature, count in target_signature_counts.items()
+            ):
+                # Removing or retaining one of several semantically identical
+                # targets does not identify which technical target was answered.
+                # Do not claim a verified resolution from multiplicity alone.
+                kind = ClarificationProgressKind.Unverified
             elif new_semantic_signatures and target_preserved:
                 kind = ClarificationProgressKind.New
             elif target_preserved:
@@ -344,6 +364,14 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
         question: ClarificationQuestion,
         answer: str,
     ) -> tuple[InterpretationSpace, ClarificationTurn]:
+        """Apply and record one validated transition.
+
+        This convenience API is intentionally equivalent to
+        ``prepare_successor()`` followed by ``commit_prepared()``.  Session,
+        pending-question and assessment snapshot provenance remains owned by
+        the orchestration layer; callers that have a session must use that
+        layer before invoking this low-level transition API.
+        """
         prepared = self.prepare_successor(
             interpretation=interpretation,
             question=question,
@@ -359,11 +387,23 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
         question: ClarificationQuestion,
         answer: str,
     ) -> PreparedClarificationTransition:
+        if not answer:
+            raise ValueError("A clarification answer must not be empty.")
         successor, turn = self.base.successor(
             interpretation=interpretation,
             question=question,
             answer=answer,
         )
+        expected_turn = ClarificationTurn(
+            previous_interpretation_id=interpretation.id,
+            question_id=question.id,
+            answer=answer,
+            successor_interpretation_id=successor.id,
+        )
+        if turn != expected_turn:
+            raise ValueError(
+                "Clarification transition returned inconsistent turn provenance."
+            )
         progress = _classify_progress(interpretation, successor, question, answer)
         if progress.kind in {
             ClarificationProgressKind.NoEffect,
