@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Any, Mapping, Protocol, Sequence
 
 from onto4.reasoning import (
+    ClarificationQuestion,
     ConceptualDepth,
     FormalizationCandidate,
     InterpretationSpace,
@@ -144,6 +145,22 @@ class InterpretationProvider(Protocol):
     """Expose ambiguity and readings without selecting an Onto4 verdict."""
 
     def interpret(self, request: InterpretationRequest) -> InterpretationSpace:
+        ...
+
+
+class InterpretationRefinementProvider(Protocol):
+    """Propose semantic content for one clarification successor snapshot.
+
+    The provider does not own transition identity, history or provenance. The
+    host binds those fields after validating the returned snapshot.
+    """
+
+    def refine(
+        self,
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+        answer: str,
+    ) -> InterpretationSpace:
         ...
 
 

@@ -94,6 +94,25 @@ def assess_interpretation(
     )
 
 
+def ask_per_reading(
+    request: InterpretationRequest,
+    *,
+    interpretation_provider: InterpretationProvider,
+    formalization_provider: FormalizationProvider,
+    contexts: Mapping[str, AssessmentContext],
+    clarification_policy: ClarificationPolicy,
+) -> AskResult:
+    """Interpret once, then use host-bound reading/context formalization."""
+
+    interpretation = interpretation_provider.interpret(request)
+    return assess_interpretation_per_reading(
+        interpretation,
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+        clarification_policy=clarification_policy,
+    )
+
+
 def formalize_per_reading_and_context(
     interpretation: InterpretationSpace,
     *,
