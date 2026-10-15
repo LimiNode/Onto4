@@ -97,7 +97,7 @@ class EvaluationSummary:
     outcome_counts: Mapping[str, int]
     mode_counts: Mapping[str, Mapping[str, int]]
     timeout_rate: float
-    schema_valid_rate: float
+    schema_valid_rate: float | None
     median_stage_latency_seconds: float | None
     p95_stage_latency_seconds: float | None
     provider_calls_per_completed_case: float | None
@@ -199,6 +199,17 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
     )
     stage_latencies = _stage_latencies(receipts)
     provider_calls = sum(receipt.provider_calls for receipt in receipts if receipt.complete)
+    schema_observations = [
+        receipt
+        for receipt in receipts
+        if receipt.outcome
+        not in {
+            EvaluationOutcome.TRANSPORT_ERROR,
+            EvaluationOutcome.REQUEST_TIMEOUT,
+            EvaluationOutcome.CASE_DEADLINE_EXCEEDED,
+            EvaluationOutcome.EMPTY_CONTENT,
+        }
+    ]
     return EvaluationSummary(
         total_cases=len(receipts),
         completed_cases=completed,
@@ -224,11 +235,11 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
                     EvaluationOutcome.JSON_INVALID,
                     EvaluationOutcome.SCHEMA_INVALID,
                 }
-                for receipt in receipts
+                for receipt in schema_observations
             )
-            / len(receipts)
-            if receipts
-            else 0.0
+            / len(schema_observations)
+            if schema_observations
+            else None
         ),
         median_stage_latency_seconds=(
             statistics.median(stage_latencies) if stage_latencies else None
@@ -404,7 +415,7 @@ def write_markdown_report(run: EvaluationRun, path: str | Path) -> None:
         f"- Cases: `{run.summary.total_cases}`",
         f"- Completed protocol outcomes: `{run.summary.completed_cases}`",
         f"- Timeout rate: `{run.summary.timeout_rate:.3f}`",
-        f"- Schema-valid rate: `{run.summary.schema_valid_rate:.3f}`",
+        f"- Schema-valid rate: `{run.summary.schema_valid_rate if run.summary.schema_valid_rate is not None else 'n/a'}`",
         f"- Median stage latency: `{run.summary.median_stage_latency_seconds}`",
         f"- P95 stage latency: `{run.summary.p95_stage_latency_seconds}`",
         "",
