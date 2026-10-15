@@ -299,6 +299,22 @@ the previous snapshot. The next `reassess_reasoning_session()` explicitly
 builds a fresh assessment. A transition and an assessment therefore remain
 different events even in the end-to-end deterministic workflow.
 
+## Explicit refinement deltas (opt-in research boundary)
+
+`onto4.pipeline.refinement` provides a bounded typed-delta experiment for
+interactive research. A model may propose operation content such as
+`select_reading`, `refine_ambiguity`, `add_presupposition` or `abstain`, but the
+host supplies the exact assessment-bound snapshot, admissible target IDs and
+the successor ID. The host then validates references and applies the delta to
+an immutable `InterpretationSpace`.
+
+This layer records structural admission and provenance; it does not establish
+that a model understood the user's meaning, and it never produces `T`, `F`,
+`U` or `C`. `retain_ambiguity` is explicitly represented as a no-effect
+operation, while `abstain` preserves the current snapshot. The experiment is
+not part of the default `onto4 ask` path until comparative fixture results
+justify adopting it.
+
 ## Interactive evaluation corpus
 
 The reserved corpus at `eval/clarification/corpus.yaml` contains everyday
