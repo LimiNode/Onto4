@@ -652,6 +652,50 @@ def test_pure_semantic_permutation_is_no_effect(successor_ambiguities):
     assert progress.new_semantic_signatures == ()
 
 
+def test_reading_presupposition_reindex_preserves_semantic_identity():
+    initial = replace(
+        _space("initial", ambiguous=False),
+        presuppositions=(
+            Presupposition("presupposition-a", "entity exists"),
+            Presupposition("presupposition-b", "identity is fixed"),
+        ),
+        readings=(
+            SemanticReading(
+                "reading-0",
+                "identity",
+                "identity reading",
+                ("presupposition-a", "presupposition-b"),
+            ),
+        ),
+    )
+    successor = replace(
+        initial,
+        id="successor",
+        presuppositions=(
+            Presupposition("presupposition-1", "identity is fixed"),
+            Presupposition("presupposition-0", "entity exists"),
+        ),
+        readings=(
+            SemanticReading(
+                "reading-reindexed",
+                "identity",
+                "identity reading",
+                ("presupposition-0", "presupposition-1"),
+            ),
+        ),
+    )
+    question = ClarificationQuestion(
+        id="ontology:reading-0",
+        kind=ClarificationKind.Ontology,
+        text="Which identity reading is intended?",
+        target_ids=("reading-0",),
+    )
+
+    progress = _classify_progress(initial, successor, question, "an answer")
+
+    assert progress.kind is ClarificationProgressKind.NoEffect
+
+
 def test_structural_resolution_is_not_claimed_as_verified_resolution():
     initial = _space("initial", ambiguous=True)
     opposite = replace(

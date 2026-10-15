@@ -23,6 +23,7 @@ from onto4.reasoning import (
     ClarificationTurn,
     InterpretationSpace,
     PipelineDisposition,
+    SemanticReading,
     TransitionAwareClarificationPolicy,
 )
 
@@ -173,11 +174,30 @@ def _snapshot_items(interpretation: InterpretationSpace) -> dict[str, object]:
     return items
 
 
-def _semantic_signature(item: object) -> str:
+def _semantic_signature(
+    item: object,
+    *,
+    references: Mapping[str, object] | None = None,
+) -> str:
     if not is_dataclass(item):
         return repr(item)
     content = tuple(
-        (field_info.name, getattr(item, field_info.name))
+        (
+            field_info.name,
+            (
+                tuple(
+                    sorted(
+                        _semantic_signature(references[target_id], references=references)
+                        if references is not None and target_id in references
+                        else target_id
+                        for target_id in getattr(item, field_info.name)
+                    )
+                )
+                if isinstance(item, SemanticReading)
+                and field_info.name == "presupposition_ids"
+                else getattr(item, field_info.name)
+            ),
+        )
         for field_info in fields(item)
         if field_info.name != "id"
     )
@@ -190,7 +210,9 @@ def _question_key(
 ) -> str:
     items = _snapshot_items(interpretation)
     target_signatures = tuple(
-        _semantic_signature(items[target_id]) if target_id in items else f"external:{target_id}"
+        _semantic_signature(items[target_id], references=items)
+        if target_id in items
+        else f"external:{target_id}"
         for target_id in question.target_ids
     )
     return repr((question.kind.value, target_signatures))
@@ -207,11 +229,11 @@ def _classify_progress(
     new_item_ids = tuple(sorted(set(after) - set(before)))
     before_signature_counts: dict[str, int] = {}
     for item in before.values():
-        signature = _semantic_signature(item)
+        signature = _semantic_signature(item, references=before)
         before_signature_counts[signature] = before_signature_counts.get(signature, 0) + 1
     after_signature_counts: dict[str, int] = {}
     for item in after.values():
-        signature = _semantic_signature(item)
+        signature = _semantic_signature(item, references=after)
         after_signature_counts[signature] = after_signature_counts.get(signature, 0) + 1
     new_semantic_signatures = tuple(
         sorted(
@@ -232,7 +254,7 @@ def _classify_progress(
             kind = ClarificationProgressKind.Unverified
         else:
             before_signatures = {
-                target_id: _semantic_signature(before[target_id])
+                target_id: _semantic_signature(before[target_id], references=before)
                 for target_id in known_targets
             }
             target_signature_counts = {
@@ -244,7 +266,7 @@ def _classify_progress(
                 for signature, count in target_signature_counts.items()
             )
             after_signatures = {
-                _semantic_signature(item) for item in after.values()
+                _semantic_signature(item, references=after) for item in after.values()
             }
             target_preserved = any(
                 signature in after_signatures
@@ -256,7 +278,7 @@ def _classify_progress(
             )
             same_id_preserved = all(
                 target_id in after
-                and _semantic_signature(after[target_id]) == signature
+                and _semantic_signature(after[target_id], references=after) == signature
                 for target_id, signature in before_signatures.items()
             )
             semantic_snapshot_unchanged = (
