@@ -53,7 +53,7 @@ next interpretation snapshot. A free-form answer is allowed, including
 `none_of_the_above`; that answer preserves the current semantic snapshot
 instead of forcing a false choice. The host also keeps a clarification progress
 ledger, rejects repeated semantic question targets, classifies each transition
-as resolved, unresolved, new, no-effect, unverified or abstained, and rejects a changed snapshot that
+as resolved, structural-resolution, unresolved, new, no-effect, unverified or abstained, and rejects a changed snapshot that
 does not affect the question's target distinction. If no new admissible
 question remains, the bounded loop stops explicitly instead of repeating the
 same question. A model response that changes source text, conceptual depth or
