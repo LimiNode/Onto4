@@ -104,6 +104,11 @@ from semantic outcomes; none is converted automatically into `T`, `F`, `U` or
 `C`. The offline fixture run therefore establishes corpus coverage and report
 reproducibility, not semantic fidelity.
 
+At present `eval-corpus` selects only this offline fixture executor. It does
+not contact Bonsai or any other model-backed endpoint. A real provider run
+requires a separate case executor with the same single-flight, manifest and
+receipt contracts.
+
 ## Typed AST and the DSL experiment gate
 
 The current formalization boundary keeps the typed JSON AST. A second

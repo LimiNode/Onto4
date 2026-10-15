@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import statistics
-import threading
 import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
@@ -88,6 +87,7 @@ class CaseReceipt:
     semantic_verdict: str | None = None
     detail_code: str | None = None
     complete: bool = True
+    resume_allowed: bool = False
 
 
 @dataclass(frozen=True)
@@ -101,6 +101,9 @@ class EvaluationSummary:
     median_stage_latency_seconds: float | None
     p95_stage_latency_seconds: float | None
     provider_calls_per_completed_case: float | None
+    semantic_scored_cases: int
+    protocol_coverage: int
+    dialogue_completed_cases: int
 
 
 @dataclass(frozen=True)
@@ -125,30 +128,24 @@ def _invoke_with_deadline(
     *,
     timeout_seconds: float,
 ) -> CaseExecution:
-    result: list[CaseExecution] = []
-    error: list[BaseException] = []
+    """Invoke one bounded provider call synchronously.
 
-    def target() -> None:
-        try:
-            result.append(
-                executor(case, request_timeout_seconds=timeout_seconds)
-            )
-        except BaseException as exc:  # converted to a typed transport outcome
-            error.append(exc)
+    The executor owns the actual network timeout.  Keeping this call
+    synchronous guarantees that a timed-out executor cannot overlap a retry or
+    the next corpus case; a non-cooperative executor blocks the run instead of
+    leaving a daemon thread issuing requests in the background.
+    """
 
-    worker = threading.Thread(target=target, daemon=True)
-    worker.start()
-    worker.join(timeout_seconds)
-    if worker.is_alive():
-        return CaseExecution(EvaluationOutcome.REQUEST_TIMEOUT, detail_code="deadline")
-    if error:
+    try:
+        result = executor(case, request_timeout_seconds=timeout_seconds)
+    except BaseException as exc:  # converted to a typed transport outcome
         return CaseExecution(
             EvaluationOutcome.TRANSPORT_ERROR,
-            detail_code=type(error[0]).__name__,
+            detail_code=type(exc).__name__,
         )
-    if not result:
+    if result is None:
         return CaseExecution(EvaluationOutcome.EMPTY_CONTENT)
-    return result[0]
+    return result
 
 
 def _retryable(outcome: EvaluationOutcome) -> bool:
@@ -202,6 +199,7 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
     schema_observations = [
         receipt
         for receipt in receipts
+        if receipt.provider_calls > 0
         if receipt.outcome
         not in {
             EvaluationOutcome.TRANSPORT_ERROR,
@@ -210,6 +208,16 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
             EvaluationOutcome.EMPTY_CONTENT,
         }
     ]
+    semantic_scored = sum(
+        receipt.semantic_verdict is not None
+        and receipt.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
+        for receipt in receipts
+    )
+    dialogue_completed = sum(
+        receipt.case_mode == "dialogue"
+        and receipt.outcome is not EvaluationOutcome.UNSUPPORTED_DIALOGUE_STEP
+        for receipt in receipts
+    )
     return EvaluationSummary(
         total_cases=len(receipts),
         completed_cases=completed,
@@ -248,6 +256,9 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
         provider_calls_per_completed_case=(
             provider_calls / completed if completed else None
         ),
+        semantic_scored_cases=semantic_scored,
+        protocol_coverage=len(receipts),
+        dialogue_completed_cases=dialogue_completed,
     )
 
 
@@ -255,6 +266,81 @@ def _receipt_json(receipt: CaseReceipt) -> dict[str, Any]:
     value = asdict(receipt)
     value["outcome"] = receipt.outcome.value
     return value
+
+
+def _manifest(corpus: ClarificationCorpus, digest: str, config: EvaluationConfig) -> dict[str, Any]:
+    return {
+        "record_type": "manifest",
+        "corpus_name": corpus.name,
+        "corpus_version": corpus.version,
+        "corpus_digest": digest,
+        "config": asdict(config),
+    }
+
+
+def _write_receipts(
+    path: Path,
+    manifest: Mapping[str, Any],
+    receipts: Iterable[CaseReceipt],
+) -> None:
+    """Atomically rewrite the manifest and latest receipt for each case."""
+
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(dict(manifest), sort_keys=True) + "\n")
+        for receipt in receipts:
+            handle.write(json.dumps(_receipt_json(receipt), sort_keys=True) + "\n")
+    temporary.replace(path)
+
+
+def _load_existing_receipts(
+    path: Path,
+    *,
+    expected_manifest: Mapping[str, Any],
+) -> dict[str, CaseReceipt]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        raise ValueError("Receipt file is empty and has no manifest.")
+    try:
+        manifest = json.loads(lines[0])
+    except json.JSONDecodeError as exc:
+        raise ValueError("Receipt manifest is not valid JSON.") from exc
+    if manifest != dict(expected_manifest):
+        raise ValueError("Receipt manifest does not match this evaluation run.")
+    existing: dict[str, CaseReceipt] = {}
+    for index, line in enumerate(lines[1:], start=1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError as exc:
+            if index == len(lines) - 1:
+                # A process may have been interrupted during the final write;
+                # discard only that uncommitted tail and recover safely.
+                break
+            raise ValueError("Receipt file contains invalid JSON before its tail.") from exc
+        if item.get("record_type") == "manifest":
+            raise ValueError("Receipt file contains a second manifest record.")
+        case_id = item.get("case_id")
+        if not isinstance(case_id, str) or not case_id:
+            raise ValueError("Receipt record has no valid case_id.")
+        receipt = CaseReceipt(
+            case_id=case_id,
+            case_mode=item.get("case_mode", "single_pass"),
+            outcome=EvaluationOutcome(item["outcome"]),
+            elapsed_seconds=float(item["elapsed_seconds"]),
+            provider_stage_seconds=item.get("provider_stage_seconds", {}),
+            provider_calls=int(item.get("provider_calls", 0)),
+            attempts=int(item.get("attempts", 1)),
+            semantic_verdict=item.get("semantic_verdict"),
+            detail_code=item.get("detail_code"),
+            complete=bool(item.get("complete", True)),
+            resume_allowed=bool(item.get("resume_allowed", False)),
+        )
+        if case_id in existing and existing[case_id] != receipt:
+            raise ValueError(f"Conflicting duplicate receipt for case {case_id!r}.")
+        existing[case_id] = receipt
+    return existing
 
 
 class SequentialEvaluationRunner:
@@ -276,30 +362,22 @@ class SequentialEvaluationRunner:
         self.clock = clock
 
     def run(self, corpus: ClarificationCorpus, *, digest: str) -> EvaluationRun:
+        manifest = _manifest(corpus, digest, self.config)
         existing: dict[str, CaseReceipt] = {}
         if self.receipt_path is not None and self.receipt_path.exists():
-            for line in self.receipt_path.read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                item = json.loads(line)
-                if item.get("record_type") == "manifest":
-                    continue
-                existing[item["case_id"]] = CaseReceipt(
-                    case_id=item["case_id"],
-                    case_mode=item.get("case_mode", "single_pass"),
-                    outcome=EvaluationOutcome(item["outcome"]),
-                    elapsed_seconds=float(item["elapsed_seconds"]),
-                    provider_stage_seconds=item.get("provider_stage_seconds", {}),
-                    provider_calls=int(item.get("provider_calls", 0)),
-                    attempts=int(item.get("attempts", 1)),
-                    semantic_verdict=item.get("semantic_verdict"),
-                    detail_code=item.get("detail_code"),
-                    complete=bool(item.get("complete", True)),
-                )
+            existing = _load_existing_receipts(
+                self.receipt_path,
+                expected_manifest=manifest,
+            )
+            _write_receipts(self.receipt_path, manifest, existing.values())
 
         receipts: list[CaseReceipt] = []
         for case in corpus.cases:
-            if case.case_id in existing and existing[case.case_id].complete:
+            if (
+                case.case_id in existing
+                and existing[case.case_id].complete
+                and not existing[case.case_id].resume_allowed
+            ):
                 receipts.append(existing[case.case_id])
                 continue
             started = self.clock()
@@ -348,24 +426,21 @@ class SequentialEvaluationRunner:
                 semantic_verdict=execution.semantic_verdict,
                 detail_code=execution.detail_code,
                 complete=True,
+                resume_allowed=execution.outcome in {
+                    EvaluationOutcome.TRANSPORT_ERROR,
+                    EvaluationOutcome.REQUEST_TIMEOUT,
+                    EvaluationOutcome.CASE_DEADLINE_EXCEEDED,
+                    EvaluationOutcome.EMPTY_CONTENT,
+                    EvaluationOutcome.JSON_INVALID,
+                    EvaluationOutcome.SCHEMA_INVALID,
+                    EvaluationOutcome.PROVENANCE_INVALID,
+                },
             )
             receipts.append(receipt)
+            existing[case.case_id] = receipt
             if self.receipt_path is not None:
                 self.receipt_path.parent.mkdir(parents=True, exist_ok=True)
-                if not self.receipt_path.exists() or self.receipt_path.stat().st_size == 0:
-                    manifest = {
-                        "record_type": "manifest",
-                        "corpus_name": corpus.name,
-                        "corpus_version": corpus.version,
-                        "corpus_digest": digest,
-                        "config": asdict(self.config),
-                    }
-                    self.receipt_path.write_text(
-                        json.dumps(manifest, sort_keys=True) + "\n",
-                        encoding="utf-8",
-                    )
-                with self.receipt_path.open("a", encoding="utf-8") as handle:
-                    handle.write(json.dumps(_receipt_json(receipt), sort_keys=True) + "\n")
+                _write_receipts(self.receipt_path, manifest, existing.values())
             if case is not corpus.cases[-1] and self.config.inter_case_delay_seconds:
                 self.sleep(self.config.inter_case_delay_seconds)
 
@@ -414,6 +489,9 @@ def write_markdown_report(run: EvaluationRun, path: str | Path) -> None:
         "",
         f"- Cases: `{run.summary.total_cases}`",
         f"- Completed protocol outcomes: `{run.summary.completed_cases}`",
+        f"- Protocol coverage: `{run.summary.protocol_coverage}/{run.summary.total_cases}`",
+        f"- Semantic scored cases: `{run.summary.semantic_scored_cases}`",
+        f"- Dialogue completed cases: `{run.summary.dialogue_completed_cases}`",
         f"- Timeout rate: `{run.summary.timeout_rate:.3f}`",
         f"- Schema-valid rate: `{run.summary.schema_valid_rate if run.summary.schema_valid_rate is not None else 'n/a'}`",
         f"- Median stage latency: `{run.summary.median_stage_latency_seconds}`",

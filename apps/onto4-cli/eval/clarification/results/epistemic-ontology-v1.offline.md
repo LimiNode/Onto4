@@ -5,7 +5,7 @@
 - Mode: `offline`
 - Provider/model: `fixture` / `offline-fixture`
 - Prompt version: `unspecified`
-- Commit: `3c2d3bd`
+- Commit: `pending-corrective-head`
 - Request timeout: `30.0s`
 - Case deadline: `120.0s`
 
@@ -13,8 +13,11 @@
 
 - Cases: `27`
 - Completed protocol outcomes: `27`
+- Protocol coverage: `27/27`
+- Semantic scored cases: `0`
+- Dialogue completed cases: `0`
 - Timeout rate: `0.000`
-- Schema-valid rate: `1.0`
+- Schema-valid rate: `n/a`
 - Median stage latency: `None`
 - P95 stage latency: `None`
 
