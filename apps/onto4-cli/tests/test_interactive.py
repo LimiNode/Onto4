@@ -150,6 +150,38 @@ def test_interactive_dialogue_stops_cleanly_after_none_of_the_above():
     assert refinement.calls == 0
 
 
+def test_interactive_dialogue_reports_max_turns_without_throwing():
+    initial = _space("initial", ambiguous=True)
+    successor = replace(
+        _space("successor", ambiguous=True),
+        ambiguities=(Ambiguity("ambiguity-1", "определяется", "влияние или носитель сущности"),),
+    )
+
+    class _RepeatRefinement:
+        def refine(self, interpretation, question, answer):
+            return successor
+
+    refinement = _RepeatRefinement()
+
+    result = run_interactive_dialogue(
+        InterpretationRequest(initial.source_text),
+        interpretation_provider=_InterpretationProvider(initial),
+        refinement_provider=refinement,
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=ModelClarificationPolicy(
+            FixtureClarificationPolicy(), refinement
+        ),
+        input_fn=lambda prompt: "a free-form answer",
+        output_fn=lambda line: None,
+        max_turns=1,
+    )
+
+    assert result.stop_reason == "max_turns_reached"
+    assert result.turns == 1
+    assert result.session.assessment is not None
+
+
 def test_none_of_the_above_preserves_snapshot_without_calling_refinement():
     initial = _space("initial", ambiguous=True)
     successor = _space("successor", ambiguous=False)
@@ -310,6 +342,66 @@ def test_reasoning_session_rejects_no_effect_without_mutating_state():
     assert policy.ledger is ledger_before
 
 
+def test_reasoning_session_rejects_malformed_turn_before_ledger_commit():
+    initial = _space("initial", ambiguous=True)
+    successor = replace(initial, id="successor", ambiguities=())
+
+    class _MalformedPolicy:
+        def __init__(self):
+            self.fixture = FixtureClarificationPolicy()
+
+        def questions(self, context):
+            return self.fixture.questions(context)
+
+        def choose(self, context):
+            return self.fixture.choose(context)
+
+        def choose_for_kind(self, context, kind):
+            return self.fixture.choose_for_kind(context, kind)
+
+        def successor(self, *, interpretation, question, answer):
+            return (
+                successor,
+                type(
+                    "MalformedTurn",
+                    (),
+                    {
+                        "previous_interpretation_id": interpretation.id,
+                        "question_id": "wrong-question-id",
+                        "answer": answer,
+                        "successor_interpretation_id": successor.id,
+                    },
+                )(),
+            )
+
+    policy = ProgressAwareClarificationPolicy(_MalformedPolicy())
+    started = start_reasoning_session_per_reading(
+        ClarificationSession(initial),
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=policy,
+    ).session
+    issued = issue_reasoning_clarification(
+        started,
+        profile=interactive_decision_profile(),
+        provider=FirstAdmissibleDecisionProvider(),
+        clarification_policy=policy,
+    ).session
+    ledger_before = policy.ledger
+
+    with pytest.raises(ValueError, match="inconsistent turn provenance"):
+        answer_reasoning_clarification(
+            issued,
+            answer="a free-form answer",
+            clarification_policy=policy,
+            allow_freeform_answers=True,
+        )
+
+    assert policy.ledger is ledger_before
+    assert issued.clarification.pending is not None
+    assert issued.clarification.history.turns == ()
+
+
 def test_progress_can_resolve_target_and_record_new_semantic_items():
     initial = _space("initial", ambiguous=True)
     successor = InterpretationSpace(
@@ -385,6 +477,8 @@ def test_progress_classifies_reindexed_target_by_semantic_signature():
     )
 
     assert policy.ledger.entries[0].kind is ClarificationProgressKind.StructuralResolution
+    assert policy.ledger.entries[0].new_item_ids == ()
+    assert policy.ledger.entries[0].new_semantic_signatures == ()
 
 
 def test_progress_allows_reindexed_distinct_target_after_previous_answer():
@@ -425,6 +519,49 @@ def test_progress_allows_reindexed_distinct_target_after_previous_answer():
     assert next_question is not None
     assert next_question.id == "meaning:ambiguity-0"
     assert next_question.text == "Что именно означает «определяется» в этом вопросе?"
+
+
+def test_progress_detects_new_semantics_when_ids_are_reused():
+    initial = replace(
+        _space("initial", ambiguous=True),
+        ambiguities=(
+            Ambiguity("ambiguity-0", "term-a", "meaning-a"),
+            Ambiguity("ambiguity-1", "term-b", "meaning-b"),
+        ),
+    )
+    successor = replace(
+        initial,
+        id="successor",
+        ambiguities=(
+            Ambiguity("ambiguity-0", "term-b", "meaning-b"),
+            Ambiguity("ambiguity-1", "term-c", "meaning-c"),
+        ),
+    )
+
+    class _ReturnSuccessor:
+        def refine(self, interpretation, question, answer):
+            return successor
+
+    policy = ProgressAwareClarificationPolicy(
+        ModelClarificationPolicy(FixtureClarificationPolicy(), _ReturnSuccessor())
+    )
+    question = ClarificationQuestion(
+        id="meaning:ambiguity-0",
+        kind=ClarificationKind.Meaning,
+        text="What does term-a mean?",
+        target_ids=("ambiguity-0",),
+    )
+
+    policy.successor(
+        interpretation=initial,
+        question=question,
+        answer="an answer",
+    )
+
+    entry = policy.ledger.entries[0]
+    assert entry.kind is ClarificationProgressKind.StructuralResolution
+    assert entry.new_item_ids == ()
+    assert any("meaning-c" in signature for signature in entry.new_semantic_signatures)
 
 
 def test_structural_resolution_is_not_claimed_as_verified_resolution():

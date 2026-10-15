@@ -274,3 +274,30 @@ def test_interactive_ask_reports_stdin_eof_without_traceback(monkeypatch, capsys
     assert captured.out == ""
     assert "Ask error:" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_interactive_json_output_is_rejected_before_prompt_output(capsys, tmp_path):
+    context = tmp_path / "context.yaml"
+    context.write_text("ontology: {}\n", encoding="utf-8")
+
+    code = cli_main.main(
+        [
+            "ask",
+            "A statement",
+            "--endpoint",
+            "http://example.test/v1",
+            "--model",
+            "fixture-model",
+            "--context",
+            str(context),
+            "--interactive",
+            "--format",
+            "json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert "Interactive ask does not support --format json" in captured.err
+    assert "Traceback" not in captured.err

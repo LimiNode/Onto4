@@ -59,8 +59,8 @@ def _print_result(result: AssessmentResult, context_name: str | None = None) -> 
         print(f"Diagnostic [{diagnostic.code}]: {diagnostic.message}")
 
 
-def _ask_dict(result: Any) -> dict[str, Any]:
-    return {
+def _ask_dict(result: Any, *, stop_reason: str | None = None) -> dict[str, Any]:
+    payload = {
         "interpretation": {
             "id": result.interpretation.id,
             "source_text": result.interpretation.source_text,
@@ -99,9 +99,12 @@ def _ask_dict(result: Any) -> dict[str, Any]:
             for item in result.assessments
         ],
     }
+    if stop_reason is not None:
+        payload["stop_reason"] = stop_reason
+    return payload
 
 
-def _print_ask_result(result: Any) -> None:
+def _print_ask_result(result: Any, *, stop_reason: str | None = None) -> None:
     print(f"Interpretation: {result.interpretation.id}")
     print(f"Conceptual depth: {result.interpretation.conceptual_depth.value}")
     print(f"Landscape: {result.landscape.status.value}")
@@ -115,6 +118,8 @@ def _print_ask_result(result: Any) -> None:
         print(f"Clarification: {result.clarification_question.text}")
         if result.clarification_question.choices:
             print("Choices: " + ", ".join(result.clarification_question.choices))
+    if stop_reason is not None:
+        print(f"Stop reason: {stop_reason}")
 
 
 def _print_provider_trace(event: ProviderStageEvent) -> None:
@@ -127,6 +132,10 @@ def _print_provider_trace(event: ProviderStageEvent) -> None:
 
 def _run_ask(args: argparse.Namespace) -> int:
     try:
+        if args.interactive and args.format == "json":
+            raise ValueError(
+                "Interactive ask does not support --format json; use text output."
+            )
         auth = EndpointAuthKind(args.auth)
         profile = ProviderProfile(
             base_url=args.endpoint,
@@ -176,6 +185,7 @@ def _run_ask(args: argparse.Namespace) -> int:
             if dialogue.session.assessment is None:
                 raise ValueError("Interactive dialogue ended without an assessment.")
             result = dialogue.session.assessment.ask_result
+            stop_reason = dialogue.stop_reason
         else:
             result = ask_per_reading(
                 request,
@@ -184,6 +194,7 @@ def _run_ask(args: argparse.Namespace) -> int:
                 contexts=contexts,
                 clarification_policy=FixtureClarificationPolicy(),
             )
+            stop_reason = None
     except (
         EOFError,
         KeyError,
@@ -196,9 +207,9 @@ def _run_ask(args: argparse.Namespace) -> int:
         print(f"Ask error: {exc}", file=sys.stderr)
         return 1
     if args.format == "json":
-        print(json.dumps(_ask_dict(result), ensure_ascii=False, indent=2))
+        print(json.dumps(_ask_dict(result, stop_reason=stop_reason), ensure_ascii=False, indent=2))
     else:
-        _print_ask_result(result)
+        _print_ask_result(result, stop_reason=stop_reason)
     return 0
 
 

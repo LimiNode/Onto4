@@ -29,6 +29,7 @@ from onto4.reasoning import (
 from .ask import assess_interpretation_per_reading
 from .orchestration import (
     ClarificationSession,
+    PreparedClarificationTransition,
     ReasoningSession,
     answer_reasoning_clarification,
     issue_reasoning_clarification,
@@ -141,6 +142,7 @@ class ClarificationProgress:
     answer: str
     kind: ClarificationProgressKind
     new_item_ids: tuple[str, ...] = ()
+    new_semantic_signatures: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -203,6 +205,21 @@ def _classify_progress(
     before = _snapshot_items(previous)
     after = _snapshot_items(successor)
     new_item_ids = tuple(sorted(set(after) - set(before)))
+    before_signature_counts: dict[str, int] = {}
+    for item in before.values():
+        signature = _semantic_signature(item)
+        before_signature_counts[signature] = before_signature_counts.get(signature, 0) + 1
+    after_signature_counts: dict[str, int] = {}
+    for item in after.values():
+        signature = _semantic_signature(item)
+        after_signature_counts[signature] = after_signature_counts.get(signature, 0) + 1
+    new_semantic_signatures = tuple(
+        sorted(
+            signature
+            for signature, count in after_signature_counts.items()
+            for _ in range(max(0, count - before_signature_counts.get(signature, 0)))
+        )
+    )
     if _is_none_of_the_above(answer):
         kind = ClarificationProgressKind.Abstained
     elif successor == previous:
@@ -234,7 +251,7 @@ def _classify_progress(
                 and _semantic_signature(after[target_id]) == signature
                 for target_id, signature in before_signatures.items()
             )
-            if new_item_ids and target_preserved:
+            if new_semantic_signatures and target_preserved:
                 kind = ClarificationProgressKind.New
             elif target_preserved:
                 # A target may be re-indexed by the model.  Its semantic
@@ -242,7 +259,7 @@ def _classify_progress(
                 # for progress classification.
                 kind = (
                     ClarificationProgressKind.NoEffect
-                    if same_id_preserved and not new_item_ids
+                    if same_id_preserved and not new_semantic_signatures
                     else ClarificationProgressKind.Unresolved
                 )
             elif target_removed:
@@ -252,7 +269,7 @@ def _classify_progress(
                 # host-verified ``Resolved`` until an explicit refinement delta
                 # is available.
                 kind = ClarificationProgressKind.StructuralResolution
-            elif new_item_ids:
+            elif new_semantic_signatures:
                 kind = ClarificationProgressKind.New
             else:
                 kind = ClarificationProgressKind.NoEffect
@@ -263,6 +280,7 @@ def _classify_progress(
         answer=answer,
         kind=kind,
         new_item_ids=new_item_ids,
+        new_semantic_signatures=new_semantic_signatures,
     )
 
 
@@ -320,6 +338,21 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
         question: ClarificationQuestion,
         answer: str,
     ) -> tuple[InterpretationSpace, ClarificationTurn]:
+        prepared = self.prepare_successor(
+            interpretation=interpretation,
+            question=question,
+            answer=answer,
+        )
+        self.commit_prepared(prepared)
+        return prepared.successor, prepared.turn
+
+    def prepare_successor(
+        self,
+        *,
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+        answer: str,
+    ) -> PreparedClarificationTransition:
         successor, turn = self.base.successor(
             interpretation=interpretation,
             question=question,
@@ -335,8 +368,12 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
                 "Clarification answer did not affect its target distinction "
                 f"(progress={progress.kind.value})."
             )
-        self.ledger = self.ledger.record(progress)
-        return successor, turn
+        return PreparedClarificationTransition(successor, turn, progress)
+
+    def commit_prepared(self, prepared: PreparedClarificationTransition) -> None:
+        if not isinstance(prepared.progress, ClarificationProgress):
+            raise ValueError("Prepared clarification transition has no progress record.")
+        self.ledger = self.ledger.record(prepared.progress)
 
 
 @dataclass(frozen=True)
@@ -401,9 +438,24 @@ def run_interactive_dialogue(
         assert assessment is not None
         ask_result = assessment.ask_result
         if ask_result.disposition is not PipelineDisposition.AskClarification:
-            return InteractiveDialogueResult(current, turn_index, progress_policy.ledger)
+            stop_reason = {
+                PipelineDisposition.Complete: "complete",
+                PipelineDisposition.NeedEvidence: "need_evidence",
+                PipelineDisposition.CannotProceed: "cannot_proceed",
+            }.get(ask_result.disposition, ask_result.disposition.value)
+            return InteractiveDialogueResult(
+                current,
+                turn_index,
+                progress_policy.ledger,
+                stop_reason,
+            )
         if turn_index >= max_turns:
-            raise ValueError("Interactive clarification reached max_turns.")
+            return InteractiveDialogueResult(
+                current,
+                turn_index,
+                progress_policy.ledger,
+                "max_turns_reached",
+            )
         if ask_result.clarification_question is None:
             return InteractiveDialogueResult(
                 current,
@@ -439,6 +491,7 @@ def run_interactive_dialogue(
             current,
             answer=answer,
             clarification_policy=progress_policy,
+            allow_freeform_answers=True,
         ).session
 
     raise AssertionError("Interactive dialogue loop exited unexpectedly.")

@@ -4,14 +4,17 @@
 model-backed CLI-срезу. Он не меняет семантические контракты и не является
 утверждением, что Bonsai уже прошёл corpus.
 
-Отчёт относится к исходной версии корпуса из 26 кейсов. Позднее в корпус
-добавлен `genetic-essentialism-dialogue` как protocol fixture; этот сценарий в
-данном отчёте и в Bonsai-прогоне не тестировался.
+Отчёт относится к исходной версии корпуса из 26 семантических кейсов. Позднее в
+тот же YAML добавлен `genetic-essentialism-dialogue` как protocol fixture. Поэтому
+в опубликованном файле сейчас 27 записей: 26 исходных кейсов и один
+нетестированный в Bonsai диалоговый fixture.
 
 ## Что зафиксировано до запуска
 
-В `apps/onto4-cli/eval/clarification/epistemic-ontology-v1.yaml` записано 26
-кейсов. Они разделены на несколько классов:
+В `apps/onto4-cli/eval/clarification/epistemic-ontology-v1.yaml` записано 27
+кейсов. Первые 26 образуют исходный семантический прогон, а
+`genetic-essentialism-dialogue` зафиксирован отдельно как protocol fixture.
+Кейсы разделены на несколько классов:
 
 - осмысленное утверждение без предоставленного evidence (`U`, а не `F`);
 - category/type mismatch (`C`);
@@ -38,7 +41,7 @@ success
 
 ## Наблюдаемое поведение Bonsai 2
 
-Полный прогон 26 кейсов выполнялся через `onto4 ask` с тем же provider
+Полный прогон исходных 26 кейсов выполнялся через `onto4 ask` с тем же provider
 boundary, который используется CLI. В bounded-параллельном режиме получилось:
 
 ```text
@@ -142,7 +145,7 @@ transition IDs и не принимает ответ, который возвр�
 Unit-проверка после изменений:
 
 ```text
-258 passed
+После corrective pass локальный набор приложения содержит 267 passed.
 compileall — success
 git diff --check — чисто
 ```
@@ -188,6 +191,23 @@ Clarification refinement did not produce semantic successor content.
 диалога и не semantic verdict. Следующий эксперимент должен отдельно оценить
 содержательность вопросов и successor snapshots, не смешивая её с
 transport/runtime ошибками.
+
+## Interactive contract after the corrective pass
+
+В interactive mode список `choices` остаётся подсказкой, а не замкнутым
+перечнем допустимых ответов: пользователь может ответить свободным текстом или
+ввести `none_of_the_above`. Строгие fixture-вызовы сохраняют прежнюю проверку
+перечисленных вариантов.
+
+Переход сначала подготавливается и проходит проверки provenance, непрерывности
+истории и semantic progress. Только после этого обновляются
+`ClarificationSession` и ledger; отказ на поздней проверке не оставляет
+частично записанного перехода.
+
+Интерактивный CLI явно сообщает причину остановки:
+`complete`, `need_evidence`, `no_new_admissible_question` или
+`max_turns_reached`. Машинный JSON-формат для interactive режима пока явно
+запрещён, чтобы prompt-строки не смешивались с JSON на stdout.
 
 ## Host-controlled progress admission
 
