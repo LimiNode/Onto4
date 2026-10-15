@@ -36,16 +36,16 @@ def interpretation_payload(source_text="The door is closed."):
         "source_text": source_text,
         "conceptual_depth": "ordinary",
         "ambiguities": [
-            {"id": "closed", "term": "closed", "description": "position or lock"}
+            {"id": "model-closed", "term": "closed", "description": "position or lock"}
         ],
         "presuppositions": [],
         "ontologies": [],
         "readings": [
             {
-                "id": "closed-position",
+                "id": "model-closed-position",
                 "label": "closed position",
                 "description": "the door leaf is not open",
-                "presupposition_ids": [],
+                "presupposition_indexes": [],
             }
         ],
     }
@@ -57,10 +57,44 @@ def test_interpretation_adapter_parses_structured_space_and_requests_json_mode()
 
     result = provider.interpret(InterpretationRequest("The door is closed."))
 
-    assert result.id == "door-space"
+    assert result.id.startswith("interpretation-")
     assert result.conceptual_depth is ConceptualDepth.Ordinary
-    assert result.readings[0].id == "closed-position"
+    assert result.ambiguities[0].id == "ambiguity-0"
+    assert result.readings[0].id == "reading-0"
     assert client.messages[0]["role"] == "system"
+
+
+def test_interpretation_adapter_assigns_ids_and_ignores_model_identity_claims():
+    payload = interpretation_payload()
+    payload["presuppositions"] = [{"id": "model-presupposition", "description": "a door exists"}]
+    payload["readings"][0]["presupposition_indexes"] = [0]
+
+    result = OpenAICompatibleInterpretationProvider(FakeClient(payload)).interpret(
+        InterpretationRequest("The door is closed.")
+    )
+    payload["id"] = "a-different-model-id"
+    payload["ambiguities"][0]["id"] = "another-model-id"
+    second = OpenAICompatibleInterpretationProvider(FakeClient(payload)).interpret(
+        InterpretationRequest("The door is closed.")
+    )
+
+    assert result.id.startswith("interpretation-")
+    assert second.id == result.id
+    assert result.ambiguities[0].id == "ambiguity-0"
+    assert result.presuppositions[0].id == "presupposition-0"
+    assert result.readings[0].id == "reading-0"
+    assert result.readings[0].presupposition_ids == ("presupposition-0",)
+
+
+def test_interpretation_adapter_rejects_invalid_presupposition_index():
+    payload = interpretation_payload()
+    payload["presuppositions"] = [{"description": "a door exists"}]
+    payload["readings"][0]["presupposition_indexes"] = [1]
+
+    with pytest.raises(ProviderSchemaError, match="presupposition index"):
+        OpenAICompatibleInterpretationProvider(FakeClient(payload)).interpret(
+            InterpretationRequest("The door is closed.")
+        )
 
 
 def test_interpretation_adapter_emits_safe_stage_diagnostics():

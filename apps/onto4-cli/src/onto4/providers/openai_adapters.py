@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from time import perf_counter
+from dataclasses import replace
 from typing import Any, Callable, Mapping, Sequence
 
 from onto4.core import And, Equivalent, Implies, Not, Or, PredicateCall, PredicateExpr, Term
@@ -57,6 +59,21 @@ def _string_tuple(value: Any, path: str) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise ProviderSchemaError(f"{path} must be a JSON array.")
     return tuple(_string(item, f"{path}[{index}]") for index, item in enumerate(value))
+
+
+def _index_tuple(value: Any, path: str, *, upper_bound: int) -> tuple[int, ...]:
+    if not isinstance(value, list):
+        raise ProviderSchemaError(f"{path} must be a JSON array.")
+    indexes: list[int] = []
+    for index, item in enumerate(value):
+        if isinstance(item, bool) or not isinstance(item, int):
+            raise ProviderSchemaError(f"{path}[{index}] must be a non-negative integer.")
+        if item < 0 or item >= upper_bound:
+            raise ProviderSchemaError(
+                f"{path}[{index}] refers to an unavailable presupposition index."
+            )
+        indexes.append(item)
+    return tuple(indexes)
 
 
 def _response_json(
@@ -142,12 +159,13 @@ def _parse_description_items(
     result = []
     for index, raw in enumerate(value):
         item = _object(raw, f"{path}[{index}]")
-        optional = set()
-        required = {"id", "description"}
+        optional = {"id"}
+        required = {"description"}
         if constructor is Ambiguity:
             required.add("term")
         _keys(item, f"{path}[{index}]", required, optional)
-        identifier = _string(item["id"], f"{path}[{index}].id")
+        prefix = "ambiguity" if constructor is Ambiguity else "presupposition"
+        identifier = f"{prefix}-{index}"
         description = _string(item["description"], f"{path}[{index}].description")
         if constructor is Ambiguity:
             result.append(constructor(identifier, _string(item.get("term"), f"{path}[{index}].term"), description))
@@ -162,10 +180,10 @@ def _parse_ontology_candidates(value: Any) -> tuple[OntologyCandidate, ...]:
     result = []
     for index, raw in enumerate(value):
         item = _object(raw, f"ontologies[{index}]")
-        _keys(item, f"ontologies[{index}]", {"id", "label", "description"})
+        _keys(item, f"ontologies[{index}]", {"label", "description"}, {"id"})
         result.append(
             OntologyCandidate(
-                _string(item["id"], f"ontologies[{index}].id"),
+                f"ontology-{index}",
                 _string(item["label"], f"ontologies[{index}].label"),
                 _string(item["description"], f"ontologies[{index}].description"),
             )
@@ -173,29 +191,72 @@ def _parse_ontology_candidates(value: Any) -> tuple[OntologyCandidate, ...]:
     return tuple(result)
 
 
-def _parse_readings(value: Any) -> tuple[SemanticReading, ...]:
+def _parse_readings(
+    value: Any,
+    *,
+    presupposition_ids: tuple[str, ...],
+) -> tuple[SemanticReading, ...]:
     if not isinstance(value, list):
         raise ProviderSchemaError("readings must be a JSON array.")
     result = []
     for index, raw in enumerate(value):
         item = _object(raw, f"readings[{index}]")
-        _keys(item, f"readings[{index}]", {"id", "label", "description"}, {"presupposition_ids"})
+        _keys(
+            item,
+            f"readings[{index}]",
+            {"label", "description"},
+            {"id", "presupposition_indexes"},
+        )
         result.append(
             SemanticReading(
-                _string(item["id"], f"readings[{index}].id"),
+                f"reading-{index}",
                 _string(item["label"], f"readings[{index}].label"),
                 _string(item["description"], f"readings[{index}].description"),
-                _string_tuple(item.get("presupposition_ids", []), f"readings[{index}].presupposition_ids"),
+                tuple(
+                    presupposition_ids[presupposition_index]
+                    for presupposition_index in _index_tuple(
+                        item.get("presupposition_indexes", []),
+                        f"readings[{index}].presupposition_indexes",
+                        upper_bound=len(presupposition_ids),
+                    )
+                ),
             )
         )
     return tuple(result)
+
+
+def _interpretation_identity(space: InterpretationSpace) -> str:
+    canonical = {
+        "source_text": space.source_text,
+        "conceptual_depth": space.conceptual_depth.value,
+        "ambiguities": [
+            {"term": item.term, "description": item.description}
+            for item in space.ambiguities
+        ],
+        "presuppositions": [item.description for item in space.presuppositions],
+        "ontologies": [
+            {"label": item.label, "description": item.description}
+            for item in space.ontologies
+        ],
+        "readings": [
+            {
+                "label": item.label,
+                "description": item.description,
+                "presupposition_ids": list(item.presupposition_ids),
+            }
+            for item in space.readings
+        ],
+    }
+    encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"interpretation-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
 
 
 def _parse_interpretation(payload: Mapping[str, Any], request: InterpretationRequest) -> InterpretationSpace:
     _keys(
         payload,
         "interpretation",
-        {"id", "source_text", "conceptual_depth", "ambiguities", "presuppositions", "ontologies", "readings"},
+        {"source_text", "conceptual_depth", "ambiguities", "presuppositions", "ontologies", "readings"},
+        {"id"},
     )
     source_text = _string(payload["source_text"], "source_text")
     if source_text != request.source_text:
@@ -208,15 +269,24 @@ def _parse_interpretation(payload: Mapping[str, Any], request: InterpretationReq
         raise ProviderSchemaError(
             "Model conceptual_depth does not match the interpretation request."
         )
-    return InterpretationSpace(
-        id=_string(payload["id"], "id"),
+    space = InterpretationSpace(
+        id="",
         source_text=source_text,
         conceptual_depth=depth,
         ambiguities=_parse_description_items(payload["ambiguities"], "ambiguities", Ambiguity),
         presuppositions=_parse_description_items(payload["presuppositions"], "presuppositions", Presupposition),
         ontologies=_parse_ontology_candidates(payload["ontologies"]),
-        readings=_parse_readings(payload["readings"]),
+        readings=_parse_readings(
+            payload["readings"],
+            presupposition_ids=tuple(
+                item.id
+                for item in _parse_description_items(
+                    payload["presuppositions"], "presuppositions", Presupposition
+                )
+            ),
+        ),
     )
+    return replace(space, id=_interpretation_identity(space))
 
 
 def _parse_term(value: Any, path: str) -> Term:
@@ -348,13 +418,14 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                             f"{depth_instruction} conceptual_depth must be exactly one of "
                             "ordinary, reflective, philosophical or ontology_sensitive. "
                             "ambiguities, presuppositions, ontologies and readings must "
-                            "be arrays of JSON objects with the fields defined by their "
-                            "names; readings use id, label, description and "
-                            "presupposition_ids. Use this shape even when arrays are empty: "
-                            "ambiguities:[{id,term,description}], "
-                            "presuppositions:[{id,description}], "
-                            "ontologies:[{id,label,description}], "
-                            "readings:[{id,label,description,presupposition_ids}]. "
+                        "be arrays of JSON objects with content fields only; do not "
+                        "invent authoritative IDs. Readings use label, description and "
+                        "presupposition_indexes, referring to the supplied presupposition "
+                        "array by zero-based position. Use this shape even when arrays "
+                        "are empty: ambiguities:[{term,description}], "
+                        "presuppositions:[{description}], "
+                        "ontologies:[{label,description}], "
+                        "readings:[{label,description,presupposition_indexes}]. "
                             "Do not use arrays of prose strings. "
                             "Return JSON only.\n\n"
                             f"source_text: {request.source_text}"
