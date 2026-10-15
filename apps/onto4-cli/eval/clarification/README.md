@@ -29,3 +29,21 @@ identical, while the hidden intended reading differs.
 The current file is an oracle specification, not a golden transcript. Exact
 question text, ordering and model phrasing must not be treated as correctness
 criteria.
+
+## Typed AST and the DSL experiment gate
+
+The current formalization boundary keeps the typed JSON AST. A second
+function-like DSL parser is intentionally not part of the first model-backed
+loop.
+
+The staged diagnostics must first show that nested AST serialization is the
+dominant failure mode. Transport timeouts, invalid JSON, schema violations and
+provenance failures are separate classes and must not be attributed to the
+AST without evidence.
+
+The DSL experiment may be opened only when a repeated diagnostic corpus run
+shows an AST-specific failure pattern after transport, schema and provenance
+issues have been isolated. Any such experiment must remain an opt-in adapter,
+parse into the same typed AST, preserve the same fail-closed validation, and
+leave the production provider contract unchanged until comparative results
+justify promotion.
