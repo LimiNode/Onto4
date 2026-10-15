@@ -1,5 +1,6 @@
 import json
 import importlib
+from types import SimpleNamespace
 from pathlib import Path
 
 from onto4.cli.main import main
@@ -301,3 +302,23 @@ def test_interactive_json_output_is_rejected_before_prompt_output(capsys, tmp_pa
     assert captured.out == ""
     assert "Interactive ask does not support --format json" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_max_turns_output_does_not_repeat_unissued_question(capsys):
+    result = SimpleNamespace(
+        interpretation=SimpleNamespace(
+            id="snapshot",
+            conceptual_depth=SimpleNamespace(value="ordinary"),
+        ),
+        landscape=SimpleNamespace(status=SimpleNamespace(value="Mixed")),
+        disposition=SimpleNamespace(value="AskClarification"),
+        reason="material_ambiguity",
+        assessments=(),
+        clarification_question=SimpleNamespace(text="A question that is not issued", choices=()),
+    )
+
+    cli_main._print_ask_result(result, stop_reason="max_turns_reached")
+
+    output = capsys.readouterr().out
+    assert "Stop reason: max_turns_reached" in output
+    assert "A question that is not issued" not in output

@@ -114,7 +114,10 @@ def _print_ask_result(result: Any, *, stop_reason: str | None = None) -> None:
     for item in result.assessments:
         verdict = item.result.verdict.value if item.result.verdict else "—"
         print(f"Candidate {item.candidate.id}: Onto4 {verdict}")
-    if result.clarification_question is not None:
+    if (
+        result.clarification_question is not None
+        and stop_reason != "max_turns_reached"
+    ):
         print(f"Clarification: {result.clarification_question.text}")
         if result.clarification_question.choices:
             print("Choices: " + ", ".join(result.clarification_question.choices))

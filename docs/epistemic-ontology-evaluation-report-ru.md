@@ -27,6 +27,11 @@ model-backed CLI-срезу. Он не меняет семантические �
 Hidden oracle остаётся вне model-facing input. Это проверяется unit-тестом, а
 сам корпус намеренно не добавлен в таблицы обычных kernel-тестов.
 
+Для этого корпуса `visibility.model_input` явно равен `utterance_only`, поэтому
+`public_input()` не передаёт модели даже служебный идентификатор `context`.
+Контекст остаётся частью evaluation metadata и может быть открыт только в
+отдельном корпусе с режимом `contextual`.
+
 Локальная проверка репозитория:
 
 ```text
@@ -145,9 +150,12 @@ transition IDs и не принимает ответ, который возвр�
 Unit-проверка после изменений:
 
 ```text
-После corrective pass локальный набор приложения содержит 267 passed.
-compileall — success
-git diff --check — чисто
+python -m pytest -q
+271 passed
+python -m compileall -q src tests
+success
+git diff --check
+clean
 ```
 
 ## Что объяснило timeout и schema failures

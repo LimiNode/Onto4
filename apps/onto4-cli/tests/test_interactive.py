@@ -16,6 +16,7 @@ from onto4.pipeline import (
     run_interactive_dialogue,
     start_reasoning_session_per_reading,
 )
+from onto4.pipeline.interactive import _classify_progress
 from onto4.providers import FormalizationRequest, InterpretationRequest
 from onto4.reasoning import (
     Ambiguity,
@@ -154,7 +155,7 @@ def test_interactive_dialogue_reports_max_turns_without_throwing():
     initial = _space("initial", ambiguous=True)
     successor = replace(
         _space("successor", ambiguous=True),
-        ambiguities=(Ambiguity("ambiguity-1", "определяется", "влияние или носитель сущности"),),
+        ambiguities=(Ambiguity("ambiguity-1", "определяется", "новое различение"),),
     )
 
     class _RepeatRefinement:
@@ -562,6 +563,45 @@ def test_progress_detects_new_semantics_when_ids_are_reused():
     assert entry.kind is ClarificationProgressKind.StructuralResolution
     assert entry.new_item_ids == ()
     assert any("meaning-c" in signature for signature in entry.new_semantic_signatures)
+
+
+@pytest.mark.parametrize(
+    "successor_ambiguities",
+    [
+        (
+            Ambiguity("ambiguity-0", "term-b", "meaning-b"),
+            Ambiguity("ambiguity-1", "term-a", "meaning-a"),
+        ),
+        (
+            Ambiguity("reindexed-0", "term-b", "meaning-b"),
+            Ambiguity("reindexed-1", "term-a", "meaning-a"),
+        ),
+    ],
+)
+def test_pure_semantic_permutation_is_no_effect(successor_ambiguities):
+    initial = replace(
+        _space("initial", ambiguous=True),
+        ambiguities=(
+            Ambiguity("ambiguity-0", "term-a", "meaning-a"),
+            Ambiguity("ambiguity-1", "term-b", "meaning-b"),
+        ),
+    )
+    successor = replace(
+        initial,
+        id="successor",
+        ambiguities=successor_ambiguities,
+    )
+    question = ClarificationQuestion(
+        id="meaning:ambiguity-0",
+        kind=ClarificationKind.Meaning,
+        text="What does term-a mean?",
+        target_ids=("ambiguity-0",),
+    )
+
+    progress = _classify_progress(initial, successor, question, "an answer")
+
+    assert progress.kind is ClarificationProgressKind.NoEffect
+    assert progress.new_semantic_signatures == ()
 
 
 def test_structural_resolution_is_not_claimed_as_verified_resolution():

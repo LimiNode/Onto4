@@ -251,7 +251,13 @@ def _classify_progress(
                 and _semantic_signature(after[target_id]) == signature
                 for target_id, signature in before_signatures.items()
             )
-            if new_semantic_signatures and target_preserved:
+            semantic_snapshot_unchanged = (
+                before_signature_counts == after_signature_counts
+            )
+            if semantic_snapshot_unchanged:
+                # A host reindex or permutation is not semantic progress.
+                kind = ClarificationProgressKind.NoEffect
+            elif new_semantic_signatures and target_preserved:
                 kind = ClarificationProgressKind.New
             elif target_preserved:
                 # A target may be re-indexed by the model.  Its semantic
