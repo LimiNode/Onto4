@@ -119,6 +119,62 @@ def test_ask_command_runs_model_backed_pass_without_model_verdict(monkeypatch, c
     assert '"verdict": "C"' in output
 
 
+def test_ask_debug_reports_provider_stages_without_model_payload(monkeypatch, capsys):
+    import onto4.cli.main as cli_main
+
+    class FakeClient:
+        def complete(self, messages, **kwargs):
+            if "Formalize the supplied interpretation" in messages[1]["content"]:
+                payload = {
+                    "candidates": [
+                        {
+                            "id": "mass",
+                            "label": "mass of integer 7",
+                            "formalization_id": "has-mass",
+                            "context_id": "physical_objects",
+                            "formalization": {
+                                "kind": "predicate",
+                                "name": "has_mass",
+                                "args": [{"name": "integer_7"}],
+                            },
+                        }
+                    ]
+                }
+            else:
+                payload = {
+                    "id": "ask-space",
+                    "source_text": "What is the mass of integer 7?",
+                    "conceptual_depth": "ordinary",
+                    "ambiguities": [],
+                    "presuppositions": [],
+                    "ontologies": [],
+                    "readings": [],
+                }
+            return {"choices": [{"message": {"content": json.dumps(payload)}}]}
+
+    monkeypatch.setattr(cli_main, "OpenAICompatibleClient", lambda profile, bearer_token=None: FakeClient())
+    code = cli_main.main(
+        [
+            "ask",
+            "What is the mass of integer 7?",
+            "--endpoint",
+            "http://example.test/v1",
+            "--model",
+            "fixture-model",
+            "--context",
+            str(ROOT / "profiles/contexts/physical_objects.yaml"),
+            "--debug",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "[onto4] interpretation: started" in captured.err
+    assert "[onto4] interpretation: completed" in captured.err
+    assert "[onto4] formalization: completed" in captured.err
+    assert "choices" not in captured.err
+
+
 def test_ask_command_reports_missing_bearer_token_without_traceback(monkeypatch, capsys):
     monkeypatch.delenv("ONTO4_API_TOKEN", raising=False)
 

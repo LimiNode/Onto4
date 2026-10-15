@@ -7,6 +7,7 @@ from .fixtures import (
     FixtureInterpretationProvider,
 )
 from .decision import DeterministicDecisionPolicy
+from .diagnostics import ProviderStageEvent, ProviderTrace
 from .openai_compatible import (
     EndpointAuthKind,
     OpenAICompatibleClient,
@@ -48,8 +49,10 @@ __all__ = [
     "OpenAICompatibleFormalizationProvider",
     "OpenAICompatibleInterpretationProvider",
     "ProviderProfile",
+    "ProviderStageEvent",
     "ProviderSchemaError",
     "ProviderTransportError",
+    "ProviderTrace",
     "TypedDecision",
     "TypedDecisionBatchProvider",
     "TypedDecisionProvider",

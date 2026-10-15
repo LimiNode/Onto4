@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping, Sequence
+from time import perf_counter
+from typing import Any, Callable, Mapping, Sequence
 
 from onto4.core import And, Equivalent, Implies, Not, Or, PredicateCall, PredicateExpr, Term
 from onto4.reasoning import (
@@ -16,7 +17,8 @@ from onto4.reasoning import (
     SemanticReading,
 )
 
-from .openai_compatible import OpenAICompatibleClient
+from .openai_compatible import OpenAICompatibleClient, ProviderTransportError
+from .diagnostics import ProviderTrace, ProviderStageEvent, emit_provider_trace
 from .protocols import FormalizationProvider, FormalizationRequest, InterpretationProvider, InterpretationRequest
 
 
@@ -57,10 +59,21 @@ def _string_tuple(value: Any, path: str) -> tuple[str, ...]:
     return tuple(_string(item, f"{path}[{index}]") for index, item in enumerate(value))
 
 
-def _response_json(client: OpenAICompatibleClient, messages: Sequence[Mapping[str, str]]) -> Mapping[str, Any]:
+def _response_json(
+    client: OpenAICompatibleClient,
+    messages: Sequence[Mapping[str, str]],
+    *,
+    trace: ProviderTrace | None = None,
+    stage: str,
+) -> Mapping[str, Any]:
+    request_started = perf_counter()
     envelope = client.complete(
         messages,
         response_format={"type": "json_object"},
+    )
+    emit_provider_trace(
+        trace,
+        ProviderStageEvent(stage, "response_received", perf_counter() - request_started),
     )
     choices = envelope.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -73,8 +86,50 @@ def _response_json(client: OpenAICompatibleClient, messages: Sequence[Mapping[st
     try:
         decoded = json.loads(content)
     except json.JSONDecodeError as exc:
+        emit_provider_trace(
+            trace,
+            ProviderStageEvent(stage, "json_invalid", perf_counter() - request_started),
+        )
         raise ProviderSchemaError("Model message content is not valid JSON.") from exc
+    emit_provider_trace(
+        trace,
+        ProviderStageEvent(stage, "json_valid", perf_counter() - request_started),
+    )
     return _object(decoded, "message.content")
+
+
+def _traced_stage(
+    stage: str,
+    trace: ProviderTrace | None,
+    operation: Callable[[], Any],
+) -> Any:
+    started = perf_counter()
+    emit_provider_trace(trace, ProviderStageEvent(stage, "started", 0.0))
+    try:
+        result = operation()
+    except ProviderTransportError:
+        emit_provider_trace(
+            trace,
+            ProviderStageEvent(stage, "failed", perf_counter() - started, "transport"),
+        )
+        raise
+    except ProviderSchemaError:
+        emit_provider_trace(
+            trace,
+            ProviderStageEvent(stage, "failed", perf_counter() - started, "schema"),
+        )
+        raise
+    except Exception:
+        emit_provider_trace(
+            trace,
+            ProviderStageEvent(stage, "failed", perf_counter() - started, "unexpected"),
+        )
+        raise
+    emit_provider_trace(
+        trace,
+        ProviderStageEvent(stage, "completed", perf_counter() - started, "schema_valid"),
+    )
+    return result
 
 
 def _parse_description_items(
@@ -258,8 +313,14 @@ def _interpretation_projection(interpretation: InterpretationSpace) -> dict[str,
 class OpenAICompatibleInterpretationProvider(InterpretationProvider):
     """Build one immutable interpretation space from a structured model reply."""
 
-    def __init__(self, client: OpenAICompatibleClient) -> None:
+    def __init__(
+        self,
+        client: OpenAICompatibleClient,
+        *,
+        trace: ProviderTrace | None = None,
+    ) -> None:
         self.client = client
+        self.trace = trace
 
     def interpret(self, request: InterpretationRequest) -> InterpretationSpace:
         requested_depth = (
@@ -272,35 +333,40 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
             if request.conceptual_depth is not None
             else "Select one supported ConceptualDepth; do not infer an unsupported value."
         )
-        payload = _response_json(
-            self.client,
-            (
-                {"role": "system", "content": "Return only the requested JSON interpretation object."},
-                {
-                    "role": "user",
-                    "content": (
-                        "Interpret this source text into the exact JSON fields "
-                        "id, source_text, conceptual_depth, ambiguities, presuppositions, "
-                        "ontologies and readings. Do not choose a verdict. "
-                        f"requested_conceptual_depth: {requested_depth}. "
-                        f"{depth_instruction} conceptual_depth must be exactly one of "
-                        "ordinary, reflective, philosophical or ontology_sensitive. "
-                        "ambiguities, presuppositions, ontologies and readings must "
-                        "be arrays of JSON objects with the fields defined by their "
-                        "names; readings use id, label, description and "
-                        "presupposition_ids. Use this shape even when arrays are empty: "
-                        "ambiguities:[{id,term,description}], "
-                        "presuppositions:[{id,description}], "
-                        "ontologies:[{id,label,description}], "
-                        "readings:[{id,label,description,presupposition_ids}]. "
-                        "Do not use arrays of prose strings. "
-                        "Return JSON only.\n\n"
-                        f"source_text: {request.source_text}"
-                    ),
-                },
-            ),
-        )
-        return _parse_interpretation(payload, request)
+        def operation() -> InterpretationSpace:
+            payload = _response_json(
+                self.client,
+                (
+                    {"role": "system", "content": "Return only the requested JSON interpretation object."},
+                    {
+                        "role": "user",
+                        "content": (
+                            "Interpret this source text into the exact JSON fields "
+                            "id, source_text, conceptual_depth, ambiguities, presuppositions, "
+                            "ontologies and readings. Do not choose a verdict. "
+                            f"requested_conceptual_depth: {requested_depth}. "
+                            f"{depth_instruction} conceptual_depth must be exactly one of "
+                            "ordinary, reflective, philosophical or ontology_sensitive. "
+                            "ambiguities, presuppositions, ontologies and readings must "
+                            "be arrays of JSON objects with the fields defined by their "
+                            "names; readings use id, label, description and "
+                            "presupposition_ids. Use this shape even when arrays are empty: "
+                            "ambiguities:[{id,term,description}], "
+                            "presuppositions:[{id,description}], "
+                            "ontologies:[{id,label,description}], "
+                            "readings:[{id,label,description,presupposition_ids}]. "
+                            "Do not use arrays of prose strings. "
+                            "Return JSON only.\n\n"
+                            f"source_text: {request.source_text}"
+                        ),
+                    },
+                ),
+                trace=self.trace,
+                stage="interpretation",
+            )
+            return _parse_interpretation(payload, request)
+
+        return _traced_stage("interpretation", self.trace, operation)
 
 
 class OpenAICompatibleFormalizationProvider(FormalizationProvider):
@@ -311,9 +377,11 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
         client: OpenAICompatibleClient,
         *,
         context_ids: Sequence[str] = (),
+        trace: ProviderTrace | None = None,
     ) -> None:
         self.client = client
         self.context_ids = tuple(context_ids)
+        self.trace = trace
 
     def formalize(self, request: FormalizationRequest) -> tuple[FormalizationCandidate, ...]:
         interpretation_json = json.dumps(
@@ -321,41 +389,46 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
             ensure_ascii=False,
             sort_keys=True,
         )
-        payload = _response_json(
-            self.client,
-            (
-                {"role": "system", "content": "Return only the requested JSON formalization object."},
-                {
-                    "role": "user",
-                    "content": (
-                        "Formalize the supplied interpretation into a JSON object with "
-                        "a candidates array. Each formalization expression uses kind "
-                        "predicate/not/and/or/implies/equivalent. Use only the supplied "
-                        "reading IDs; do not invent, rename or merge readings. Do not "
-                        "return an Onto4 verdict. Each candidate must contain id, label, "
-                        "formalization_id, context_id, formalization, optional reading_id "
-                        "and assumptions. A predicate expression is an object with kind, "
-                        "name and args; each arg has name and optional declared_type. "
-                        + (
-                            f"Use only these supplied context IDs: {', '.join(self.context_ids)}. "
-                            if self.context_ids
-                            else ""
+        def operation() -> tuple[FormalizationCandidate, ...]:
+            payload = _response_json(
+                self.client,
+                (
+                    {"role": "system", "content": "Return only the requested JSON formalization object."},
+                    {
+                        "role": "user",
+                        "content": (
+                            "Formalize the supplied interpretation into a JSON object with "
+                            "a candidates array. Each formalization expression uses kind "
+                            "predicate/not/and/or/implies/equivalent. Use only the supplied "
+                            "reading IDs; do not invent, rename or merge readings. Do not "
+                            "return an Onto4 verdict. Each candidate must contain id, label, "
+                            "formalization_id, context_id, formalization, optional reading_id "
+                            "and assumptions. A predicate expression is an object with kind, "
+                            "name and args; each arg has name and optional declared_type. "
+                            + (
+                                f"Use only these supplied context IDs: {', '.join(self.context_ids)}. "
+                                if self.context_ids
+                                else ""
+                            )
+                            + "Return JSON only.\n\n"
+                            f"interpretation: {interpretation_json}"
+                        ),
+                    },
+                ),
+                trace=self.trace,
+                stage="formalization",
+            )
+            candidates = _parse_candidates(payload, request)
+            if self.context_ids:
+                allowed = set(self.context_ids)
+                for candidate in candidates:
+                    if candidate.context_id not in allowed:
+                        raise ProviderSchemaError(
+                            f"Candidate {candidate.id!r} refers to an unavailable assessment context."
                         )
-                        + "Return JSON only.\n\n"
-                        f"interpretation: {interpretation_json}"
-                    ),
-                },
-            ),
-        )
-        candidates = _parse_candidates(payload, request)
-        if self.context_ids:
-            allowed = set(self.context_ids)
-            for candidate in candidates:
-                if candidate.context_id not in allowed:
-                    raise ProviderSchemaError(
-                        f"Candidate {candidate.id!r} refers to an unavailable assessment context."
-                    )
-        return candidates
+            return candidates
+
+        return _traced_stage("formalization", self.trace, operation)
 
 
 __all__ = [
