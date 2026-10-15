@@ -577,6 +577,13 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
             ensure_ascii=False,
             sort_keys=True,
         )
+        context_json = json.dumps(
+            request.context_projection.as_dict()
+            if request.context_projection is not None
+            else {"id": request.context_id},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
         payload = _response_json(
             self.client,
             (
@@ -591,7 +598,7 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
                         "fields. A formalization expression uses kind predicate/not/and/"
                         "or/implies/equivalent. A predicate has kind, name and args; each "
                         "arg has name and optional declared_type. Return JSON only.\n\n"
-                        f"target_context_id: {request.context_id}\n"
+                        f"context_projection: {context_json}\n"
                         f"interpretation: {request.interpretation.source_text}\n"
                         f"reading: {reading_json}"
                     ),

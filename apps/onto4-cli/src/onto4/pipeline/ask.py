@@ -12,6 +12,7 @@ from onto4.providers import (
     FormalizationRequest,
     InterpretationProvider,
     InterpretationRequest,
+    project_assessment_context,
 )
 from onto4.reasoning import (
     AssessmentLandscape,
@@ -117,6 +118,9 @@ def formalize_per_reading_and_context(
                         interpretation,
                         reading=reading,
                         context_id=context_id,
+                        context_projection=project_assessment_context(
+                            context_id, contexts[context_id]
+                        ),
                     )
                 )
             )

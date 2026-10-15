@@ -8,6 +8,7 @@ from .fixtures import (
 )
 from .decision import DeterministicDecisionPolicy
 from .diagnostics import ProviderStageEvent, ProviderTrace
+from .projection import AssessmentContextProjection, PredicateProjection, project_assessment_context
 from .openai_compatible import (
     EndpointAuthKind,
     OpenAICompatibleClient,
@@ -34,6 +35,7 @@ from .protocols import (
 
 __all__ = [
     "AbstentionPolicy",
+    "AssessmentContextProjection",
     "DecisionProfile",
     "DeterministicDecisionPolicy",
     "EndpointAuthKind",
@@ -53,8 +55,10 @@ __all__ = [
     "ProviderSchemaError",
     "ProviderTransportError",
     "ProviderTrace",
+    "PredicateProjection",
     "TypedDecision",
     "TypedDecisionBatchProvider",
     "TypedDecisionProvider",
     "TypedDecisionRequest",
+    "project_assessment_context",
 ]

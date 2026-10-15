@@ -13,6 +13,8 @@ from onto4.reasoning import (
     SemanticReading,
 )
 
+from .projection import AssessmentContextProjection
+
 
 @dataclass(frozen=True)
 class TypedDecisionRequest:
@@ -160,6 +162,7 @@ class FormalizationRequest:
     state: Mapping[str, Any] = field(default_factory=dict)
     reading: SemanticReading | None = None
     context_id: str | None = None
+    context_projection: AssessmentContextProjection | None = None
 
     def __post_init__(self) -> None:
         if (self.reading is None) != (self.context_id is None):
@@ -168,6 +171,9 @@ class FormalizationRequest:
             raise ValueError("Formalization reading must belong to the interpretation snapshot.")
         if self.context_id is not None and not self.context_id.strip():
             raise ValueError("Formalization context_id must not be empty.")
+        if self.context_projection is not None:
+            if self.context_id != self.context_projection.id:
+                raise ValueError("Context projection ID must match FormalizationRequest.context_id.")
 
 
 class FormalizationProvider(Protocol):
