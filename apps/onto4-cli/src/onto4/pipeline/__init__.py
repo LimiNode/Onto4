@@ -37,6 +37,7 @@ from .evaluation import (
     write_markdown_report,
 )
 from .refinement import (
+    RefinementBatchResult,
     RefinementCommitLedger,
     RefinementCommitment,
     RefinementDelta,
@@ -115,6 +116,7 @@ __all__ = [
     "offline_fixture_executor",
     "write_markdown_report",
     "RefinementCommitLedger",
+    "RefinementBatchResult",
     "RefinementCommitment",
     "RefinementDelta",
     "RefinementEffect",

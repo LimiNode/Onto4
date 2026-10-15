@@ -50,6 +50,45 @@ class RefinementDelta:
     label: str | None = None
     description: str | None = None
     reason: str | None = None
+    resolved_ambiguity_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.operation, RefinementOperation):
+            raise RefinementValidationError("operation must be a RefinementOperation.")
+        supplied = {
+            "target_id": self.target_id is not None,
+            "text": self.text is not None,
+            "label": self.label is not None,
+            "description": self.description is not None,
+            "reason": self.reason is not None,
+            "resolved_ambiguity_ids": bool(self.resolved_ambiguity_ids),
+        }
+        allowed_by_operation = {
+            RefinementOperation.SELECT_READING: {"target_id", "resolved_ambiguity_ids"},
+            RefinementOperation.RETAIN_AMBIGUITY: {"target_id", "reason"},
+            RefinementOperation.REFINE_AMBIGUITY: {
+                "target_id",
+                "text",
+                "description",
+                "reason",
+            },
+            RefinementOperation.ADD_PRESUPPOSITION: {"description", "reason"},
+            RefinementOperation.QUALIFY_ONTOLOGY_CANDIDATE: {
+                "target_id",
+                "description",
+                "reason",
+            },
+            RefinementOperation.ABSTAIN: {"reason"},
+        }
+        unexpected = {
+            name
+            for name, present in supplied.items()
+            if present and name not in allowed_by_operation[self.operation]
+        }
+        if unexpected:
+            raise RefinementValidationError(
+                f"{self.operation.value} does not accept fields: {sorted(unexpected)!r}."
+            )
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> "RefinementDelta":
@@ -60,6 +99,7 @@ class RefinementDelta:
             "label",
             "description",
             "reason",
+            "resolved_ambiguity_ids",
         }
         unknown = set(value) - allowed
         if unknown:
@@ -79,7 +119,19 @@ class RefinementDelta:
         }
         if any(item is not None and not isinstance(item, str) for item in fields.values()):
             raise RefinementValidationError("Refinement operation fields must be strings.")
-        return cls(operation=parsed_operation, **fields)
+        resolved = value.get("resolved_ambiguity_ids", ())
+        if (
+            not isinstance(resolved, (list, tuple))
+            or any(not isinstance(item, str) or not item for item in resolved)
+        ):
+            raise RefinementValidationError(
+                "resolved_ambiguity_ids must be an array of non-empty strings."
+            )
+        return cls(
+            operation=parsed_operation,
+            resolved_ambiguity_ids=tuple(resolved),
+            **fields,
+        )
 
 
 @dataclass(frozen=True)
@@ -98,6 +150,28 @@ class RefinementRequest:
             raise RefinementValidationError(
                 "Refinement request is not bound to its assessment snapshot."
             )
+        categories = (
+            ("reading", self.allowed_reading_ids, {item.id for item in self.interpretation.readings}),
+            ("ambiguity", self.allowed_ambiguity_ids, {item.id for item in self.interpretation.ambiguities}),
+            ("ontology", self.allowed_ontology_ids, {item.id for item in self.interpretation.ontologies}),
+            ("presupposition", self.allowed_presupposition_ids, {item.id for item in self.interpretation.presuppositions}),
+        )
+        for label, allowed, actual in categories:
+            forged = allowed - actual
+            if forged:
+                raise RefinementValidationError(
+                    f"Allowed {label} targets are absent from the snapshot: {sorted(forged)!r}."
+                )
+        all_ids = [item.id for group in (
+            self.interpretation.readings,
+            self.interpretation.ambiguities,
+            self.interpretation.ontologies,
+            self.interpretation.presuppositions,
+        ) for item in group]
+        if len(all_ids) != len(set(all_ids)):
+            raise RefinementValidationError(
+                "Refinement snapshot contains duplicate target IDs."
+            )
 
 
 @dataclass(frozen=True)
@@ -115,6 +189,14 @@ class RefinementCommitment:
 class RefinementResult:
     successor: InterpretationSpace
     commitment: RefinementCommitment
+
+
+@dataclass(frozen=True)
+class RefinementBatchResult:
+    batch_id: str
+    source_interpretation_id: str
+    successor: InterpretationSpace
+    commitments: tuple[RefinementCommitment, ...]
 
 
 @dataclass(frozen=True)
@@ -138,12 +220,41 @@ def _require_target(
     allowed: frozenset[str],
     *,
     label: str,
+    actual: Iterable[str],
 ) -> str:
-    if not target_id or target_id not in allowed:
+    if not target_id or target_id not in allowed or target_id not in set(actual):
         raise RefinementValidationError(
             f"Unknown or inadmissible {label} target: {target_id!r}."
         )
     return target_id
+
+
+def _semantic_content(interpretation: InterpretationSpace) -> tuple[object, ...]:
+    return (
+        interpretation.source_text,
+        interpretation.conceptual_depth,
+        interpretation.ambiguities,
+        interpretation.presuppositions,
+        interpretation.ontologies,
+        interpretation.readings,
+    )
+
+
+def _no_effect_result(
+    interpretation: InterpretationSpace,
+    operation: RefinementOperation,
+    target_id: str | None,
+) -> RefinementResult:
+    return RefinementResult(
+        interpretation,
+        RefinementCommitment(
+            interpretation.id,
+            interpretation.id,
+            operation,
+            target_id,
+            RefinementEffect.NO_EFFECT,
+        ),
+    )
 
 
 def _next_id(prefix: str, existing: Iterable[str]) -> str:
@@ -168,11 +279,6 @@ def apply_refinement_delta(
         raise RefinementValidationError("successor_id must be non-empty.")
 
     if operation is RefinementOperation.ABSTAIN:
-        if any(
-            value is not None
-            for value in (delta.target_id, delta.text, delta.label, delta.description)
-        ):
-            raise RefinementValidationError("abstain does not accept operation content.")
         commitment = RefinementCommitment(
             interpretation.id,
             interpretation.id,
@@ -184,18 +290,38 @@ def apply_refinement_delta(
 
     if operation is RefinementOperation.SELECT_READING:
         target_id = _require_target(
-            request, delta.target_id, request.allowed_reading_ids, label="reading"
+            request,
+            delta.target_id,
+            request.allowed_reading_ids,
+            label="reading",
+            actual=(item.id for item in interpretation.readings),
         )
-        selected = next(reading for reading in interpretation.readings if reading.id == target_id)
+        selected = next(
+            (reading for reading in interpretation.readings if reading.id == target_id),
+            None,
+        )
+        if selected is None:
+            raise RefinementValidationError(f"Reading target {target_id!r} is stale.")
+        resolved_ids = set(delta.resolved_ambiguity_ids)
+        if not resolved_ids.issubset(request.allowed_ambiguity_ids):
+            raise RefinementValidationError(
+                "select_reading refers to an inadmissible resolved ambiguity."
+            )
         successor = replace(
             interpretation,
             id=successor_id,
-            ambiguities=(),
+            ambiguities=tuple(
+                item for item in interpretation.ambiguities if item.id not in resolved_ids
+            ),
             readings=(selected,),
         )
     elif operation is RefinementOperation.RETAIN_AMBIGUITY:
         target_id = _require_target(
-            request, delta.target_id, request.allowed_ambiguity_ids, label="ambiguity"
+            request,
+            delta.target_id,
+            request.allowed_ambiguity_ids,
+            label="ambiguity",
+            actual=(item.id for item in interpretation.ambiguities),
         )
         if any(ambiguity.id == target_id for ambiguity in interpretation.ambiguities):
             commitment = RefinementCommitment(
@@ -209,7 +335,11 @@ def apply_refinement_delta(
         raise RefinementValidationError("Retained ambiguity is not in the snapshot.")
     elif operation is RefinementOperation.REFINE_AMBIGUITY:
         target_id = _require_target(
-            request, delta.target_id, request.allowed_ambiguity_ids, label="ambiguity"
+            request,
+            delta.target_id,
+            request.allowed_ambiguity_ids,
+            label="ambiguity",
+            actual=(item.id for item in interpretation.ambiguities),
         )
         if not delta.text or not delta.description:
             raise RefinementValidationError(
@@ -253,6 +383,7 @@ def apply_refinement_delta(
             delta.target_id,
             request.allowed_ontology_ids,
             label="ontology",
+            actual=(item.id for item in interpretation.ontologies),
         )
         if not delta.description:
             raise RefinementValidationError(
@@ -271,8 +402,12 @@ def apply_refinement_delta(
     else:  # pragma: no cover - exhaustive enum guard
         raise RefinementValidationError(f"Unsupported refinement operation: {operation!r}.")
 
-    if successor == interpretation:
-        raise RefinementValidationError("Refinement delta has no semantic effect.")
+    if _semantic_content(successor) == _semantic_content(interpretation):
+        return _no_effect_result(interpretation, operation, target_id)
+    if successor.id == interpretation.id:
+        raise RefinementValidationError(
+            "A semantic refinement requires a distinct successor_id."
+        )
     commitment = RefinementCommitment(
         interpretation.id,
         successor.id,
@@ -288,25 +423,38 @@ def apply_refinement_batch(
     deltas: tuple[RefinementDelta, ...],
     *,
     successor_id: str,
-) -> RefinementResult:
+    batch_id: str | None = None,
+) -> RefinementBatchResult:
     """Apply a bounded batch atomically, rejecting conflicting targets."""
 
     if not deltas:
         raise RefinementValidationError("A refinement batch must not be empty.")
-    seen_targets: set[tuple[RefinementOperation, str | None]] = set()
+    if batch_id is not None and not batch_id.strip():
+        raise RefinementValidationError("batch_id must be non-empty when supplied.")
+    seen_targets: set[str] = set()
     current = request.interpretation
     commitments: list[RefinementCommitment] = []
     for index, delta in enumerate(deltas):
-        key = (delta.operation, delta.target_id)
-        if key in seen_targets and delta.operation is not RefinementOperation.RETAIN_AMBIGUITY:
+        if delta.target_id is not None and delta.target_id in seen_targets:
             raise RefinementValidationError(
                 f"Conflicting repeated refinement target at index {index}."
             )
-        seen_targets.add(key)
+        if delta.target_id is not None:
+            seen_targets.add(delta.target_id)
+        reading_ids = {item.id for item in current.readings}
+        ambiguity_ids = {item.id for item in current.ambiguities}
+        ontology_ids = {item.id for item in current.ontologies}
+        presupposition_ids = {item.id for item in current.presuppositions}
         current_request = replace(
             request,
             interpretation=current,
             assessment_interpretation_id=current.id,
+            allowed_reading_ids=request.allowed_reading_ids & reading_ids,
+            allowed_ambiguity_ids=request.allowed_ambiguity_ids & ambiguity_ids,
+            allowed_ontology_ids=request.allowed_ontology_ids & ontology_ids,
+            allowed_presupposition_ids=(
+                request.allowed_presupposition_ids & presupposition_ids
+            ),
         )
         result = apply_refinement_delta(
             current_request,
@@ -317,12 +465,18 @@ def apply_refinement_batch(
             raise RefinementValidationError("Refinement batch contains a no-effect operation.")
         current = result.successor
         commitments.append(result.commitment)
-    return RefinementResult(current, commitments[-1])
+    return RefinementBatchResult(
+        batch_id=batch_id or successor_id,
+        source_interpretation_id=request.interpretation.id,
+        successor=current,
+        commitments=tuple(commitments),
+    )
 
 
 __all__ = [
     "RefinementCommitLedger",
     "RefinementCommitment",
+    "RefinementBatchResult",
     "RefinementDelta",
     "RefinementEffect",
     "RefinementOperation",
