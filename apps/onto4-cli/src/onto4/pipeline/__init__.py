@@ -1,5 +1,16 @@
 """Application-level orchestration for the deterministic first slice."""
-from .ask import AskResult, ask, assess_interpretation
+from .ask import (
+    AskResult,
+    ask,
+    assess_interpretation,
+    assess_interpretation_per_reading,
+    formalize_per_reading_and_context,
+)
+from .clarification_corpus import (
+    ClarificationCorpus,
+    ClarificationCorpusCase,
+    load_clarification_corpus,
+)
 from .decision_bridge import (
     ClarificationDecisionResult,
     ClarificationQuestionDecision,
@@ -23,15 +34,20 @@ from .orchestration import (
     issue_reasoning_clarification,
     orchestrate_once,
     reassess_reasoning_session,
+    reassess_reasoning_session_per_reading,
     reassess_session,
+    reassess_session_per_reading,
     record_clarification_turn,
     require_current_session_assessment,
     start_reasoning_session,
+    start_reasoning_session_per_reading,
 )
 
 __all__ = [
     "AskResult",
     "ClarificationDecisionResult",
+    "ClarificationCorpus",
+    "ClarificationCorpusCase",
     "ClarificationQuestionDecision",
     "ClarificationSession",
     "ClarificationSessionResult",
@@ -44,7 +60,10 @@ __all__ = [
     "answer_session_clarification",
     "apply_clarification_answer",
     "assess_interpretation",
+    "assess_interpretation_per_reading",
     "ask",
+    "formalize_per_reading_and_context",
+    "load_clarification_corpus",
     "build_clarification_request",
     "decide_clarification",
     "decide_clarification_question",
@@ -53,8 +72,11 @@ __all__ = [
     "issue_reasoning_clarification",
     "orchestrate_once",
     "reassess_reasoning_session",
+    "reassess_reasoning_session_per_reading",
     "reassess_session",
+    "reassess_session_per_reading",
     "record_clarification_turn",
     "require_current_session_assessment",
     "start_reasoning_session",
+    "start_reasoning_session_per_reading",
 ]
