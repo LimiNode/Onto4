@@ -315,6 +315,54 @@ def _parse_expr(value: Any, path: str) -> Any:
     raise ProviderSchemaError(f"{path}.kind is unsupported: {kind!r}.")
 
 
+def _expr_projection(value: Any) -> Any:
+    if isinstance(value, PredicateExpr):
+        return {
+            "kind": "predicate",
+            "name": value.call.name,
+            "args": [
+                {"name": item.name, "declared_type": item.declared_type}
+                for item in value.call.args
+            ],
+        }
+    if isinstance(value, Not):
+        return {"kind": "not", "operand": _expr_projection(value.operand)}
+    for kind, left_name, right_name in (
+        (And, "left", "right"),
+        (Or, "left", "right"),
+        (Implies, "left", "right"),
+        (Equivalent, "left", "right"),
+    ):
+        if isinstance(value, kind):
+            return {
+                "kind": kind.__name__.lower(),
+                left_name: _expr_projection(value.left),
+                right_name: _expr_projection(value.right),
+            }
+    if value is None:
+        return None
+    raise TypeError(f"Unsupported expression: {type(value)!r}.")
+
+
+def _host_formalization_identity(formalization: Any, assumptions: tuple[str, ...]) -> str:
+    payload = {
+        "formalization": _expr_projection(formalization),
+        "assumptions": list(assumptions),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"formalization-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _host_candidate_identity(
+    interpretation: InterpretationSpace,
+    reading_id: str,
+    context_id: str,
+    formalization_id: str,
+) -> str:
+    encoded = "|".join((interpretation.id, reading_id, context_id, formalization_id))
+    return f"candidate-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
+
+
 def _parse_candidates(payload: Mapping[str, Any], request: FormalizationRequest) -> tuple[FormalizationCandidate, ...]:
     _keys(payload, "formalization", {"candidates"})
     raw_candidates = payload["candidates"]
@@ -455,6 +503,12 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
         self.trace = trace
 
     def formalize(self, request: FormalizationRequest) -> tuple[FormalizationCandidate, ...]:
+        if request.reading is not None:
+            return _traced_stage(
+                "formalization",
+                self.trace,
+                lambda: self._formalize_one(request),
+            )
         interpretation_json = json.dumps(
             _interpretation_projection(request.interpretation),
             ensure_ascii=False,
@@ -500,6 +554,79 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
             return candidates
 
         return _traced_stage("formalization", self.trace, operation)
+
+    def _formalize_one(
+        self,
+        request: FormalizationRequest,
+    ) -> tuple[FormalizationCandidate, ...]:
+        """Formalize one host-selected reading/context pair."""
+
+        assert request.reading is not None
+        assert request.context_id is not None
+        if self.context_ids and request.context_id not in self.context_ids:
+            raise ProviderSchemaError(
+                f"Requested context {request.context_id!r} is not in the supplied context projection."
+            )
+        reading_json = json.dumps(
+            {
+                "id": request.reading.id,
+                "label": request.reading.label,
+                "description": request.reading.description,
+                "presupposition_ids": list(request.reading.presupposition_ids),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        payload = _response_json(
+            self.client,
+            (
+                {"role": "system", "content": "Return only the requested JSON formalization object."},
+                {
+                    "role": "user",
+                    "content": (
+                        "Formalize exactly the supplied semantic reading for the supplied "
+                        "context. Return an object with formalization, assumptions and an "
+                        "optional label. Do not return id, reading_id, context_id, "
+                        "formalization_id or an Onto4 verdict; the host assigns those "
+                        "fields. A formalization expression uses kind predicate/not/and/"
+                        "or/implies/equivalent. A predicate has kind, name and args; each "
+                        "arg has name and optional declared_type. Return JSON only.\n\n"
+                        f"target_context_id: {request.context_id}\n"
+                        f"interpretation: {request.interpretation.source_text}\n"
+                        f"reading: {reading_json}"
+                    ),
+                },
+            ),
+            trace=self.trace,
+            stage="formalization",
+        )
+        _keys(payload, "formalization", {"formalization"}, {"assumptions", "label"})
+        raw_formalization = payload["formalization"]
+        parsed_formalization = (
+            None
+            if raw_formalization is None
+            else _parse_expr(raw_formalization, "formalization.formalization")
+        )
+        assumptions = _string_tuple(payload.get("assumptions", []), "formalization.assumptions")
+        formalization_id = _host_formalization_identity(parsed_formalization, assumptions)
+        candidate_id = _host_candidate_identity(
+            request.interpretation,
+            request.reading.id,
+            request.context_id,
+            formalization_id,
+        )
+        label = _optional_string(payload.get("label"), "formalization.label")
+        return (
+            FormalizationCandidate(
+                id=candidate_id,
+                label=label or request.reading.label,
+                formalization_id=formalization_id,
+                context_id=request.context_id,
+                formalization=parsed_formalization,
+                reading_id=request.reading.id,
+                assumptions=assumptions,
+            ),
+        )
 
 
 __all__ = [

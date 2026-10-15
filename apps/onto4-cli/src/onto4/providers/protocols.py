@@ -6,7 +6,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Protocol, Sequence
 
-from onto4.reasoning import ConceptualDepth, FormalizationCandidate, InterpretationSpace
+from onto4.reasoning import (
+    ConceptualDepth,
+    FormalizationCandidate,
+    InterpretationSpace,
+    SemanticReading,
+)
 
 
 @dataclass(frozen=True)
@@ -142,10 +147,27 @@ class InterpretationProvider(Protocol):
 
 @dataclass(frozen=True)
 class FormalizationRequest:
-    """Request to turn an interpretation space into explicit candidates."""
+    """Request to turn an interpretation space into explicit candidates.
+
+    The legacy form supplies only ``interpretation`` and lets a provider return
+    a candidate set.  A bounded per-reading request additionally supplies one
+    exact reading and one host-selected context ID.  In that form the provider
+    returns only semantic formalization content; host code binds candidate,
+    reading and context identity.
+    """
 
     interpretation: InterpretationSpace
     state: Mapping[str, Any] = field(default_factory=dict)
+    reading: SemanticReading | None = None
+    context_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.reading is None) != (self.context_id is None):
+            raise ValueError("reading and context_id must be supplied together.")
+        if self.reading is not None and self.reading not in self.interpretation.readings:
+            raise ValueError("Formalization reading must belong to the interpretation snapshot.")
+        if self.context_id is not None and not self.context_id.strip():
+            raise ValueError("Formalization context_id must not be empty.")
 
 
 class FormalizationProvider(Protocol):
