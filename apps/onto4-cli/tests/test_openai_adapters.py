@@ -4,6 +4,7 @@ import pytest
 
 from onto4.core import PredicateExpr
 from onto4.providers import (
+    AssessmentContextProjection,
     FormalizationRequest,
     InterpretationRequest,
     OpenAICompatibleFormalizationProvider,
@@ -368,6 +369,35 @@ def test_single_reading_formalization_binds_identity_on_host():
     assert candidate.id.startswith("candidate-")
     assert candidate.formalization_id.startswith("formalization-")
     assert "Do not return id, reading_id, context_id" in client.messages[1]["content"]
+
+
+def test_single_reading_formalization_receives_bounded_context_projection():
+    space = InterpretationSpace(
+        id="door-space",
+        source_text="The door is closed.",
+        conceptual_depth=ConceptualDepth.Ordinary,
+        readings=(SemanticReading("reading-0", "closed", "not open"),),
+    )
+    client = FakeClient({"formalization": None})
+
+    OpenAICompatibleFormalizationProvider(client).formalize(
+        FormalizationRequest(
+            space,
+            reading=space.readings[0],
+            context_id="physical_objects",
+            context_projection=AssessmentContextProjection(
+                "physical_objects",
+                "physical_objects",
+                symbols=(("door", "Door"),),
+            ),
+        )
+    )
+
+    prompt = client.messages[1]["content"]
+    assert '"ontology": "physical_objects"' in prompt
+    assert '"symbols"' in prompt
+    assert '"evidence"' not in prompt
+    assert '"verdict"' not in prompt
 
 
 def test_single_reading_formalization_rejects_model_identity_fields():

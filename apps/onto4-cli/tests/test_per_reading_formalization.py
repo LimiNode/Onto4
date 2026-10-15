@@ -31,6 +31,8 @@ class RecordingProvider:
         self.requests.append(request)
         assert request.reading is not None
         assert request.context_id is not None
+        assert request.context_projection is not None
+        assert request.context_projection.id == request.context_id
         return (
             FormalizationCandidate(
                 id=f"{request.reading.id}:{request.context_id}",
