@@ -21,7 +21,7 @@ from onto4.reasoning import (
     TransitionAwareClarificationPolicy,
 )
 
-from .ask import AskResult, ask, assess_interpretation
+from .ask import AskResult, ask, assess_interpretation, assess_interpretation_per_reading
 from .decision_bridge import (
     CLARIFICATION_KIND_BY_REFINEMENT,
     ClarificationQuestionDecision,
@@ -167,6 +167,24 @@ def start_reasoning_session(
     return ReasoningSessionResult(ReasoningSession(session, assessment))
 
 
+def start_reasoning_session_per_reading(
+    session: ClarificationSession,
+    *,
+    formalization_provider: FormalizationProvider,
+    contexts: Mapping[str, AssessmentContext],
+    clarification_policy: ClarificationPolicy,
+) -> ReasoningSessionResult:
+    """Start a session using host-bound per-reading/context formalization."""
+
+    assessment = reassess_session_per_reading(
+        session,
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+        clarification_policy=clarification_policy,
+    )
+    return ReasoningSessionResult(ReasoningSession(session, assessment))
+
+
 def reassess_reasoning_session(
     session: ReasoningSession,
     *,
@@ -177,6 +195,24 @@ def reassess_reasoning_session(
     """Replace the latest assessment with a fresh pass for the current snapshot."""
 
     assessment = reassess_session(
+        session.clarification,
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+        clarification_policy=clarification_policy,
+    )
+    return ReasoningSessionResult(ReasoningSession(session.clarification, assessment))
+
+
+def reassess_reasoning_session_per_reading(
+    session: ReasoningSession,
+    *,
+    formalization_provider: FormalizationProvider,
+    contexts: Mapping[str, AssessmentContext],
+    clarification_policy: ClarificationPolicy,
+) -> ReasoningSessionResult:
+    """Replace the assessment using per-reading/context formalization."""
+
+    assessment = reassess_session_per_reading(
         session.clarification,
         formalization_provider=formalization_provider,
         contexts=contexts,
@@ -469,6 +505,28 @@ def reassess_session(
     return SessionAssessment(session.interpretation, result)
 
 
+def reassess_session_per_reading(
+    session: ClarificationSession,
+    *,
+    formalization_provider: FormalizationProvider,
+    contexts: Mapping[str, AssessmentContext],
+    clarification_policy: ClarificationPolicy,
+) -> SessionAssessment:
+    """Run a fresh assessment using one request per reading/context pair."""
+
+    if session.pending is not None:
+        raise ValueError(
+            "Cannot reassess a clarification session while a question is pending."
+        )
+    result = assess_interpretation_per_reading(
+        session.interpretation,
+        formalization_provider=formalization_provider,
+        contexts=contexts,
+        clarification_policy=clarification_policy,
+    )
+    return SessionAssessment(session.interpretation, result)
+
+
 def _require_current_session_context(
     session: ClarificationSession,
     context: ClarificationContext,
@@ -496,8 +554,10 @@ __all__ = [
     "orchestrate_once",
     "reassess_session",
     "reassess_reasoning_session",
+    "reassess_reasoning_session_per_reading",
     "record_clarification_turn",
     "require_current_session_assessment",
     "answer_reasoning_clarification",
     "start_reasoning_session",
+    "start_reasoning_session_per_reading",
 ]
