@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from time import perf_counter
+from dataclasses import replace
 from typing import Any, Callable, Mapping, Sequence
 
 from onto4.core import And, Equivalent, Implies, Not, Or, PredicateCall, PredicateExpr, Term
@@ -57,6 +59,21 @@ def _string_tuple(value: Any, path: str) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise ProviderSchemaError(f"{path} must be a JSON array.")
     return tuple(_string(item, f"{path}[{index}]") for index, item in enumerate(value))
+
+
+def _index_tuple(value: Any, path: str, *, upper_bound: int) -> tuple[int, ...]:
+    if not isinstance(value, list):
+        raise ProviderSchemaError(f"{path} must be a JSON array.")
+    indexes: list[int] = []
+    for index, item in enumerate(value):
+        if isinstance(item, bool) or not isinstance(item, int):
+            raise ProviderSchemaError(f"{path}[{index}] must be a non-negative integer.")
+        if item < 0 or item >= upper_bound:
+            raise ProviderSchemaError(
+                f"{path}[{index}] refers to an unavailable presupposition index."
+            )
+        indexes.append(item)
+    return tuple(indexes)
 
 
 def _response_json(
@@ -142,12 +159,13 @@ def _parse_description_items(
     result = []
     for index, raw in enumerate(value):
         item = _object(raw, f"{path}[{index}]")
-        optional = set()
-        required = {"id", "description"}
+        optional = {"id"}
+        required = {"description"}
         if constructor is Ambiguity:
             required.add("term")
         _keys(item, f"{path}[{index}]", required, optional)
-        identifier = _string(item["id"], f"{path}[{index}].id")
+        prefix = "ambiguity" if constructor is Ambiguity else "presupposition"
+        identifier = f"{prefix}-{index}"
         description = _string(item["description"], f"{path}[{index}].description")
         if constructor is Ambiguity:
             result.append(constructor(identifier, _string(item.get("term"), f"{path}[{index}].term"), description))
@@ -162,10 +180,10 @@ def _parse_ontology_candidates(value: Any) -> tuple[OntologyCandidate, ...]:
     result = []
     for index, raw in enumerate(value):
         item = _object(raw, f"ontologies[{index}]")
-        _keys(item, f"ontologies[{index}]", {"id", "label", "description"})
+        _keys(item, f"ontologies[{index}]", {"label", "description"}, {"id"})
         result.append(
             OntologyCandidate(
-                _string(item["id"], f"ontologies[{index}].id"),
+                f"ontology-{index}",
                 _string(item["label"], f"ontologies[{index}].label"),
                 _string(item["description"], f"ontologies[{index}].description"),
             )
@@ -173,29 +191,72 @@ def _parse_ontology_candidates(value: Any) -> tuple[OntologyCandidate, ...]:
     return tuple(result)
 
 
-def _parse_readings(value: Any) -> tuple[SemanticReading, ...]:
+def _parse_readings(
+    value: Any,
+    *,
+    presupposition_ids: tuple[str, ...],
+) -> tuple[SemanticReading, ...]:
     if not isinstance(value, list):
         raise ProviderSchemaError("readings must be a JSON array.")
     result = []
     for index, raw in enumerate(value):
         item = _object(raw, f"readings[{index}]")
-        _keys(item, f"readings[{index}]", {"id", "label", "description"}, {"presupposition_ids"})
+        _keys(
+            item,
+            f"readings[{index}]",
+            {"label", "description"},
+            {"id", "presupposition_indexes"},
+        )
         result.append(
             SemanticReading(
-                _string(item["id"], f"readings[{index}].id"),
+                f"reading-{index}",
                 _string(item["label"], f"readings[{index}].label"),
                 _string(item["description"], f"readings[{index}].description"),
-                _string_tuple(item.get("presupposition_ids", []), f"readings[{index}].presupposition_ids"),
+                tuple(
+                    presupposition_ids[presupposition_index]
+                    for presupposition_index in _index_tuple(
+                        item.get("presupposition_indexes", []),
+                        f"readings[{index}].presupposition_indexes",
+                        upper_bound=len(presupposition_ids),
+                    )
+                ),
             )
         )
     return tuple(result)
+
+
+def _interpretation_identity(space: InterpretationSpace) -> str:
+    canonical = {
+        "source_text": space.source_text,
+        "conceptual_depth": space.conceptual_depth.value,
+        "ambiguities": [
+            {"term": item.term, "description": item.description}
+            for item in space.ambiguities
+        ],
+        "presuppositions": [item.description for item in space.presuppositions],
+        "ontologies": [
+            {"label": item.label, "description": item.description}
+            for item in space.ontologies
+        ],
+        "readings": [
+            {
+                "label": item.label,
+                "description": item.description,
+                "presupposition_ids": list(item.presupposition_ids),
+            }
+            for item in space.readings
+        ],
+    }
+    encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"interpretation-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
 
 
 def _parse_interpretation(payload: Mapping[str, Any], request: InterpretationRequest) -> InterpretationSpace:
     _keys(
         payload,
         "interpretation",
-        {"id", "source_text", "conceptual_depth", "ambiguities", "presuppositions", "ontologies", "readings"},
+        {"source_text", "conceptual_depth", "ambiguities", "presuppositions", "ontologies", "readings"},
+        {"id"},
     )
     source_text = _string(payload["source_text"], "source_text")
     if source_text != request.source_text:
@@ -208,15 +269,24 @@ def _parse_interpretation(payload: Mapping[str, Any], request: InterpretationReq
         raise ProviderSchemaError(
             "Model conceptual_depth does not match the interpretation request."
         )
-    return InterpretationSpace(
-        id=_string(payload["id"], "id"),
+    space = InterpretationSpace(
+        id="",
         source_text=source_text,
         conceptual_depth=depth,
         ambiguities=_parse_description_items(payload["ambiguities"], "ambiguities", Ambiguity),
         presuppositions=_parse_description_items(payload["presuppositions"], "presuppositions", Presupposition),
         ontologies=_parse_ontology_candidates(payload["ontologies"]),
-        readings=_parse_readings(payload["readings"]),
+        readings=_parse_readings(
+            payload["readings"],
+            presupposition_ids=tuple(
+                item.id
+                for item in _parse_description_items(
+                    payload["presuppositions"], "presuppositions", Presupposition
+                )
+            ),
+        ),
     )
+    return replace(space, id=_interpretation_identity(space))
 
 
 def _parse_term(value: Any, path: str) -> Term:
@@ -243,6 +313,54 @@ def _parse_expr(value: Any, path: str) -> Any:
         _keys(item, path, {"kind", "left", "right"})
         return binary[kind](_parse_expr(item["left"], f"{path}.left"), _parse_expr(item["right"], f"{path}.right"))
     raise ProviderSchemaError(f"{path}.kind is unsupported: {kind!r}.")
+
+
+def _expr_projection(value: Any) -> Any:
+    if isinstance(value, PredicateExpr):
+        return {
+            "kind": "predicate",
+            "name": value.call.name,
+            "args": [
+                {"name": item.name, "declared_type": item.declared_type}
+                for item in value.call.args
+            ],
+        }
+    if isinstance(value, Not):
+        return {"kind": "not", "operand": _expr_projection(value.operand)}
+    for kind, left_name, right_name in (
+        (And, "left", "right"),
+        (Or, "left", "right"),
+        (Implies, "left", "right"),
+        (Equivalent, "left", "right"),
+    ):
+        if isinstance(value, kind):
+            return {
+                "kind": kind.__name__.lower(),
+                left_name: _expr_projection(value.left),
+                right_name: _expr_projection(value.right),
+            }
+    if value is None:
+        return None
+    raise TypeError(f"Unsupported expression: {type(value)!r}.")
+
+
+def _host_formalization_identity(formalization: Any, assumptions: tuple[str, ...]) -> str:
+    payload = {
+        "formalization": _expr_projection(formalization),
+        "assumptions": list(assumptions),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"formalization-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _host_candidate_identity(
+    interpretation: InterpretationSpace,
+    reading_id: str,
+    context_id: str,
+    formalization_id: str,
+) -> str:
+    encoded = "|".join((interpretation.id, reading_id, context_id, formalization_id))
+    return f"candidate-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
 
 
 def _parse_candidates(payload: Mapping[str, Any], request: FormalizationRequest) -> tuple[FormalizationCandidate, ...]:
@@ -348,13 +466,14 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                             f"{depth_instruction} conceptual_depth must be exactly one of "
                             "ordinary, reflective, philosophical or ontology_sensitive. "
                             "ambiguities, presuppositions, ontologies and readings must "
-                            "be arrays of JSON objects with the fields defined by their "
-                            "names; readings use id, label, description and "
-                            "presupposition_ids. Use this shape even when arrays are empty: "
-                            "ambiguities:[{id,term,description}], "
-                            "presuppositions:[{id,description}], "
-                            "ontologies:[{id,label,description}], "
-                            "readings:[{id,label,description,presupposition_ids}]. "
+                        "be arrays of JSON objects with content fields only; do not "
+                        "invent authoritative IDs. Readings use label, description and "
+                        "presupposition_indexes, referring to the supplied presupposition "
+                        "array by zero-based position. Use this shape even when arrays "
+                        "are empty: ambiguities:[{term,description}], "
+                        "presuppositions:[{description}], "
+                        "ontologies:[{label,description}], "
+                        "readings:[{label,description,presupposition_indexes}]. "
                             "Do not use arrays of prose strings. "
                             "Return JSON only.\n\n"
                             f"source_text: {request.source_text}"
@@ -384,6 +503,12 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
         self.trace = trace
 
     def formalize(self, request: FormalizationRequest) -> tuple[FormalizationCandidate, ...]:
+        if request.reading is not None:
+            return _traced_stage(
+                "formalization",
+                self.trace,
+                lambda: self._formalize_one(request),
+            )
         interpretation_json = json.dumps(
             _interpretation_projection(request.interpretation),
             ensure_ascii=False,
@@ -429,6 +554,79 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
             return candidates
 
         return _traced_stage("formalization", self.trace, operation)
+
+    def _formalize_one(
+        self,
+        request: FormalizationRequest,
+    ) -> tuple[FormalizationCandidate, ...]:
+        """Formalize one host-selected reading/context pair."""
+
+        assert request.reading is not None
+        assert request.context_id is not None
+        if self.context_ids and request.context_id not in self.context_ids:
+            raise ProviderSchemaError(
+                f"Requested context {request.context_id!r} is not in the supplied context projection."
+            )
+        reading_json = json.dumps(
+            {
+                "id": request.reading.id,
+                "label": request.reading.label,
+                "description": request.reading.description,
+                "presupposition_ids": list(request.reading.presupposition_ids),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        payload = _response_json(
+            self.client,
+            (
+                {"role": "system", "content": "Return only the requested JSON formalization object."},
+                {
+                    "role": "user",
+                    "content": (
+                        "Formalize exactly the supplied semantic reading for the supplied "
+                        "context. Return an object with formalization, assumptions and an "
+                        "optional label. Do not return id, reading_id, context_id, "
+                        "formalization_id or an Onto4 verdict; the host assigns those "
+                        "fields. A formalization expression uses kind predicate/not/and/"
+                        "or/implies/equivalent. A predicate has kind, name and args; each "
+                        "arg has name and optional declared_type. Return JSON only.\n\n"
+                        f"target_context_id: {request.context_id}\n"
+                        f"interpretation: {request.interpretation.source_text}\n"
+                        f"reading: {reading_json}"
+                    ),
+                },
+            ),
+            trace=self.trace,
+            stage="formalization",
+        )
+        _keys(payload, "formalization", {"formalization"}, {"assumptions", "label"})
+        raw_formalization = payload["formalization"]
+        parsed_formalization = (
+            None
+            if raw_formalization is None
+            else _parse_expr(raw_formalization, "formalization.formalization")
+        )
+        assumptions = _string_tuple(payload.get("assumptions", []), "formalization.assumptions")
+        formalization_id = _host_formalization_identity(parsed_formalization, assumptions)
+        candidate_id = _host_candidate_identity(
+            request.interpretation,
+            request.reading.id,
+            request.context_id,
+            formalization_id,
+        )
+        label = _optional_string(payload.get("label"), "formalization.label")
+        return (
+            FormalizationCandidate(
+                id=candidate_id,
+                label=label or request.reading.label,
+                formalization_id=formalization_id,
+                context_id=request.context_id,
+                formalization=parsed_formalization,
+                reading_id=request.reading.id,
+                assumptions=assumptions,
+            ),
+        )
 
 
 __all__ = [
