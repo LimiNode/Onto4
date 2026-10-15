@@ -2,9 +2,22 @@
 from .ask import (
     AskResult,
     ask,
+    ask_per_reading,
     assess_interpretation,
     assess_interpretation_per_reading,
     formalize_per_reading_and_context,
+)
+from .interactive import (
+    ClarificationProgress,
+    ClarificationProgressKind,
+    ClarificationProgressLedger,
+    FirstAdmissibleDecisionProvider,
+    InteractiveDialogueResult,
+    ModelClarificationPolicy,
+    NONE_OF_THE_ABOVE_ANSWERS,
+    ProgressAwareClarificationPolicy,
+    interactive_decision_profile,
+    run_interactive_dialogue,
 )
 from .clarification_corpus import (
     ClarificationCorpus,
@@ -62,6 +75,7 @@ __all__ = [
     "assess_interpretation",
     "assess_interpretation_per_reading",
     "ask",
+    "ask_per_reading",
     "formalize_per_reading_and_context",
     "load_clarification_corpus",
     "build_clarification_request",
@@ -79,4 +93,14 @@ __all__ = [
     "require_current_session_assessment",
     "start_reasoning_session",
     "start_reasoning_session_per_reading",
+    "FirstAdmissibleDecisionProvider",
+    "ClarificationProgress",
+    "ClarificationProgressKind",
+    "ClarificationProgressLedger",
+    "InteractiveDialogueResult",
+    "ModelClarificationPolicy",
+    "ProgressAwareClarificationPolicy",
+    "NONE_OF_THE_ABOVE_ANSWERS",
+    "interactive_decision_profile",
+    "run_interactive_dialogue",
 ]

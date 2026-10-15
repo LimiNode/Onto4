@@ -1,9 +1,13 @@
 import json
+import importlib
 from pathlib import Path
 
 from onto4.cli.main import main
 from onto4.pipeline.loaders import load_context, load_formalization
 from onto4.core import Verdict, evaluate
+
+
+cli_main = importlib.import_module("onto4.cli.main")
 
 
 ROOT = Path(__file__).parents[1]
@@ -235,6 +239,33 @@ def test_ask_command_reports_invalid_context_yaml_without_traceback(capsys, tmp_
             "fixture-model",
             "--context",
             str(invalid_context),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert "Ask error:" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_interactive_ask_reports_stdin_eof_without_traceback(monkeypatch, capsys):
+    def raise_eof(*args, **kwargs):
+        raise EOFError
+
+    monkeypatch.setattr(cli_main, "run_interactive_dialogue", raise_eof)
+
+    code = cli_main.main(
+        [
+            "ask",
+            "What is the mass of integer 7?",
+            "--endpoint",
+            "http://example.test/v1",
+            "--model",
+            "fixture-model",
+            "--context",
+            str(ROOT / "profiles/contexts/physical_objects.yaml"),
+            "--interactive",
         ]
     )
 

@@ -39,7 +39,8 @@ def test_provider_profile_is_non_secret_and_normalizes_endpoint():
     assert profile.base_url == "http://127.0.0.1:8080/v1"
     assert profile.model == "bonsai"
     assert profile.auth is EndpointAuthKind.Bearer
-    assert "token" not in repr(profile).lower()
+    assert "secret" not in repr(profile).lower()
+    assert "bearer_token" not in repr(profile).lower()
 
 
 @pytest.mark.parametrize(
@@ -51,6 +52,9 @@ def test_provider_profile_is_non_secret_and_normalizes_endpoint():
         {"base_url": "http://example.test/v1?secret=x", "model": "model"},
         {"base_url": "http://example.test/v1", "model": ""},
         {"base_url": "http://example.test/v1", "model": "model", "timeout_seconds": 0},
+        {"base_url": "http://example.test/v1", "model": "model", "max_output_tokens": 0},
+        {"base_url": "http://example.test/v1", "model": "model", "temperature": -0.1},
+        {"base_url": "http://example.test/v1", "model": "model", "temperature": "cold"},
         {"base_url": "http://example.test/v1", "model": "model", "max_response_bytes": 0},
     ],
 )
@@ -125,6 +129,74 @@ def test_complete_sends_bearer_token_and_returns_raw_json_envelope():
         "max_tokens": 32,
         "response_format": {"type": "json_object"},
     }
+
+
+def test_complete_applies_profile_output_token_bound_when_call_omits_one():
+    captured = {}
+
+    def urlopen(request, *, timeout):
+        captured["request"] = request
+        return FakeResponse({"choices": []})
+
+    client = OpenAICompatibleClient(
+        ProviderProfile(
+            base_url="http://example.test/v1",
+            model="bonsai",
+            max_output_tokens=321,
+        ),
+        urlopen=urlopen,
+    )
+
+    client.complete([{"role": "user", "content": "Hello"}])
+
+    request_body = json.loads(captured["request"].data.decode("utf-8"))
+    assert request_body["max_tokens"] == 321
+    assert request_body["temperature"] == 0.0
+    assert "chat_template_kwargs" not in request_body
+
+
+def test_complete_can_disable_provider_side_thinking_explicitly():
+    captured = {}
+
+    def urlopen(request, *, timeout):
+        captured["request"] = request
+        return FakeResponse({"choices": []})
+
+    client = OpenAICompatibleClient(
+        ProviderProfile(
+            base_url="http://example.test/v1",
+            model="bonsai",
+            disable_thinking=True,
+        ),
+        urlopen=urlopen,
+    )
+
+    client.complete([{"role": "user", "content": "Hello"}])
+
+    request_body = json.loads(captured["request"].data.decode("utf-8"))
+    assert request_body["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_complete_can_opt_into_provider_side_thinking():
+    captured = {}
+
+    def urlopen(request, *, timeout):
+        captured["request"] = request
+        return FakeResponse({"choices": []})
+
+    client = OpenAICompatibleClient(
+        ProviderProfile(
+            base_url="http://example.test/v1",
+            model="bonsai",
+            disable_thinking=False,
+        ),
+        urlopen=urlopen,
+    )
+
+    client.complete([{"role": "user", "content": "Hello"}])
+
+    request_body = json.loads(captured["request"].data.decode("utf-8"))
+    assert "chat_template_kwargs" not in request_body
 
 
 def test_transport_rejects_invalid_json_and_oversized_response():

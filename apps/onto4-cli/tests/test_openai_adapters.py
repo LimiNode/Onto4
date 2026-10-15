@@ -13,6 +13,8 @@ from onto4.providers import (
 )
 from onto4.reasoning import (
     Ambiguity,
+    ClarificationKind,
+    ClarificationQuestion,
     ConceptualDepth,
     InterpretationSpace,
     OntologyCandidate,
@@ -114,6 +116,30 @@ def test_interpretation_adapter_emits_safe_stage_diagnostics():
     ]
     assert all(event.elapsed_seconds >= 0 for event in events)
     assert events[-1].detail == "schema_valid"
+
+
+def test_interpretation_adapter_reports_finish_reason_without_response_body():
+    class TruncatedClient(FakeClient):
+        def complete(self, messages, **kwargs):
+            self.messages = messages
+            return {
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {"content": ""},
+                    }
+                ],
+                "usage": {"completion_tokens": 1024},
+            }
+
+    events = []
+    with pytest.raises(ProviderSchemaError, match="finish_reason=length"):
+        OpenAICompatibleInterpretationProvider(
+            TruncatedClient({}), trace=events.append
+        ).interpret(InterpretationRequest("The door is closed."))
+
+    response_event = next(event for event in events if event.phase == "response_received")
+    assert response_event.detail == "finish_reason=length, completion_tokens=1024"
 
 
 def test_interpretation_adapter_traces_schema_failure_without_response_body():
@@ -369,6 +395,53 @@ def test_single_reading_formalization_binds_identity_on_host():
     assert candidate.id.startswith("candidate-")
     assert candidate.formalization_id.startswith("formalization-")
     assert "Do not return id, reading_id, context_id" in client.messages[1]["content"]
+    assert "Formalize only this reading" in client.messages[1]["content"]
+    assert "assumptions must contain only non-empty strings" in client.messages[1]["content"]
+
+
+def test_interpretation_refinement_preserves_host_snapshot_fields_and_projects_answer():
+    client = FakeClient(interpretation_payload())
+    provider = OpenAICompatibleInterpretationProvider(client)
+    current = provider.interpret(InterpretationRequest("The door is closed."))
+
+    successor = provider.refine(
+        current,
+        ClarificationQuestion(
+            id="meaning:closed",
+            kind=ClarificationKind.Meaning,
+            text="What does closed mean?",
+            target_ids=("ambiguity-0",),
+        ),
+        "The door is locked.",
+    )
+
+    assert successor.source_text == current.source_text
+    assert successor.conceptual_depth is current.conceptual_depth
+    assert successor.id.startswith("interpretation-")
+    assert "The door is locked." in client.messages[1]["content"]
+    assert "current_interpretation" in client.messages[1]["content"]
+    assert "transition history" in client.messages[1]["content"]
+
+
+def test_interpretation_refinement_rejects_model_depth_change():
+    payload = interpretation_payload()
+    payload["conceptual_depth"] = "philosophical"
+
+    with pytest.raises(ProviderSchemaError, match="conceptual_depth"):
+        OpenAICompatibleInterpretationProvider(FakeClient(payload)).refine(
+            InterpretationSpace(
+                id="door-space",
+                source_text="The door is closed.",
+                conceptual_depth=ConceptualDepth.Ordinary,
+            ),
+            ClarificationQuestion(
+                id="meaning:closed",
+                kind=ClarificationKind.Meaning,
+                text="What does closed mean?",
+                target_ids=("ambiguity-0",),
+            ),
+            "The door is locked.",
+        )
 
 
 def test_single_reading_formalization_receives_bounded_context_projection():

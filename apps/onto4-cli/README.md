@@ -32,10 +32,40 @@ onto4 ask "What is the mass of integer 7?" \
 ```
 
 `onto4 ask` performs one explicit pass and reports the deterministic landscape
-and Onto4 assessments. It does not treat the model's text as a verdict. A
-pending clarification and answer loop will be added as a subsequent CLI slice;
-the current command is intentionally useful for inspecting model/schema
-behavior before that loop is automated.
+and Onto4 assessments. It does not treat the model's text as a verdict. The
+single-pass mode remains useful for inspecting model/schema behavior; the
+bounded interactive mode below adds explicit clarification and reassessment.
+
+The command also supports a bounded host-controlled interactive pass:
+
+```text
+onto4 ask "Настоящая личность человека определяется его генами." \
+  --endpoint http://127.0.0.1:8080/v1 \
+  --model bonsai \
+  --context profiles/contexts/identity_and_genome.yaml \
+  --interactive --max-turns 4
+```
+
+Interactive mode uses the per-reading/context formalization boundary. The host
+owns `ReasoningSession`, pending-question identity, successor provenance and
+explicit reassessment. The model may propose only semantic content for the
+next interpretation snapshot. A free-form answer is allowed, including
+`none_of_the_above`; that answer preserves the current semantic snapshot
+instead of forcing a false choice. The host also keeps a clarification progress
+ledger, rejects repeated semantic question targets, classifies each transition
+as resolved, unresolved, new, no-effect, unverified or abstained, and rejects a changed snapshot that
+does not affect the question's target distinction. If no new admissible
+question remains, the bounded loop stops explicitly instead of repeating the
+same question. A model response that changes source text, conceptual depth or
+produces no semantic successor is rejected.
+
+Provider generation is bounded by `--max-output-tokens` (default `1024`) and
+structured stages disable provider-side hidden thinking by default. This keeps
+the output budget for the required JSON envelope instead of spending it on an
+internal reasoning trace. Sampling is deterministic by default
+(`--temperature 0`); `--enable-thinking` is an explicit opt-in for endpoints
+that support the `chat_template_kwargs` extension. These are
+transport/runtime policies; schema and provenance validation remain fail-closed.
 
 The semantic contract is:
 
@@ -112,6 +142,15 @@ InterpretationRequest (source text + optional conceptual depth)
     -> InterpretationSpace
     -> FormalizationRequest
     -> FormalizationCandidate[]
+```
+
+The runtime-backed CLI uses a bounded host-selected fan-out for this step:
+
+```text
+InterpretationSpace
+    -> one FormalizationRequest per (reading, context)
+    -> host-bound candidate identity
+    -> deterministic assessment
 ```
 
 The provider contracts return only meta-level interpretations and explicit

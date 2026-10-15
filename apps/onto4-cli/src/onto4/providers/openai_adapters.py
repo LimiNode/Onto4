@@ -11,6 +11,7 @@ from typing import Any, Callable, Mapping, Sequence
 from onto4.core import And, Equivalent, Implies, Not, Or, PredicateCall, PredicateExpr, Term
 from onto4.reasoning import (
     Ambiguity,
+    ClarificationQuestion,
     ConceptualDepth,
     FormalizationCandidate,
     InterpretationSpace,
@@ -88,18 +89,32 @@ def _response_json(
         messages,
         response_format={"type": "json_object"},
     )
-    emit_provider_trace(
-        trace,
-        ProviderStageEvent(stage, "response_received", perf_counter() - request_started),
-    )
     choices = envelope.get("choices")
     if not isinstance(choices, list) or not choices:
         raise ProviderSchemaError("Provider response must contain a non-empty choices array.")
     choice = _object(choices[0], "choices[0]")
+    finish_reason = choice.get("finish_reason")
+    usage = envelope.get("usage")
+    response_detail = (
+        f"finish_reason={finish_reason}"
+        if isinstance(finish_reason, str) and finish_reason
+        else "finish_reason=unknown"
+    )
+    if isinstance(usage, Mapping):
+        completion_tokens = usage.get("completion_tokens")
+        if isinstance(completion_tokens, int):
+            response_detail += f", completion_tokens={completion_tokens}"
     message = _object(choice.get("message"), "choices[0].message")
     content = message.get("content")
+    emit_provider_trace(
+        trace,
+        ProviderStageEvent(stage, "response_received", perf_counter() - request_started, response_detail),
+    )
     if not isinstance(content, str) or not content.strip():
-        raise ProviderSchemaError("choices[0].message.content must be a non-empty JSON string.")
+        raise ProviderSchemaError(
+            "choices[0].message.content must be a non-empty JSON string "
+            f"(finish_reason={finish_reason or 'unknown'})."
+        )
     try:
         decoded = json.loads(content)
     except json.JSONDecodeError as exc:
@@ -487,6 +502,75 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
 
         return _traced_stage("interpretation", self.trace, operation)
 
+    def refine(
+        self,
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+        answer: str,
+    ) -> InterpretationSpace:
+        """Propose the next semantic snapshot after one user answer.
+
+        The model supplies only interpretation content. IDs, transition
+        provenance and history remain host-owned. The current source text and
+        conceptual depth are fixed by the host and validated by the parser.
+        """
+
+        current_json = json.dumps(
+            _interpretation_projection(interpretation),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+        def operation() -> InterpretationSpace:
+            payload = _response_json(
+                self.client,
+                (
+                    {
+                        "role": "system",
+                        "content": "Return only the requested JSON successor interpretation object.",
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Update the semantic interpretation after the user's answer to the "
+                            "clarification question. Return exactly the JSON fields "
+                            "source_text, conceptual_depth, ambiguities, presuppositions, "
+                            "ontologies and readings. Preserve source_text and conceptual_depth "
+                            "from the current snapshot. Do not return an Onto4 verdict, IDs or "
+                            "transition history; the host assigns identity and provenance. "
+                            "Use ambiguity objects with term and description, presupposition "
+                            "objects with description, ontology objects with label and "
+                            "description, and reading objects with label, description and "
+                            "presupposition_indexes. Do not return id or presupposition_ids "
+                            "inside any object; presupposition_indexes are zero-based indexes "
+                            "into the supplied presuppositions array. "
+                            "Change only semantic content justified by the answer. If the user "
+                            "says that none of the options fit, preserve unresolved alternatives "
+                            "instead of inventing a commitment. Return JSON only.\n\n"
+                            f"current_interpretation: {current_json}\n"
+                            f"question: {json.dumps({'id': question.id, 'kind': question.kind.value, 'text': question.text, 'choices': list(question.choices)}, ensure_ascii=False, sort_keys=True)}\n"
+                            f"user_answer: {answer}\n\n"
+                            "The answer is the user's semantic clarification, not a request "
+                            "to restate the old snapshot. Reflect every substantive commitment "
+                            "in ambiguities, presuppositions, ontologies or readings. For a "
+                            "non-abstaining answer, at least one of those arrays must change; "
+                            "returning an identical interpretation is invalid."
+                        ),
+                    },
+                ),
+                trace=self.trace,
+                stage="refinement",
+            )
+            return _parse_interpretation(
+                payload,
+                InterpretationRequest(
+                    interpretation.source_text,
+                    conceptual_depth=interpretation.conceptual_depth,
+                ),
+            )
+
+        return _traced_stage("refinement", self.trace, operation)
+
 
 class OpenAICompatibleFormalizationProvider(FormalizationProvider):
     """Build explicit formalization candidates from a structured model reply."""
@@ -528,8 +612,13 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
                             "reading IDs; do not invent, rename or merge readings. Do not "
                             "return an Onto4 verdict. Each candidate must contain id, label, "
                             "formalization_id, context_id, formalization, optional reading_id "
-                            "and assumptions. A predicate expression is an object with kind, "
+                            "and assumptions. assumptions must be an array of non-empty strings; "
+                            "use [] when there are no assumptions. A predicate expression is an object with kind, "
                             "name and args; each arg has name and optional declared_type. "
+                            "Formalize only the supplied reading: return one complete expression "
+                            "for it and do not add other predicates, logical consequences or "
+                            "extra assumptions. Use and/or/implies/equivalent only when the "
+                            "supplied reading explicitly contains that compound structure. "
                             + (
                                 f"Use only these supplied context IDs: {', '.join(self.context_ids)}. "
                                 if self.context_ids
@@ -593,14 +682,24 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
                     "content": (
                         "Formalize exactly the supplied semantic reading for the supplied "
                         "context. Return an object with formalization, assumptions and an "
-                        "optional label. Do not return id, reading_id, context_id, "
+                        "optional label. assumptions must contain only non-empty strings; "
+                        "use [] when there are no assumptions. Do not return id, reading_id, context_id, "
                         "formalization_id or an Onto4 verdict; the host assigns those "
                         "fields. A formalization expression uses kind predicate/not/and/"
                         "or/implies/equivalent. A predicate has kind, name and args; each "
-                        "arg has name and optional declared_type. Return JSON only.\n\n"
+                        "arg has name and optional declared_type. Formalize only this reading: "
+                        "return one complete expression and do not add other predicates, "
+                        "logical consequences or extra assumptions. Use a single predicate "
+                        "when the reading does not explicitly require a compound expression. "
+                        "Return JSON only.\n\n"
                         f"context_projection: {context_json}\n"
                         f"interpretation: {request.interpretation.source_text}\n"
-                        f"reading: {reading_json}"
+                        f"reading: {reading_json}\n\n"
+                        "AST shape rules: a predicate always has a complete args array; "
+                        "a not expression has exactly one operand; every and, or, implies "
+                        "or equivalent expression has both left and right operands, each "
+                        "being a complete expression object. Never omit an operand or "
+                        "replace a required object with prose."
                     ),
                 },
             ),

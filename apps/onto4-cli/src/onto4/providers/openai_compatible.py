@@ -7,6 +7,7 @@ model response into Onto4 interpretations or produce an Onto4 verdict.
 from __future__ import annotations
 
 import json
+import math
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -36,6 +37,9 @@ class ProviderProfile:
     auth: EndpointAuthKind = EndpointAuthKind.None_
     protocol: str = "openai-compatible"
     timeout_seconds: float = 30.0
+    max_output_tokens: int = 1024
+    disable_thinking: bool = False
+    temperature: float = 0.0
     max_response_bytes: int = 1_048_576
 
     def __post_init__(self) -> None:
@@ -57,6 +61,18 @@ class ProviderProfile:
             raise ValueError("model must not be empty.")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive.")
+        if not isinstance(self.disable_thinking, bool):
+            raise ValueError("disable_thinking must be a boolean.")
+        if not isinstance(self.temperature, (int, float)) or isinstance(self.temperature, bool):
+            raise ValueError("temperature must be a finite non-negative number.")
+        if not math.isfinite(float(self.temperature)) or self.temperature < 0:
+            raise ValueError("temperature must be a finite non-negative number.")
+        if (
+            isinstance(self.max_output_tokens, bool)
+            or not isinstance(self.max_output_tokens, int)
+            or self.max_output_tokens <= 0
+        ):
+            raise ValueError("max_output_tokens must be a positive integer.")
         if self.max_response_bytes <= 0:
             raise ValueError("max_response_bytes must be positive.")
         object.__setattr__(self, "base_url", normalized)
@@ -141,12 +157,18 @@ class OpenAICompatibleClient:
                 raise ValueError("Every message must have string content.")
             normalized_messages.append({"role": role, "content": content})
         body: dict[str, Any] = {"model": self.profile.model, "messages": normalized_messages}
-        if temperature is not None:
-            body["temperature"] = temperature
-        if max_tokens is not None:
-            body["max_tokens"] = max_tokens
+        body["temperature"] = self.profile.temperature if temperature is None else temperature
+        body["max_tokens"] = (
+            self.profile.max_output_tokens if max_tokens is None else max_tokens
+        )
         if response_format is not None:
             body["response_format"] = dict(response_format)
+        # Some OpenAI-compatible runtimes (including llama.cpp chat templates)
+        # expose hidden reasoning through this extension.  Structured Onto4
+        # adapters need the bounded JSON channel, not an unbounded reasoning
+        # trace that can consume the entire output budget.
+        if self.profile.disable_thinking:
+            body["chat_template_kwargs"] = {"enable_thinking": False}
         return self._request("POST", "/chat/completions", body)
 
     def _request(

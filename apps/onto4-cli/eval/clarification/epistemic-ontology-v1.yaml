@@ -1,0 +1,336 @@
+version: 1
+name: epistemic-ontology-v1
+visibility:
+  model_input: utterance_only
+  hidden_fields: [evaluation_class, expected_clarification, expected_after_answer, oracle_notes, dialogue]
+scoring:
+  exact_question_text: false
+  require_provenance: true
+  require_no_common_knowledge_shortcut: true
+  require_explicit_ontology_boundary: true
+  require_explicit_evidence_boundary: true
+cases:
+  # Meaningful claims with no supplied evidence must not become F merely because
+  # they are unusual or absent from the model's background knowledge.
+  - case_id: russell-teapot
+    evaluation_class: unsupported_but_meaningful
+    utterance: "Между Землёй и Марсом по эллиптической орбите вокруг Солнца движется фарфоровый чайник."
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: U
+      reason_family: insufficient_evidence
+    oracle_notes: "Не выводить F из абсурдности или отсутствия известного наблюдения."
+
+  - case_id: lunar-wrench
+    evaluation_class: unsupported_but_meaningful
+    utterance: "На обратной стороне Луны сейчас лежит красный гаечный ключ."
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: U
+      reason_family: insufficient_evidence
+
+  - case_id: europa-organism
+    evaluation_class: unsupported_but_meaningful
+    utterance: "В океане Европы существует живой организм длиной 3 сантиметра."
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: U
+      reason_family: insufficient_evidence
+
+  - case_id: mars-landing-2032
+    evaluation_class: unsupported_but_meaningful
+    utterance: "В 2032 году человек высадится на Марсе."
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: U
+      reason_family: insufficient_evidence
+
+  - case_id: bennu-void
+    evaluation_class: unsupported_but_meaningful
+    utterance: "В центре астероида Бенну находится полость объёмом ровно 100 кубических метров."
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: U
+      reason_family: insufficient_evidence
+
+  # Applicability failures are not unknown facts. They are category or type
+  # mismatches in the selected ordinary ontology.
+  - case_id: number-seven-hungry
+    evaluation_class: category_error_obvious
+    utterance: "Число 7 голодно."
+    context: ordinary_category_profile
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Inapplicable
+      verdict: C
+      reason_family: category_mismatch
+
+  - case_id: saturday-in-bed
+    evaluation_class: category_error_obvious
+    utterance: "Суббота лежит в кровати."
+    context: ordinary_category_profile
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Inapplicable
+      verdict: C
+      reason_family: category_mismatch
+
+  - case_id: temperature-left-of-cabinet
+    evaluation_class: category_error_subtle
+    utterance: "Средняя температура комнаты находится слева от шкафа."
+    context: ordinary_physical_profile
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Inapplicable
+      verdict: C
+      reason_family: category_mismatch
+
+  - case_id: belief-weighs-200g
+    evaluation_class: category_error_or_ontology_clarification
+    utterance: "Убеждение Петра весит 200 граммов."
+    context: ordinary_physical_profile
+    expected_clarification:
+      kind: Ontology
+      discriminates: [mental_state, physical_neural_state]
+    expected_after_answer:
+      disposition: clarification_or_inapplicable
+      reason_family: ontology_dependent_predicate
+
+  - case_id: university-between-buildings
+    evaluation_class: category_error_or_reference_clarification
+    utterance: "Университет находится между библиотекой и административным корпусом как отдельное здание."
+    context: organization_and_buildings_profile
+    expected_clarification:
+      kind: Ontology
+      discriminates: [university_organization, university_building]
+    expected_after_answer:
+      disposition: clarification_or_inapplicable
+      reason_family: category_or_reference_mismatch
+
+  # Historical theories test ontology commitment separately from present-day
+  # scientific acceptance.
+  - case_id: caloric-hot-body
+    evaluation_class: historical_theory
+    utterance: "Горячее тело содержит больше теплорода, чем холодное."
+    context: historical_or_modern_thermal_profile
+    expected_clarification:
+      kind: Ontology
+      discriminates: [historical_caloric_substance, modern_thermal_description]
+    expected_after_answer:
+      disposition: context_dependent
+      reason_family: ontology_commitment
+
+  - case_id: caloric-transfer
+    evaluation_class: historical_theory
+    utterance: "После контакта теплород перетёк из тела A в тело B."
+    context: historical_or_modern_thermal_profile
+    expected_clarification:
+      kind: Ontology
+      discriminates: [historical_caloric_substance, modern_thermal_description]
+    expected_after_answer:
+      disposition: context_dependent
+      reason_family: ontology_commitment
+
+  - case_id: phlogiston-wood
+    evaluation_class: historical_theory
+    utterance: "Древесина при горении выпускает содержащийся в ней флогистон."
+    context: historical_or_modern_chemistry_profile
+    expected_clarification:
+      kind: Ontology
+      discriminates: [historical_phlogiston_theory, modern_chemistry]
+    expected_after_answer:
+      disposition: context_dependent
+      reason_family: ontology_commitment
+
+  - case_id: phlogiston-calcined-metal
+    evaluation_class: historical_theory
+    utterance: "После кальцинации металл стал тяжелее, потому что выделил флогистон."
+    context: historical_or_modern_chemistry_profile
+    expected_clarification:
+      kind: Ontology
+      discriminates: [historical_phlogiston_theory, modern_chemistry]
+    expected_after_answer:
+      disposition: context_dependent
+      reason_family: ontology_commitment_and_evidence
+
+  # Reference and presupposition cases are intentionally not preclassified as C.
+  - case_id: current-king-of-france
+    evaluation_class: reference_failure
+    utterance: "Нынешний король Франции лыс."
+    context: reference_and_presupposition_profile
+    expected_clarification:
+      kind: Presupposition
+      discriminates: [description_claim, referring_entity]
+    expected_after_answer:
+      disposition: context_dependent
+      reason_family: missing_reference
+
+  - case_id: sherlock-height
+    evaluation_class: fictional_reference
+    utterance: "Рост Шерлока Холмса — 180 сантиметров."
+    context: fictional_or_physical_entity_profile
+    expected_clarification:
+      kind: Ontology
+      discriminates: [in_story_entity, physical_person]
+    expected_after_answer:
+      disposition: context_dependent
+      reason_family: ontology_dependent_reference
+
+  # Evidence statements distinguish explicit conflict from absence of evidence.
+  - case_id: closed-box-red-ball
+    evaluation_class: explicit_evidence
+    utterance: "В закрытой коробке лежит красный шар."
+    context: closed_box_without_observation
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: U
+      reason_family: insufficient_evidence
+
+  - case_id: explicit-no-red-ball
+    evaluation_class: explicit_evidence_conflict
+    utterance: "В коробке нет красного шара."
+    context: evidence_says_red_ball_present
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: F
+      reason_family: conflicting_evidence
+
+  - case_id: two-greater-than-seven
+    evaluation_class: ordinary_false_control
+    utterance: "2 больше 7."
+    context: fully_specified_arithmetic
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: F
+      reason_family: established_falsehood
+
+  - case_id: two-greater-than-one
+    evaluation_class: ordinary_true_control
+    utterance: "2 больше 1."
+    context: fully_specified_arithmetic
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: T
+      reason_family: established_truth
+
+  # These cases test whether the model treats its pretraining as an evidence
+  # store and whether it confuses impossibility with probability zero.
+  - case_id: asteroid-key-unknown
+    evaluation_class: no-common-knowledge-shortcut
+    utterance: "Внутри астероида находится маленький красный ключ."
+    context: ordinary_physical_profile
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: U
+      reason_family: insufficient_evidence
+
+  - case_id: impossible-event-probability
+    evaluation_class: modal_confusion
+    utterance: "Если событие невозможно, какова вероятность, что оно произошло вчера?"
+    context: modal_and_probability_profile
+    expected_clarification:
+      kind: Meaning
+      discriminates: [logical_impossibility, physical_impossibility, probability_zero]
+    expected_after_answer:
+      disposition: clarification
+      reason_family: modal_scope
+
+  - case_id: caloric-existence-from-transfer
+    evaluation_class: epistemic_ontology_dialogue
+    mode: dialogue
+    utterance: "Теплород существует, потому что тепло переходит между телами."
+    context: historical_or_modern_thermal_profile
+    expected_clarification:
+      kind: Ontology
+      discriminates: [caloric_as_entity, heat_transfer_as_observation]
+    expected_after_answer:
+      disposition: clarification_then_need_evidence
+      reason_family: ontology_commitment_not_entailment
+
+  - case_id: caloric-substance-commitment
+    evaluation_class: epistemic_ontology_dialogue
+    mode: dialogue
+    utterance: "При нагревании железа в него входит теплород."
+    context: historical_or_modern_thermal_profile
+    expected_clarification:
+      kind: Ontology
+      discriminates: [real_caloric_substance, historical_model]
+    expected_after_answer:
+      disposition: clarification_then_assessment
+      reason_family: explicit_ontology_commitment
+
+  - case_id: meaningful-but-unsupported-metal-teapot
+    evaluation_class: unsupported_but_meaningful
+    utterance: "Вчера астронавты выбросили в межпланетное пространство маленький металлический чайник."
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Admitted
+      verdict: U
+      reason_family: insufficient_evidence
+
+  - case_id: category-trap-triple
+    evaluation_class: contrastive_trap
+    utterance: "Число 7 лежит в кровати."
+    context: ordinary_category_profile
+    expected_clarification: none
+    expected_after_answer:
+      semantic_status: Inapplicable
+      verdict: C
+      reason_family: category_mismatch
+
+  # This case is intentionally a protocol fixture for the future interactive
+  # loop. It must not be scored as a single-pass answer: each user answer
+  # changes the next InterpretationSpace and triggers a fresh reassessment.
+  - case_id: genetic-essentialism-dialogue
+    evaluation_class: dialogue_ontology_identity
+    mode: dialogue
+    utterance: "Настоящая личность человека определяется его генами."
+    context: identity_and_genome
+    expected_clarification:
+      kind: Ontology
+      discriminates: [causal_influence, genome_as_unchanging_identity_essence]
+    expected_after_answer:
+      disposition: dialogue_reassessment_required
+      reason_family: identity_criterion_not_yet_fixed
+    dialogue:
+      - step: 1
+        system_must:
+          issue_question: true
+          question_family: ontology_or_meaning
+          preserve_alternatives:
+            - genes_influence_development
+            - genome_is_identity_bearer
+      - step: 2
+        user_answer: "Гены содержат то, чем человек является на самом деле."
+        host_must:
+          create_successor_snapshot: true
+          preserve_answer_as: identity_bearer_commitment
+          run_reassessment: true
+      - step: 3
+        system_must:
+          issue_question: true
+          question_family: identity_criterion
+          question_intent: "Если у двух разных людей одинаковый геном, это один и тот же человек?"
+      - step: 4
+        user_answer: "Нет, это разные люди."
+        host_must:
+          create_successor_snapshot: true
+          preserve_answer_as: genome_not_sufficient_for_numeric_identity
+          run_reassessment: true
+          separate_logical_consequence_from_extra_assumption: true
+      - step: 5
+        user_answer: "Ни один вариант мне не подходит."
+        host_must:
+          allow_none_of_the_above: true
+          avoid_forced_choice: true
+          preserve_current_snapshot_without_inventing_commitment: true
