@@ -307,6 +307,25 @@ def test_operation_specific_schema_rejects_ignored_fields():
         )
 
 
+def test_request_rejects_wrong_target_category_and_duplicate_ids():
+    request = _request()
+    with pytest.raises(RefinementValidationError, match="absent from the snapshot"):
+        replace(
+            request,
+            allowed_reading_ids=frozenset({"ambiguity-0"}),
+        )
+
+    duplicate = replace(
+        request.interpretation,
+        readings=(SemanticReading("ambiguity-0", "duplicate", "duplicate id"),),
+    )
+    with pytest.raises(RefinementValidationError, match="duplicate target IDs"):
+        RefinementRequest(
+            interpretation=duplicate,
+            assessment_interpretation_id=duplicate.id,
+        )
+
+
 def test_batch_failure_does_not_publish_partial_commitments():
     request = _request()
     with pytest.raises(RefinementValidationError, match="Unknown or inadmissible"):
