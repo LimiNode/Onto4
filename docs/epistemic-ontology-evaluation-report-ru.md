@@ -142,7 +142,7 @@ transition IDs и не принимает ответ, который возвр�
 Unit-проверка после изменений:
 
 ```text
-256 passed
+258 passed
 compileall — success
 git diff --check — чисто
 ```
@@ -196,12 +196,17 @@ transport/runtime ошибками.
 перехода:
 
 ```text
-resolved | unresolved | new | no_effect | unverified | abstained
+resolved | structural_resolution | unresolved | new | no_effect | unverified | abstained
 ```
 
-Один и тот же `question_id` больше не выбирается автоматически. Переход,
+Один и тот же semantic target больше не выбирается автоматически. Технический
+ID может быть переиндексирован host'ом и совпасть с прежним, но новый
+semantic target остаётся доступным. Переход,
 который отличается от предыдущего snapshot только формально и не затрагивает
-целевое различение, отклоняется. При `none_of_the_above` snapshot сохраняется,
+целевое различение, отклоняется. Исчезновение target в полном snapshot имеет
+статус `structural_resolution`, а не доказанного `resolved`: соответствие
+свободного ответа выбранному смыслу ещё требует explicit refinement delta.
+При `none_of_the_above` snapshot сохраняется,
 но ответ фиксируется как явное воздержание; ложная альтернатива не навязывается.
 
 Система не требует, чтобы число ambiguities всегда уменьшалось: уточнение

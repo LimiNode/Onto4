@@ -125,6 +125,7 @@ class ClarificationProgressKind(str, Enum):
     """Host classification of one answered clarification turn."""
 
     Resolved = "resolved"
+    StructuralResolution = "structural_resolution"
     Unresolved = "unresolved"
     New = "new"
     NoEffect = "no_effect"
@@ -217,7 +218,11 @@ def _classify_progress(
         if not known_targets:
             kind = ClarificationProgressKind.Unverified
         elif target_removed:
-            kind = ClarificationProgressKind.Resolved
+            # A full snapshot can show that the ambiguity disappeared, but it
+            # cannot prove that the model selected the meaning intended by the
+            # user's free-form answer. Keep this distinct from host-verified
+            # ``Resolved`` until an explicit refinement delta is available.
+            kind = ClarificationProgressKind.StructuralResolution
         elif target_changed:
             kind = ClarificationProgressKind.Unresolved
         elif new_item_ids:
@@ -252,8 +257,7 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
             (
                 question
                 for question in candidates
-                if question.id not in self.ledger.asked_question_ids
-                and _question_key(context.interpretation, question)
+                if _question_key(context.interpretation, question)
                 not in self.ledger.asked_question_keys
             ),
             None,
@@ -267,7 +271,6 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
                     question
                     for question in questions(context)
                     if question.kind is kind
-                    and question.id not in self.ledger.asked_question_ids
                     and _question_key(context.interpretation, question)
                     not in self.ledger.asked_question_keys
                 ),
@@ -278,8 +281,7 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
             return None
         return (
             None
-            if question.id in self.ledger.asked_question_ids
-            or _question_key(context.interpretation, question)
+            if _question_key(context.interpretation, question)
             in self.ledger.asked_question_keys
             else question
         )

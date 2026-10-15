@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 
@@ -113,7 +113,7 @@ def test_interactive_dialogue_uses_successor_and_reassessment():
     assert result.session.assessment.ask_result.disposition.value == "Complete"
     assert refinement.calls == 1
     assert any("Clarification:" in line for line in output)
-    assert result.progress.entries[0].kind is ClarificationProgressKind.Resolved
+    assert result.progress.entries[0].kind is ClarificationProgressKind.StructuralResolution
 
 
 def test_none_of_the_above_preserves_snapshot_without_calling_refinement():
@@ -270,5 +270,77 @@ def test_progress_can_resolve_target_and_record_new_semantic_items():
     )
 
     entry = policy.ledger.entries[0]
-    assert entry.kind is ClarificationProgressKind.Resolved
+    assert entry.kind is ClarificationProgressKind.StructuralResolution
     assert entry.new_item_ids == ("ontology-0",)
+
+
+def test_progress_allows_reindexed_distinct_target_after_previous_answer():
+    initial = replace(
+        _space("initial", ambiguous=True),
+        ambiguities=(
+            Ambiguity("ambiguity-0", "личность", "personhood or identity"),
+            Ambiguity("ambiguity-1", "определяется", "cause or essence"),
+        ),
+    )
+    successor = replace(
+        initial,
+        id="successor",
+        ambiguities=(
+            Ambiguity("ambiguity-0", "определяется", "cause or essence"),
+        ),
+    )
+    policy = ProgressAwareClarificationPolicy(
+        ModelClarificationPolicy(
+            FixtureClarificationPolicy(), _RefinementProvider(successor)
+        )
+    )
+    first_question = ClarificationQuestion(
+        id="meaning:ambiguity-0",
+        kind=ClarificationKind.Meaning,
+        text="Что означает «личность»?",
+        target_ids=("ambiguity-0",),
+    )
+    policy.successor(
+        interpretation=initial,
+        question=first_question,
+        answer="Гены содержат то, чем человек является на самом деле.",
+    )
+
+    context = type("Context", (), {"interpretation": successor, "landscape": None})
+    next_question = policy.choose(context)
+
+    assert next_question is not None
+    assert next_question.id == "meaning:ambiguity-0"
+    assert next_question.text == "Что именно означает «определяется» в этом вопросе?"
+
+
+def test_structural_resolution_is_not_claimed_as_verified_resolution():
+    initial = _space("initial", ambiguous=True)
+    opposite = replace(
+        initial,
+        id="opposite",
+        ambiguities=(),
+        readings=(
+            SemanticReading("reading-0", "opposite", "the opposite interpretation"),
+        ),
+    )
+    policy = ProgressAwareClarificationPolicy(
+        ModelClarificationPolicy(
+            FixtureClarificationPolicy(), _RefinementProvider(opposite)
+        )
+    )
+    question = ClarificationQuestion(
+        id="meaning:ambiguity-0",
+        kind=ClarificationKind.Meaning,
+        text="Что означает «определяется»?",
+        target_ids=("ambiguity-0",),
+    )
+
+    policy.successor(
+        interpretation=initial,
+        question=question,
+        answer="Гены содержат то, чем человек является на самом деле.",
+    )
+
+    assert policy.ledger.entries[0].kind is ClarificationProgressKind.StructuralResolution
+    assert policy.ledger.entries[0].kind is not ClarificationProgressKind.Resolved
