@@ -109,6 +109,14 @@ not contact Bonsai or any other model-backed endpoint. A real provider run
 requires a separate case executor with the same single-flight, manifest and
 receipt contracts.
 
+An additional opt-in experiment, `onto4.pipeline.refinement`, exposes typed
+refinement deltas. It is intentionally separate from corpus scoring and from
+the default CLI path: host code binds every target to the current assessment
+snapshot, assigns IDs for newly introduced presuppositions, and records
+provenance before reassessment. A valid operation is still only a structural
+commitment or a user-confirmed transition; it is not evidence that the model
+understood the intended reading.
+
 ## Typed AST and the DSL experiment gate
 
 The current formalization boundary keeps the typed JSON AST. A second
