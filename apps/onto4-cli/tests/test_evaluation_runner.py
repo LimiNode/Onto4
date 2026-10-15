@@ -1,5 +1,6 @@
 import json
 import time
+from dataclasses import replace
 
 import pytest
 
@@ -40,11 +41,16 @@ def test_offline_runner_covers_entire_corpus_without_oracle_or_payload(tmp_path)
     assert run.summary.schema_valid_rate is None
     assert run.summary.semantic_scored_cases == 0
     assert run.summary.protocol_coverage == 27
+    assert run.summary.dialogue_supported_cases == 0
+    assert run.summary.dialogue_completed_cases == 0
     raw = receipt_path.read_text(encoding="utf-8")
     assert "expected_after_answer" not in raw
     assert "utterance" not in raw
     assert "raw" not in raw.lower()
-    assert "Semantic fidelity is not inferred" in report_path.read_text(encoding="utf-8")
+    report = report_path.read_text(encoding="utf-8")
+    assert "Dialogue supported cases: `0`" in report
+    assert "Dialogue completed cases: `0`" in report
+    assert "Semantic fidelity is not inferred" in report
 
 
 def test_runner_is_sequential_and_persists_each_case(tmp_path):
@@ -148,6 +154,36 @@ def test_runner_classifies_timeout_and_retries_only_transport_classes(tmp_path):
 
     assert run.receipts[0].outcome is EvaluationOutcome.SCHEMA_INVALID
     assert run.receipts[0].attempts == 2
+
+
+@pytest.mark.parametrize(
+    ("outcome", "supported", "completed"),
+    (
+        (EvaluationOutcome.UNSUPPORTED_DIALOGUE_STEP, 0, 0),
+        (EvaluationOutcome.TRANSPORT_ERROR, 0, 0),
+        (EvaluationOutcome.REQUEST_TIMEOUT, 0, 0),
+        (EvaluationOutcome.CLARIFICATION_REQUESTED, 1, 0),
+        (EvaluationOutcome.STRUCTURAL_RESOLUTION, 1, 0),
+        (EvaluationOutcome.ASSESSMENT_COMPLETED, 1, 1),
+        (EvaluationOutcome.CLARIFICATION_ABSTAINED, 1, 1),
+    ),
+)
+def test_dialogue_metrics_do_not_treat_failures_or_open_turns_as_completed(
+    outcome,
+    supported,
+    completed,
+):
+    corpus = load_clarification_corpus(CORPUS)
+    dialogue_case = next(case for case in corpus.cases if case.mode == "dialogue")
+    dialogue_corpus = replace(corpus, cases=(dialogue_case,))
+
+    run = SequentialEvaluationRunner(
+        lambda case, *, request_timeout_seconds: CaseExecution(outcome),
+        config=EvaluationConfig(),
+    ).run(dialogue_corpus, digest="digest")
+
+    assert run.summary.dialogue_supported_cases == supported
+    assert run.summary.dialogue_completed_cases == completed
 
 
 def test_runner_rejects_manifest_mismatch_before_resume(tmp_path):

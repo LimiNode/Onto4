@@ -15,6 +15,7 @@
 - Completed protocol outcomes: `27`
 - Protocol coverage: `27/27`
 - Semantic scored cases: `0`
+- Dialogue supported cases: `0`
 - Dialogue completed cases: `0`
 - Timeout rate: `0.000`
 - Schema-valid rate: `n/a`

@@ -103,6 +103,7 @@ class EvaluationSummary:
     provider_calls_per_completed_case: float | None
     semantic_scored_cases: int
     protocol_coverage: int
+    dialogue_supported_cases: int
     dialogue_completed_cases: int
 
 
@@ -213,9 +214,25 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
         and receipt.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
         for receipt in receipts
     )
+    dialogue_supported_outcomes = {
+        EvaluationOutcome.FORMALIZATION_UNRESOLVED,
+        EvaluationOutcome.ASSESSMENT_COMPLETED,
+        EvaluationOutcome.CLARIFICATION_REQUESTED,
+        EvaluationOutcome.CLARIFICATION_ABSTAINED,
+        EvaluationOutcome.STRUCTURAL_RESOLUTION,
+    }
+    dialogue_completed_outcomes = {
+        EvaluationOutcome.ASSESSMENT_COMPLETED,
+        EvaluationOutcome.CLARIFICATION_ABSTAINED,
+    }
+    dialogue_supported = sum(
+        receipt.case_mode == "dialogue"
+        and receipt.outcome in dialogue_supported_outcomes
+        for receipt in receipts
+    )
     dialogue_completed = sum(
         receipt.case_mode == "dialogue"
-        and receipt.outcome is not EvaluationOutcome.UNSUPPORTED_DIALOGUE_STEP
+        and receipt.outcome in dialogue_completed_outcomes
         for receipt in receipts
     )
     return EvaluationSummary(
@@ -258,6 +275,7 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
         ),
         semantic_scored_cases=semantic_scored,
         protocol_coverage=len(receipts),
+        dialogue_supported_cases=dialogue_supported,
         dialogue_completed_cases=dialogue_completed,
     )
 
@@ -491,6 +509,7 @@ def write_markdown_report(run: EvaluationRun, path: str | Path) -> None:
         f"- Completed protocol outcomes: `{run.summary.completed_cases}`",
         f"- Protocol coverage: `{run.summary.protocol_coverage}/{run.summary.total_cases}`",
         f"- Semantic scored cases: `{run.summary.semantic_scored_cases}`",
+        f"- Dialogue supported cases: `{run.summary.dialogue_supported_cases}`",
         f"- Dialogue completed cases: `{run.summary.dialogue_completed_cases}`",
         f"- Timeout rate: `{run.summary.timeout_rate:.3f}`",
         f"- Schema-valid rate: `{run.summary.schema_valid_rate if run.summary.schema_valid_rate is not None else 'n/a'}`",
