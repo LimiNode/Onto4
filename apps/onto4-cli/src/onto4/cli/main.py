@@ -14,9 +14,15 @@ import yaml
 
 from onto4.core import AssessmentResult
 from onto4.pipeline import (
+    EvaluationConfig,
     ModelClarificationPolicy,
+    SequentialEvaluationRunner,
     ask_per_reading,
+    corpus_digest,
+    load_clarification_corpus,
+    offline_fixture_executor,
     run_interactive_dialogue,
+    write_markdown_report,
 )
 from onto4.pipeline.compare import compare_files
 from onto4.pipeline.eval import evaluate_files
@@ -216,6 +222,40 @@ def _run_ask(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_eval_corpus(args: argparse.Namespace) -> int:
+    try:
+        corpus = load_clarification_corpus(args.corpus)
+        digest = corpus_digest(args.corpus)
+        config = EvaluationConfig(
+            request_timeout_seconds=args.timeout,
+            case_deadline_seconds=args.case_deadline,
+            inter_case_delay_seconds=args.inter_case_delay,
+            max_retries=args.max_retries,
+            provider="fixture",
+            model="offline-fixture",
+            mode="offline",
+            prompt_version=args.prompt_version,
+            commit_sha=os.environ.get("ONTO4_COMMIT_SHA"),
+        )
+        run = SequentialEvaluationRunner(
+            offline_fixture_executor,
+            config=config,
+            receipt_path=args.receipt,
+        ).run(corpus, digest=digest)
+        write_markdown_report(run, args.report)
+        print(json.dumps({
+            "corpus": run.corpus_name,
+            "cases": run.summary.total_cases,
+            "completed": run.summary.completed_cases,
+            "receipt": str(args.receipt),
+            "report": str(args.report),
+        }, ensure_ascii=False, indent=2))
+        return 0
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        print(f"Evaluation error: {exc}", file=sys.stderr)
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="onto4")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -288,6 +328,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=4,
         help="Maximum interactive clarification turns (default: 4).",
     )
+
+    corpus_parser = subparsers.add_parser(
+        "eval-corpus",
+        help="Run the clarification corpus sequentially and write safe receipts.",
+    )
+    corpus_parser.add_argument("--corpus", required=True, type=Path)
+    corpus_parser.add_argument("--receipt", required=True, type=Path)
+    corpus_parser.add_argument("--report", required=True, type=Path)
+    corpus_parser.add_argument("--timeout", type=float, default=30.0)
+    corpus_parser.add_argument("--case-deadline", type=float, default=120.0)
+    corpus_parser.add_argument("--inter-case-delay", type=float, default=0.0)
+    corpus_parser.add_argument("--max-retries", type=int, default=0)
+    corpus_parser.add_argument("--prompt-version", default="unspecified")
     return parser
 
 
@@ -320,6 +373,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ask":
         return _run_ask(args)
+
+    if args.command == "eval-corpus":
+        return _run_eval_corpus(args)
 
     return 2
 

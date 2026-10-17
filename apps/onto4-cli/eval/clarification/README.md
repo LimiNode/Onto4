@@ -84,6 +84,31 @@ oracle isolation by unit tests, but it is not silently folded into the ordinary
 unit-test verdict tables. A real Bonsai run is recorded separately with the
 provider, prompt and transport diagnostics intact.
 
+## Reproducible sequential runner
+
+The repository includes an offline runner that visits every corpus case with
+one worker and writes a manifest plus one receipt per case:
+
+```text
+python -m onto4.cli.main eval-corpus \
+  --corpus eval/clarification/epistemic-ontology-v1.yaml \
+  --receipt artifacts/epistemic.receipts.jsonl \
+  --report artifacts/epistemic.report.md
+```
+
+The receipt records only case identity, case mode, typed protocol outcome,
+timings and safe run metadata. It does not store utterances, hidden oracle
+fields, raw model payloads or credentials. Operational outcomes such as
+transport, timeout, JSON, schema and provenance failures are kept separate
+from semantic outcomes; none is converted automatically into `T`, `F`, `U` or
+`C`. The offline fixture run therefore establishes corpus coverage and report
+reproducibility, not semantic fidelity.
+
+At present `eval-corpus` selects only this offline fixture executor. It does
+not contact Bonsai or any other model-backed endpoint. A real provider run
+requires a separate case executor with the same single-flight, manifest and
+receipt contracts.
+
 ## Typed AST and the DSL experiment gate
 
 The current formalization boundary keeps the typed JSON AST. A second

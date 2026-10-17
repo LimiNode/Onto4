@@ -18,6 +18,7 @@ class ClarificationCorpusCase:
     expected_clarification: Mapping[str, Any] | None
     expected_after_answer: Mapping[str, Any]
     model_input: str = "utterance_only"
+    mode: str = "single_pass"
 
     def public_input(self) -> dict[str, str]:
         """Return only fields allowed in a model-facing evaluation request."""
@@ -59,7 +60,10 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
     if not isinstance(visibility, Mapping):
         raise ValueError("corpus.visibility must be a mapping when supplied.")
     model_input = visibility.get("model_input", "utterance_only")
-    if model_input not in {"utterance_only", "contextual"}:
+    if not isinstance(model_input, str) or model_input not in {
+        "utterance_only",
+        "contextual",
+    }:
         raise ValueError(
             "corpus.visibility.model_input must be 'utterance_only' or 'contextual'."
         )
@@ -98,6 +102,11 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
         context = item.get("context")
         if context is not None and (not isinstance(context, str) or not context.strip()):
             raise ValueError(f"cases[{index}].context must be a non-empty string when supplied.")
+        mode = item.get("mode", "single_pass")
+        if mode not in {"single_pass", "dialogue"}:
+            raise ValueError(
+                f"cases[{index}].mode must be 'single_pass' or 'dialogue'."
+            )
         cases.append(
             ClarificationCorpusCase(
                 case_id=case_id,
@@ -107,6 +116,7 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
                 hidden_interpretation=hidden_interpretation,
                 expected_clarification=expected_clarification,
                 expected_after_answer=expected_after_answer,
+                mode=mode,
             )
         )
     return ClarificationCorpus(
