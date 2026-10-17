@@ -16,10 +16,47 @@ from onto4.providers import (
 )
 from onto4.providers.diagnostics import ProviderStageEvent, ProviderTrace
 from onto4.reasoning import FixtureClarificationPolicy, PipelineDisposition
+from onto4.reasoning import ClarificationKind
 
 from .clarification_corpus import ClarificationCorpusCase
 from .evaluation import CaseExecution, EvaluationOutcome
 from .interactive import ModelClarificationPolicy, run_interactive_dialogue
+
+
+class _ReplayError(ValueError):
+    """A scripted dialogue cannot be safely replayed against this model turn."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+@dataclass(frozen=True)
+class _ReplayPolicy(ModelClarificationPolicy):
+    """Validate the first model question against the case's declared intent."""
+
+    expected_kinds: tuple[ClarificationKind | None, ...] = ()
+    issued_questions: int = 0
+
+    def questions(self, context):
+        questions = super().questions(context)
+        if self.issued_questions < len(self.expected_kinds):
+            expected_kind = self.expected_kinds[self.issued_questions]
+            if expected_kind is not None and not any(
+                question.kind is expected_kind for question in questions
+            ):
+                raise _ReplayError("question_intent_mismatch")
+        return questions
+
+    def choose_for_kind(self, context, kind: ClarificationKind):
+        question = super().choose_for_kind(context, kind)
+        if question is not None:
+            object.__setattr__(self, "issued_questions", self.issued_questions + 1)
+        return question
+
+
+class _ContextUnavailable(ValueError):
+    pass
 
 
 @dataclass
@@ -46,17 +83,25 @@ class ModelCaseExecutor:
         timings: dict[str, float] = {}
         outcomes: dict[str, str] = {}
         calls = 0
+        occurrences: dict[str, int] = {}
+        active_keys: dict[str, str] = {}
         for event in self._last_events:
             if event.phase == "started":
                 calls += 1
+                occurrences[event.stage] = occurrences.get(event.stage, 0) + 1
+                suffix = occurrences[event.stage]
+                active_keys[event.stage] = (
+                    event.stage if suffix == 1 else f"{event.stage}#{suffix}"
+                )
+            key = active_keys.get(event.stage, event.stage)
             if event.elapsed_seconds:
                 # A stage emits several observational events; the final event
                 # carries the full elapsed duration, so do not double-count
                 # intermediate response/json markers.
-                timings[event.stage] = max(
-                    timings.get(event.stage, 0.0), event.elapsed_seconds
+                timings[key] = max(
+                    timings.get(key, 0.0), event.elapsed_seconds
                 )
-            outcomes[event.stage] = event.phase
+            outcomes[key] = event.phase
         return calls, timings, outcomes
 
     def _request(self, case: ClarificationCorpusCase) -> InterpretationRequest:
@@ -68,6 +113,62 @@ class ModelCaseExecutor:
             state["context_id"] = case.context
         return InterpretationRequest(case.utterance, state=state)
 
+    def _case_contexts(self, case: ClarificationCorpusCase) -> Mapping[str, AssessmentContext]:
+        if case.context is None:
+            return self.contexts
+        try:
+            return {case.context: self.contexts[case.context]}
+        except KeyError as exc:
+            raise _ContextUnavailable("context_unavailable") from exc
+
+    @staticmethod
+    def _script(
+        case: ClarificationCorpusCase,
+    ) -> tuple[list[str], int, tuple[ClarificationKind | None, ...]]:
+        if not case.dialogue:
+            return [], 0, ()
+        turns = list(case.dialogue)
+        if turns[0].get("role") != "user" or turns[0].get("text") != case.utterance:
+            raise _ReplayError("question_intent_mismatch")
+        answers: list[str] = []
+        assistant_count = 0
+        question_kinds: list[ClarificationKind | None] = []
+        expected_role = "user"
+        for index, turn in enumerate(turns):
+            role = turn.get("role")
+            if role != expected_role:
+                raise _ReplayError("question_intent_mismatch")
+            expected_role = "assistant" if role == "user" else "user"
+            if role == "assistant":
+                assistant_count += 1
+                raw_kind = turn.get("question_kind")
+                if isinstance(raw_kind, str):
+                    try:
+                        question_kinds.append(ClarificationKind(raw_kind))
+                    except ValueError:
+                        raise _ReplayError("question_intent_mismatch") from None
+                else:
+                    question_kinds.append(None)
+            elif index:
+                answers.append(str(turn.get("text", "")))
+        return answers, assistant_count, tuple(question_kinds)
+
+    @staticmethod
+    def _expected_kind(case: ClarificationCorpusCase) -> ClarificationKind | None:
+        expected = case.expected_clarification
+        if not expected:
+            return None
+        raw = expected.get("kind")
+        if not isinstance(raw, str):
+            return None
+        try:
+            return ClarificationKind(raw)
+        except ValueError:
+            try:
+                return ClarificationKind(raw.capitalize())
+            except ValueError:
+                return None
+
     def __call__(
         self,
         case: ClarificationCorpusCase,
@@ -78,43 +179,55 @@ class ModelCaseExecutor:
         self._last_events = []
         try:
             request = self._request(case)
+            case_contexts = self._case_contexts(case)
             if case.mode == "dialogue" and case.dialogue:
-                answers = [
-                    turn["text"]
-                    for turn in case.dialogue
-                    if turn.get("role") == "user"
-                ][1:]
+                answers, scripted_questions, scripted_kinds = self._script(case)
+                expected_kind = self._expected_kind(case)
+                expected_kinds = (
+                    scripted_kinds
+                    if any(kind is not None for kind in scripted_kinds)
+                    else ((expected_kind,) if expected_kind else ())
+                )
                 answer_index = 0
 
                 def input_fn(_: str) -> str:
                     nonlocal answer_index
                     if answer_index >= len(answers):
-                        return "none_of_the_above"
+                        raise _ReplayError("script_exhausted")
                     answer = answers[answer_index]
                     answer_index += 1
                     return answer
 
-                policy = ModelClarificationPolicy(
+                policy = _ReplayPolicy(
                     FixtureClarificationPolicy(),
                     self.interpretation_provider,
+                    expected_kinds=expected_kinds,
                 )
                 result = run_interactive_dialogue(
                     request,
                     interpretation_provider=self.interpretation_provider,
                     refinement_provider=self.interpretation_provider,
                     formalization_provider=self.formalization_provider,
-                    contexts=self.contexts,
+                    contexts=case_contexts,
                     clarification_policy=policy,
                     input_fn=input_fn,
                     output_fn=lambda _: None,
                     max_turns=self.max_turns,
                 )
+                if (
+                    result.stop_reason == "complete"
+                    and case.expected_clarification is not None
+                    and policy.issued_questions == 0
+                ):
+                    raise _ReplayError("question_intent_mismatch")
+                if policy.issued_questions > scripted_questions:
+                    raise _ReplayError("script_exhausted")
                 outcome = {
                     "complete": EvaluationOutcome.ASSESSMENT_COMPLETED,
-                    "need_evidence": EvaluationOutcome.FORMALIZATION_UNRESOLVED,
-                    "cannot_proceed": EvaluationOutcome.FORMALIZATION_UNRESOLVED,
-                    "max_turns_reached": EvaluationOutcome.CLARIFICATION_REQUESTED,
-                    "no_new_admissible_question": EvaluationOutcome.CLARIFICATION_REQUESTED,
+                    "need_evidence": EvaluationOutcome.NEED_EVIDENCE,
+                    "cannot_proceed": EvaluationOutcome.CANNOT_PROCEED,
+                    "max_turns_reached": EvaluationOutcome.DIALOGUE_INCOMPLETE,
+                    "no_new_admissible_question": EvaluationOutcome.DIALOGUE_INCOMPLETE,
                 }.get(result.stop_reason, EvaluationOutcome.CLARIFICATION_REQUESTED)
                 ask_result = (
                     result.session.assessment.ask_result
@@ -127,14 +240,14 @@ class ModelCaseExecutor:
                     request,
                     interpretation_provider=self.interpretation_provider,
                     formalization_provider=self.formalization_provider,
-                    contexts=self.contexts,
+                    contexts=case_contexts,
                     clarification_policy=policy,
                 )
                 outcome = {
                     PipelineDisposition.Complete: EvaluationOutcome.ASSESSMENT_COMPLETED,
                     PipelineDisposition.AskClarification: EvaluationOutcome.CLARIFICATION_REQUESTED,
-                    PipelineDisposition.NeedEvidence: EvaluationOutcome.FORMALIZATION_UNRESOLVED,
-                    PipelineDisposition.CannotProceed: EvaluationOutcome.FORMALIZATION_UNRESOLVED,
+                    PipelineDisposition.NeedEvidence: EvaluationOutcome.NEED_EVIDENCE,
+                    PipelineDisposition.CannotProceed: EvaluationOutcome.CANNOT_PROCEED,
                 }[ask_result.disposition]
             calls, timings, outcomes = self._metadata()
             verdict = None
@@ -169,7 +282,29 @@ class ModelCaseExecutor:
                 provider_calls=calls,
                 stage_timings=timings,
                 stage_outcomes=outcomes,
-                detail_code=type(exc).__name__,
+                detail_code=getattr(exc, "code", "schema_invalid"),
+            )
+        except _ContextUnavailable as exc:
+            calls, timings, outcomes = self._metadata()
+            return CaseExecution(
+                EvaluationOutcome.CONTEXT_UNAVAILABLE,
+                provider_calls=calls,
+                stage_timings=timings,
+                stage_outcomes=outcomes,
+                detail_code=str(exc),
+            )
+        except _ReplayError as exc:
+            calls, timings, outcomes = self._metadata()
+            outcome = {
+                "script_exhausted": EvaluationOutcome.SCRIPT_EXHAUSTED,
+                "question_intent_mismatch": EvaluationOutcome.QUESTION_INTENT_MISMATCH,
+            }[exc.code]
+            return CaseExecution(
+                outcome,
+                provider_calls=calls,
+                stage_timings=timings,
+                stage_outcomes=outcomes,
+                detail_code=exc.code,
             )
         except (KeyError, ValueError) as exc:
             calls, timings, outcomes = self._metadata()

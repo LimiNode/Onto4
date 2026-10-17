@@ -174,6 +174,21 @@ def test_runner_classifies_timeout_and_retries_only_transport_classes(tmp_path):
     assert run.receipts[0].attempts == 2
 
 
+def test_runner_marks_late_success_as_case_deadline_exceeded():
+    corpus = load_clarification_corpus(CORPUS)
+
+    def executor(case, *, request_timeout_seconds):
+        time.sleep(0.01)
+        return CaseExecution(EvaluationOutcome.ASSESSMENT_COMPLETED)
+
+    run = SequentialEvaluationRunner(
+        executor,
+        config=EvaluationConfig(case_deadline_seconds=0.001),
+    ).run(replace(corpus, cases=(corpus.cases[0],)), digest="digest")
+
+    assert run.receipts[0].outcome is EvaluationOutcome.CASE_DEADLINE_EXCEEDED
+
+
 @pytest.mark.parametrize(
     ("outcome", "supported", "completed"),
     (

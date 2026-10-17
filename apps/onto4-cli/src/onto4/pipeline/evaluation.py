@@ -29,6 +29,12 @@ class EvaluationOutcome(str, Enum):
     STRUCTURAL_RESOLUTION = "structural_resolution"
     SEMANTIC_FIDELITY_UNVERIFIED = "semantic_fidelity_unverified"
     UNSUPPORTED_DIALOGUE_STEP = "unsupported_dialogue_step"
+    CONTEXT_UNAVAILABLE = "context_unavailable"
+    NEED_EVIDENCE = "need_evidence"
+    CANNOT_PROCEED = "cannot_proceed"
+    DIALOGUE_INCOMPLETE = "dialogue_incomplete"
+    QUESTION_INTENT_MISMATCH = "question_intent_mismatch"
+    SCRIPT_EXHAUSTED = "script_exhausted"
 
 
 class CaseExecutor(Protocol):
@@ -118,6 +124,10 @@ class EvaluationSummary:
     p95_stage_latency_seconds: float | None
     provider_calls_per_completed_case: float | None
     semantic_scored_cases: int
+    verdict_observed_cases: int
+    oracle_comparable_cases: int
+    oracle_passed_cases: int
+    human_review_cases: int
     protocol_coverage: int
     dialogue_supported_cases: int
     dialogue_completed_cases: int
@@ -209,6 +219,9 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
             EvaluationOutcome.JSON_INVALID,
             EvaluationOutcome.SCHEMA_INVALID,
             EvaluationOutcome.PROVENANCE_INVALID,
+            EvaluationOutcome.CONTEXT_UNAVAILABLE,
+            EvaluationOutcome.QUESTION_INTENT_MISMATCH,
+            EvaluationOutcome.SCRIPT_EXHAUSTED,
         }
     )
     stage_latencies = _stage_latencies(receipts)
@@ -225,7 +238,7 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
             EvaluationOutcome.EMPTY_CONTENT,
         }
     ]
-    semantic_scored = sum(
+    verdict_observed = sum(
         receipt.semantic_verdict is not None
         and receipt.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
         for receipt in receipts
@@ -236,6 +249,9 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
         EvaluationOutcome.CLARIFICATION_REQUESTED,
         EvaluationOutcome.CLARIFICATION_ABSTAINED,
         EvaluationOutcome.STRUCTURAL_RESOLUTION,
+        EvaluationOutcome.DIALOGUE_INCOMPLETE,
+        EvaluationOutcome.QUESTION_INTENT_MISMATCH,
+        EvaluationOutcome.SCRIPT_EXHAUSTED,
     }
     dialogue_completed_outcomes = {
         EvaluationOutcome.ASSESSMENT_COMPLETED,
@@ -289,7 +305,14 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
         provider_calls_per_completed_case=(
             provider_calls / completed if completed else None
         ),
-        semantic_scored_cases=semantic_scored,
+        # No hidden-oracle scorer is part of this runner yet.  An observed
+        # verdict is reported separately and must not be presented as a
+        # verified semantic score.
+        semantic_scored_cases=0,
+        verdict_observed_cases=verdict_observed,
+        oracle_comparable_cases=0,
+        oracle_passed_cases=0,
+        human_review_cases=0,
         protocol_coverage=len(receipts),
         dialogue_supported_cases=dialogue_supported,
         dialogue_completed_cases=dialogue_completed,
@@ -438,8 +461,7 @@ class SequentialEvaluationRunner:
                     ),
                 )
                 if (
-                    execution.outcome is EvaluationOutcome.REQUEST_TIMEOUT
-                    and self.clock() - started >= self.config.case_deadline_seconds
+                    self.clock() - started >= self.config.case_deadline_seconds
                 ):
                     execution = CaseExecution(
                         EvaluationOutcome.CASE_DEADLINE_EXCEEDED,
@@ -471,6 +493,9 @@ class SequentialEvaluationRunner:
                     EvaluationOutcome.JSON_INVALID,
                     EvaluationOutcome.SCHEMA_INVALID,
                     EvaluationOutcome.PROVENANCE_INVALID,
+                    EvaluationOutcome.CONTEXT_UNAVAILABLE,
+                    EvaluationOutcome.QUESTION_INTENT_MISMATCH,
+                    EvaluationOutcome.SCRIPT_EXHAUSTED,
                 },
             )
             receipts.append(receipt)
@@ -532,6 +557,10 @@ def write_markdown_report(run: EvaluationRun, path: str | Path) -> None:
         f"- Completed protocol outcomes: `{run.summary.completed_cases}`",
         f"- Protocol coverage: `{run.summary.protocol_coverage}/{run.summary.total_cases}`",
         f"- Semantic scored cases: `{run.summary.semantic_scored_cases}`",
+        f"- Verdicts observed (not oracle-scored): `{run.summary.verdict_observed_cases}`",
+        f"- Oracle-comparable cases: `{run.summary.oracle_comparable_cases}`",
+        f"- Oracle-passed cases: `{run.summary.oracle_passed_cases}`",
+        f"- Human-review cases: `{run.summary.human_review_cases}`",
         f"- Dialogue supported cases: `{run.summary.dialogue_supported_cases}`",
         f"- Dialogue completed cases: `{run.summary.dialogue_completed_cases}`",
         f"- Timeout rate: `{run.summary.timeout_rate:.3f}`",

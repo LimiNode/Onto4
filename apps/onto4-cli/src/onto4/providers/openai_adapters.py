@@ -28,6 +28,10 @@ from .protocols import FormalizationProvider, FormalizationRequest, Interpretati
 class ProviderSchemaError(ValueError):
     """Raised when a model response does not satisfy an adapter contract."""
 
+    def __init__(self, message: str, *, code: str = "schema_invalid") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 def _object(value: Any, path: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
@@ -279,7 +283,10 @@ def _parse_interpretation(payload: Mapping[str, Any], request: InterpretationReq
     try:
         depth = ConceptualDepth(_string(payload["conceptual_depth"], "conceptual_depth"))
     except ValueError as exc:
-        raise ProviderSchemaError("conceptual_depth is not a supported ConceptualDepth.") from exc
+        raise ProviderSchemaError(
+            "conceptual_depth is not a supported ConceptualDepth.",
+            code="unsupported_conceptual_depth",
+        ) from exc
     if request.conceptual_depth is not None and depth is not request.conceptual_depth:
         raise ProviderSchemaError(
             "Model conceptual_depth does not match the interpretation request."

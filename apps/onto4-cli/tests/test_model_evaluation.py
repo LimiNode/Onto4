@@ -12,7 +12,13 @@ from onto4.providers import (
     InterpretationRequest,
     ProviderTransportError,
 )
-from onto4.reasoning import Ambiguity, ConceptualDepth, FormalizationCandidate, InterpretationSpace
+from onto4.reasoning import (
+    Ambiguity,
+    ConceptualDepth,
+    FormalizationCandidate,
+    InterpretationSpace,
+    SemanticReading,
+)
 from onto4.pipeline.loaders import load_context
 
 
@@ -114,9 +120,10 @@ def test_model_case_executor_runs_dialogue_with_fake_refinement():
         {"physical_objects": context},
     )
     case = ClarificationCorpusCase(
-        **{**_case(mode="dialogue").__dict__, "dialogue": (
-            {"turn_id": "initial", "role": "user", "text": "What is the mass of integer 7?"},
-            {"turn_id": "answer", "role": "user", "text": "physical mass"},
+            **{**_case(mode="dialogue").__dict__, "dialogue": (
+                {"turn_id": "initial", "role": "user", "text": "What is the mass of integer 7?"},
+                {"turn_id": "question", "role": "assistant", "text": "Clarify the meaning."},
+                {"turn_id": "answer", "role": "user", "text": "physical mass"},
         )}
     )
 
@@ -124,6 +131,136 @@ def test_model_case_executor_runs_dialogue_with_fake_refinement():
 
     assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
     assert execution.semantic_verdict == "C"
+
+
+def test_model_case_executor_isolates_case_context():
+    context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
+    interpretation = InterpretationSpace(
+        "scoped-space",
+        "What is the mass of integer 7?",
+        ConceptualDepth.Ordinary,
+        readings=(SemanticReading("reading-0", "ordinary", "ordinary"),),
+    )
+    calls = []
+
+    class RecordingFormalizer:
+        def formalize(self, request):
+            calls.append(request.context_id)
+            return (FormalizationCandidate(
+                "candidate",
+                "candidate",
+                "has-mass",
+                request.context_id or "none",
+                None,
+                reading_id=request.reading.id if request.reading else None,
+            ),)
+
+    class Provider:
+        def interpret(self, request):
+            return interpretation
+
+    executor = ModelCaseExecutor(
+        Provider(), RecordingFormalizer(),
+        {"physical_objects": context, "other_context": context},
+    )
+    execution = executor(_case(), request_timeout_seconds=1.0)
+
+    assert calls == ["physical_objects"]
+    assert execution.outcome is EvaluationOutcome.CLARIFICATION_REQUESTED
+
+
+def test_model_case_executor_reports_missing_case_context():
+    execution = ModelCaseExecutor(
+        FixtureInterpretationProvider({}),
+        FixtureFormalizationProvider({}),
+        {},
+    )(_case(), request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.CONTEXT_UNAVAILABLE
+
+
+def _dialogue_case(*, expected_kind="Meaning", turns=None):
+    case = _case(mode="dialogue")
+    return ClarificationCorpusCase(
+        **{
+            **case.__dict__,
+            "expected_clarification": {"kind": expected_kind, "target": "mass"},
+            "dialogue": tuple(turns or (
+                {"turn_id": "initial", "role": "user", "text": case.utterance},
+                {"turn_id": "question", "role": "assistant", "text": "Clarify"},
+                {"turn_id": "answer", "role": "user", "text": "physical mass"},
+            )),
+        }
+    )
+
+
+def _ambiguous_dialogue_executor():
+    context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
+    initial = InterpretationSpace(
+        "dialogue-space", "What is the mass of integer 7?", ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-0", "mass", "meaning"),),
+    )
+    successor = InterpretationSpace(
+        "dialogue-successor", initial.source_text, initial.conceptual_depth,
+    )
+
+    class Provider:
+        def interpret(self, request):
+            return initial
+
+        def refine(self, interpretation, question, answer):
+            return successor
+
+    candidate = FormalizationCandidate(
+        "mass", "mass", "has-mass", "physical_objects",
+        PredicateExpr(PredicateCall("has_mass", (Term("integer_7"),))),
+    )
+    return ModelCaseExecutor(
+        Provider(),
+        FixtureFormalizationProvider({"dialogue-space": (candidate,), "dialogue-successor": (candidate,)}),
+        {"physical_objects": context},
+    )
+
+
+def test_dialogue_replay_rejects_wrong_question_intent():
+    execution = _ambiguous_dialogue_executor()(
+        _dialogue_case(expected_kind="Ontology"), request_timeout_seconds=1.0
+    )
+
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
+
+
+def test_dialogue_replay_reports_missing_script_answer():
+    execution = _ambiguous_dialogue_executor()(
+        _dialogue_case(turns=(
+            {"turn_id": "initial", "role": "user", "text": "What is the mass of integer 7?"},
+            {"turn_id": "question", "role": "assistant", "text": "Clarify"},
+        )),
+        request_timeout_seconds=1.0,
+    )
+
+    assert execution.outcome is EvaluationOutcome.SCRIPT_EXHAUSTED
+
+
+def test_dialogue_replay_rejects_early_complete_when_question_is_expected():
+    context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
+    interpretation = InterpretationSpace(
+        "complete-space", "What is the mass of integer 7?", ConceptualDepth.Ordinary,
+    )
+    candidate = FormalizationCandidate(
+        "mass", "mass", "has-mass", "physical_objects",
+        PredicateExpr(PredicateCall("has_mass", (Term("integer_7"),))),
+    )
+    case = _dialogue_case()
+    class Provider:
+        def interpret(self, request):
+            return interpretation
+    execution = ModelCaseExecutor(
+        Provider(), FixtureFormalizationProvider({"complete-space": (candidate,)}),
+        {"physical_objects": context},
+    )(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
 
 
 def test_model_backed_cli_uses_same_runner_and_safe_receipt(monkeypatch, tmp_path, capsys):
