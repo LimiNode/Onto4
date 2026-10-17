@@ -122,7 +122,10 @@ def test_model_case_executor_runs_dialogue_with_fake_refinement():
     case = ClarificationCorpusCase(
             **{**_case(mode="dialogue").__dict__, "dialogue": (
                 {"turn_id": "initial", "role": "user", "text": "What is the mass of integer 7?"},
-                {"turn_id": "question", "role": "assistant", "text": "Clarify the meaning."},
+                {
+                    "turn_id": "question", "role": "assistant", "text": "Clarify the meaning.",
+                    "question_kind": "Meaning", "target_family": "mass", "target_ids": ["ambiguity-0"],
+                },
                 {"turn_id": "answer", "role": "user", "text": "physical mass"},
         )}
     )
@@ -187,7 +190,10 @@ def _dialogue_case(*, expected_kind="Meaning", turns=None):
             "expected_clarification": {"kind": expected_kind, "target": "mass"},
             "dialogue": tuple(turns or (
                 {"turn_id": "initial", "role": "user", "text": case.utterance},
-                {"turn_id": "question", "role": "assistant", "text": "Clarify"},
+                {
+                    "turn_id": "question", "role": "assistant", "text": "Clarify",
+                    "question_kind": expected_kind, "target_family": "mass", "target_ids": ["ambiguity-0"],
+                },
                 {"turn_id": "answer", "role": "user", "text": "physical mass"},
             )),
         }
@@ -230,14 +236,93 @@ def test_dialogue_replay_rejects_wrong_question_intent():
     assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
 
 
+def test_dialogue_replay_rejects_wrong_target_family():
+    case = ClarificationCorpusCase(
+        **{
+            **_dialogue_case().__dict__,
+            "dialogue": (
+                {"turn_id": "initial", "role": "user", "text": "What is the mass of integer 7?"},
+                {
+                    "turn_id": "question", "role": "assistant", "text": "Clarify",
+                    "question_kind": "Meaning", "target_family": "identity",
+                    "target_ids": ["ambiguity-0"],
+                },
+                {"turn_id": "answer", "role": "user", "text": "physical mass"},
+            ),
+        }
+    )
+
+    execution = _ambiguous_dialogue_executor()(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
+
+
+def test_dialogue_replay_refuses_unbound_question_intent():
+    case = _dialogue_case()
+    case = ClarificationCorpusCase(
+        **{
+            **case.__dict__,
+            "dialogue": (
+                {"turn_id": "initial", "role": "user", "text": case.utterance},
+                {"turn_id": "question", "role": "assistant", "text": "Clarify"},
+                {"turn_id": "answer", "role": "user", "text": "physical mass"},
+            ),
+        }
+    )
+
+    execution = _ambiguous_dialogue_executor()(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_UNVERIFIED
+
+
+def test_dialogue_replay_does_not_count_early_complete_as_scenario_success():
+    case = _dialogue_case()
+    case = ClarificationCorpusCase(
+        **{
+            **case.__dict__,
+            "dialogue": (
+                {"turn_id": "initial", "role": "user", "text": case.utterance},
+                {
+                    "turn_id": "question-1", "role": "assistant", "text": "Clarify",
+                    "question_kind": "Meaning", "target_family": "mass",
+                    "target_ids": ["ambiguity-0"],
+                },
+                {"turn_id": "answer", "role": "user", "text": "physical mass"},
+                {
+                    "turn_id": "question-2", "role": "assistant", "text": "Clarify again",
+                    "question_kind": "Meaning", "target_family": "identity",
+                    "target_ids": ["ambiguity-1"],
+                },
+            ),
+        }
+    )
+
+    execution = _ambiguous_dialogue_executor()(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.DIALOGUE_INCOMPLETE
+
+
 def test_dialogue_replay_reports_missing_script_answer():
     execution = _ambiguous_dialogue_executor()(
         _dialogue_case(turns=(
             {"turn_id": "initial", "role": "user", "text": "What is the mass of integer 7?"},
-            {"turn_id": "question", "role": "assistant", "text": "Clarify"},
+            {
+                "turn_id": "question", "role": "assistant", "text": "Clarify",
+                "question_kind": "Meaning", "target_family": "mass", "target_ids": ["ambiguity-0"],
+            },
         )),
         request_timeout_seconds=1.0,
     )
+
+    assert execution.outcome is EvaluationOutcome.SCRIPT_EXHAUSTED
+
+
+def test_dialogue_mode_without_script_is_explicitly_incomplete():
+    case = ClarificationCorpusCase(
+        **{**_case(mode="dialogue").__dict__, "dialogue": ()}
+    )
+
+    execution = _ambiguous_dialogue_executor()(case, request_timeout_seconds=1.0)
 
     assert execution.outcome is EvaluationOutcome.SCRIPT_EXHAUSTED
 

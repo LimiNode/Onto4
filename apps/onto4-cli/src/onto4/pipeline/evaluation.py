@@ -34,6 +34,7 @@ class EvaluationOutcome(str, Enum):
     CANNOT_PROCEED = "cannot_proceed"
     DIALOGUE_INCOMPLETE = "dialogue_incomplete"
     QUESTION_INTENT_MISMATCH = "question_intent_mismatch"
+    QUESTION_INTENT_UNVERIFIED = "question_intent_unverified"
     SCRIPT_EXHAUSTED = "script_exhausted"
 
 
@@ -76,6 +77,7 @@ class EvaluationConfig:
     thinking_enabled: bool | None = None
     max_output_tokens: int | None = None
     variant: str = "default"
+    prompt_variant: str = "baseline"
     run_id: str | None = None
     context_profile_digests: Mapping[str, str] = field(default_factory=dict)
 
@@ -221,6 +223,7 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
             EvaluationOutcome.PROVENANCE_INVALID,
             EvaluationOutcome.CONTEXT_UNAVAILABLE,
             EvaluationOutcome.QUESTION_INTENT_MISMATCH,
+            EvaluationOutcome.QUESTION_INTENT_UNVERIFIED,
             EvaluationOutcome.SCRIPT_EXHAUSTED,
         }
     )
@@ -251,6 +254,7 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
         EvaluationOutcome.STRUCTURAL_RESOLUTION,
         EvaluationOutcome.DIALOGUE_INCOMPLETE,
         EvaluationOutcome.QUESTION_INTENT_MISMATCH,
+        EvaluationOutcome.QUESTION_INTENT_UNVERIFIED,
         EvaluationOutcome.SCRIPT_EXHAUSTED,
     }
     dialogue_completed_outcomes = {
@@ -312,7 +316,10 @@ def _summary(receipts: tuple[CaseReceipt, ...]) -> EvaluationSummary:
         verdict_observed_cases=verdict_observed,
         oracle_comparable_cases=0,
         oracle_passed_cases=0,
-        human_review_cases=0,
+        human_review_cases=sum(
+            receipt.outcome is EvaluationOutcome.QUESTION_INTENT_UNVERIFIED
+            for receipt in receipts
+        ),
         protocol_coverage=len(receipts),
         dialogue_supported_cases=dialogue_supported,
         dialogue_completed_cases=dialogue_completed,
@@ -495,6 +502,7 @@ class SequentialEvaluationRunner:
                     EvaluationOutcome.PROVENANCE_INVALID,
                     EvaluationOutcome.CONTEXT_UNAVAILABLE,
                     EvaluationOutcome.QUESTION_INTENT_MISMATCH,
+                    EvaluationOutcome.QUESTION_INTENT_UNVERIFIED,
                     EvaluationOutcome.SCRIPT_EXHAUSTED,
                 },
             )
@@ -544,6 +552,7 @@ def write_markdown_report(run: EvaluationRun, path: str | Path) -> None:
         f"- Provider/model: `{run.config.provider}` / `{run.config.model}`",
         f"- Model artifact digest: `{run.config.model_artifact_digest or 'unspecified'}`",
         f"- Prompt version: `{run.config.prompt_version}`",
+        f"- Prompt variant: `{run.config.prompt_variant}`",
         f"- Prompt hash: `{run.config.prompt_hash or 'unspecified'}`",
         f"- Commit: `{run.config.commit_sha or 'unspecified'}`",
         f"- Variant: `{run.config.variant}`",

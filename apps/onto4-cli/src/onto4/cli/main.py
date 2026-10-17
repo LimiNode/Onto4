@@ -252,7 +252,9 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                     raise ValueError(f"Duplicate context id from --context: {context_id!r}.")
                 contexts[context_id] = load_context(context_path)
             trace = _print_provider_trace if args.debug else None
-            interpretation_adapter = OpenAICompatibleInterpretationProvider(client)
+            interpretation_adapter = OpenAICompatibleInterpretationProvider(
+                client, prompt_variant=args.prompt_variant
+            )
             formalization_adapter = OpenAICompatibleFormalizationProvider(
                 client, context_ids=tuple(contexts)
             )
@@ -287,6 +289,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
             thinking_enabled=args.enable_thinking if args.mode == "model-backed" else None,
             max_output_tokens=args.max_output_tokens if args.mode == "model-backed" else None,
             variant=args.variant,
+            prompt_variant=args.prompt_variant,
             run_id=args.run_id,
             context_profile_digests={
                 path.stem: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -397,6 +400,11 @@ def build_parser() -> argparse.ArgumentParser:
     corpus_parser.add_argument("--inter-case-delay", type=float, default=0.0)
     corpus_parser.add_argument("--max-retries", type=int, default=0)
     corpus_parser.add_argument("--prompt-version", default="unspecified")
+    corpus_parser.add_argument(
+        "--prompt-variant",
+        choices=("baseline", "explicit_depth", "compact_json"),
+        default="baseline",
+    )
     corpus_parser.add_argument("--prompt-hash")
     corpus_parser.add_argument("--model-artifact-digest")
     corpus_parser.add_argument(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from time import monotonic
 from typing import Mapping
 
 from onto4.core import AssessmentContext
@@ -32,27 +33,50 @@ class _ReplayError(ValueError):
 
 
 @dataclass(frozen=True)
-class _ReplayPolicy(ModelClarificationPolicy):
-    """Validate the first model question against the case's declared intent."""
+class _QuestionIntent:
+    kind: ClarificationKind | None
+    target_family: str | None
+    target_ids: tuple[str, ...]
 
-    expected_kinds: tuple[ClarificationKind | None, ...] = ()
+
+@dataclass(frozen=True)
+class _ReplayPolicy(ModelClarificationPolicy):
+    """Validate each emitted question against the scripted intent binding."""
+
+    expected_intents: tuple[_QuestionIntent, ...] = ()
     issued_questions: int = 0
 
     def questions(self, context):
         questions = super().questions(context)
-        if self.issued_questions < len(self.expected_kinds):
-            expected_kind = self.expected_kinds[self.issued_questions]
-            if expected_kind is not None and not any(
-                question.kind is expected_kind for question in questions
-            ):
-                raise _ReplayError("question_intent_mismatch")
-        return questions
+        if self.issued_questions >= len(self.expected_intents):
+            raise _ReplayError("script_exhausted")
+        expected = self.expected_intents[self.issued_questions]
+        if expected.kind is None or not expected.target_family or not expected.target_ids:
+            raise _ReplayError("question_intent_unverified")
+        bound_candidates = tuple(
+            question
+            for question in questions
+            if question.kind is expected.kind
+            and tuple(question.target_ids) == expected.target_ids
+        )
+        if bound_candidates and all(
+            question.target_family is None for question in bound_candidates
+        ):
+            raise _ReplayError("question_intent_unverified")
+        matching = tuple(
+            question
+            for question in bound_candidates
+            if question.target_family == expected.target_family
+        )
+        if not matching:
+            raise _ReplayError("question_intent_mismatch")
+        return (*matching, *tuple(question for question in questions if question not in matching))
 
     def choose_for_kind(self, context, kind: ClarificationKind):
-        question = super().choose_for_kind(context, kind)
-        if question is not None:
-            object.__setattr__(self, "issued_questions", self.issued_questions + 1)
-        return question
+        return super().choose_for_kind(context, kind)
+
+    def mark_issued(self) -> None:
+        object.__setattr__(self, "issued_questions", self.issued_questions + 1)
 
 
 class _ContextUnavailable(ValueError):
@@ -121,18 +145,28 @@ class ModelCaseExecutor:
         except KeyError as exc:
             raise _ContextUnavailable("context_unavailable") from exc
 
+    def _set_provider_deadline(self, deadline: float | None) -> None:
+        seen: set[int] = set()
+        for provider in (self.interpretation_provider, self.formalization_provider):
+            client = getattr(provider, "client", None)
+            if client is None or id(client) in seen:
+                continue
+            seen.add(id(client))
+            setter = getattr(client, "set_deadline", None)
+            if setter is not None:
+                setter(deadline)
+
     @staticmethod
     def _script(
         case: ClarificationCorpusCase,
-    ) -> tuple[list[str], int, tuple[ClarificationKind | None, ...]]:
+    ) -> tuple[list[str], int, tuple[_QuestionIntent, ...]]:
         if not case.dialogue:
             return [], 0, ()
         turns = list(case.dialogue)
         if turns[0].get("role") != "user" or turns[0].get("text") != case.utterance:
             raise _ReplayError("question_intent_mismatch")
         answers: list[str] = []
-        assistant_count = 0
-        question_kinds: list[ClarificationKind | None] = []
+        question_intents: list[_QuestionIntent] = []
         expected_role = "user"
         for index, turn in enumerate(turns):
             role = turn.get("role")
@@ -140,18 +174,32 @@ class ModelCaseExecutor:
                 raise _ReplayError("question_intent_mismatch")
             expected_role = "assistant" if role == "user" else "user"
             if role == "assistant":
-                assistant_count += 1
                 raw_kind = turn.get("question_kind")
+                kind: ClarificationKind | None = None
                 if isinstance(raw_kind, str):
                     try:
-                        question_kinds.append(ClarificationKind(raw_kind))
+                        kind = ClarificationKind(raw_kind)
                     except ValueError:
                         raise _ReplayError("question_intent_mismatch") from None
-                else:
-                    question_kinds.append(None)
+                raw_target_ids = turn.get("target_ids")
+                target_ids = (
+                    tuple(raw_target_ids)
+                    if isinstance(raw_target_ids, list)
+                    and all(isinstance(item, str) and item for item in raw_target_ids)
+                    else ()
+                )
+                target_family = turn.get("target_family")
+                if raw_kind is not None or "target_family" in turn or "target_ids" in turn:
+                    question_intents.append(
+                        _QuestionIntent(
+                            kind,
+                            target_family if isinstance(target_family, str) else None,
+                            target_ids,
+                        )
+                    )
             elif index:
                 answers.append(str(turn.get("text", "")))
-        return answers, assistant_count, tuple(question_kinds)
+        return answers, len(question_intents), tuple(question_intents)
 
     @staticmethod
     def _expected_kind(case: ClarificationCorpusCase) -> ClarificationKind | None:
@@ -175,23 +223,24 @@ class ModelCaseExecutor:
         *,
         request_timeout_seconds: float,
     ) -> CaseExecution:
-        del request_timeout_seconds  # transport profile owns the actual timeout
         self._last_events = []
+        self._set_provider_deadline(monotonic() + request_timeout_seconds)
         try:
             request = self._request(case)
             case_contexts = self._case_contexts(case)
+            if case.mode == "dialogue" and not case.dialogue:
+                raise _ReplayError("script_exhausted")
             if case.mode == "dialogue" and case.dialogue:
-                answers, scripted_questions, scripted_kinds = self._script(case)
+                answers, scripted_questions, scripted_intents = self._script(case)
                 expected_kind = self._expected_kind(case)
-                expected_kinds = (
-                    scripted_kinds
-                    if any(kind is not None for kind in scripted_kinds)
-                    else ((expected_kind,) if expected_kind else ())
+                expected_intents = scripted_intents or (
+                    (_QuestionIntent(expected_kind, None, ()),) if expected_kind else ()
                 )
                 answer_index = 0
 
                 def input_fn(_: str) -> str:
                     nonlocal answer_index
+                    policy.mark_issued()
                     if answer_index >= len(answers):
                         raise _ReplayError("script_exhausted")
                     answer = answers[answer_index]
@@ -201,7 +250,7 @@ class ModelCaseExecutor:
                 policy = _ReplayPolicy(
                     FixtureClarificationPolicy(),
                     self.interpretation_provider,
-                    expected_kinds=expected_kinds,
+                    expected_intents=expected_intents,
                 )
                 result = run_interactive_dialogue(
                     request,
@@ -220,6 +269,17 @@ class ModelCaseExecutor:
                     and policy.issued_questions == 0
                 ):
                     raise _ReplayError("question_intent_mismatch")
+                if (
+                    result.stop_reason == "complete"
+                    and policy.issued_questions < len(expected_intents)
+                ):
+                    return CaseExecution(
+                        EvaluationOutcome.DIALOGUE_INCOMPLETE,
+                        provider_calls=self._metadata()[0],
+                        stage_timings=self._metadata()[1],
+                        stage_outcomes=self._metadata()[2],
+                        detail_code="required_question_not_issued",
+                    )
                 if policy.issued_questions > scripted_questions:
                     raise _ReplayError("script_exhausted")
                 outcome = {
@@ -298,6 +358,7 @@ class ModelCaseExecutor:
             outcome = {
                 "script_exhausted": EvaluationOutcome.SCRIPT_EXHAUSTED,
                 "question_intent_mismatch": EvaluationOutcome.QUESTION_INTENT_MISMATCH,
+                "question_intent_unverified": EvaluationOutcome.QUESTION_INTENT_UNVERIFIED,
             }[exc.code]
             return CaseExecution(
                 outcome,
@@ -315,6 +376,8 @@ class ModelCaseExecutor:
                 stage_outcomes=outcomes,
                 detail_code=type(exc).__name__,
             )
+        finally:
+            self._set_provider_deadline(None)
 
     def provider_trace(self, event: ProviderStageEvent) -> None:
         """Collect one adapter event for the current case and forward it safely."""

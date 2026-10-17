@@ -1,5 +1,6 @@
 import json
 import threading
+from time import monotonic
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -129,6 +130,25 @@ def test_complete_sends_bearer_token_and_returns_raw_json_envelope():
         "max_tokens": 32,
         "response_format": {"type": "json_object"},
     }
+
+
+def test_client_deadline_bounds_request_without_issuing_late_call():
+    calls = []
+
+    def urlopen(request, *, timeout):
+        calls.append(timeout)
+        return FakeResponse({"choices": []})
+
+    client = OpenAICompatibleClient(
+        ProviderProfile(base_url="http://example.test/v1", model="bonsai"),
+        urlopen=urlopen,
+    )
+    client.set_deadline(monotonic() - 1.0)
+
+    with pytest.raises(ProviderTransportError, match="deadline"):
+        client.complete([{"role": "user", "content": "Hello"}])
+
+    assert calls == []
 
 
 def test_complete_applies_profile_output_token_bound_when_call_omits_one():
