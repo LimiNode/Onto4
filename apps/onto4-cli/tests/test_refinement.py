@@ -307,6 +307,39 @@ def test_operation_specific_schema_rejects_ignored_fields():
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("target_id", 42),
+        ("text", 42),
+        ("label", 42),
+        ("description", 42),
+        ("reason", 42),
+        ("resolved_ambiguity_ids", "ambiguity-0"),
+        ("resolved_ambiguity_ids", (42,)),
+        ("resolved_ambiguity_ids", ("ambiguity-0", "ambiguity-0")),
+    ),
+)
+def test_direct_delta_constructor_rejects_invalid_field_types(field, value):
+    with pytest.raises(RefinementValidationError):
+        RefinementDelta(
+            RefinementOperation.SELECT_READING,
+            **{field: value},
+        )
+
+
+def test_mapping_and_direct_delta_validation_share_type_invariants():
+    with pytest.raises(RefinementValidationError):
+        RefinementDelta.from_mapping(
+            {
+                "operation": "select_reading",
+                "target_id": 42,
+            }
+        )
+    with pytest.raises(RefinementValidationError):
+        RefinementDelta.from_mapping([("operation", "select_reading")])
+
+
 def test_request_rejects_wrong_target_category_and_duplicate_ids():
     request = _request()
     with pytest.raises(RefinementValidationError, match="absent from the snapshot"):
@@ -345,6 +378,24 @@ def test_batch_failure_does_not_publish_partial_commitments():
             ),
             successor_id="successor",
             batch_id="batch-0",
+        )
+
+    assert request.interpretation == _space()
+
+
+def test_batch_rejects_abstention_mixed_with_content_operations():
+    request = _request()
+    with pytest.raises(RefinementValidationError, match="ABSTAIN"):
+        apply_refinement_batch(
+            request,
+            (
+                RefinementDelta(RefinementOperation.ABSTAIN, reason="none fits"),
+                RefinementDelta(
+                    RefinementOperation.ADD_PRESUPPOSITION,
+                    description="new commitment",
+                ),
+            ),
+            successor_id="successor",
         )
 
     assert request.interpretation == _space()

@@ -55,6 +55,27 @@ class RefinementDelta:
     def __post_init__(self) -> None:
         if not isinstance(self.operation, RefinementOperation):
             raise RefinementValidationError("operation must be a RefinementOperation.")
+        for name in ("target_id", "text", "label", "description", "reason"):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, str):
+                raise RefinementValidationError(
+                    f"{name} must be a string when supplied."
+                )
+        if not isinstance(self.resolved_ambiguity_ids, tuple):
+            raise RefinementValidationError(
+                "resolved_ambiguity_ids must be a tuple of non-empty strings."
+            )
+        if any(
+            not isinstance(item, str) or not item
+            for item in self.resolved_ambiguity_ids
+        ):
+            raise RefinementValidationError(
+                "resolved_ambiguity_ids must be a tuple of non-empty strings."
+            )
+        if len(self.resolved_ambiguity_ids) != len(set(self.resolved_ambiguity_ids)):
+            raise RefinementValidationError(
+                "resolved_ambiguity_ids must not contain duplicates."
+            )
         supplied = {
             "target_id": self.target_id is not None,
             "text": self.text is not None,
@@ -92,6 +113,8 @@ class RefinementDelta:
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> "RefinementDelta":
+        if not isinstance(value, Mapping):
+            raise RefinementValidationError("Refinement delta must be a mapping.")
         allowed = {
             "operation",
             "target_id",
@@ -431,6 +454,11 @@ def apply_refinement_batch(
         raise RefinementValidationError("A refinement batch must not be empty.")
     if batch_id is not None and not batch_id.strip():
         raise RefinementValidationError("batch_id must be non-empty when supplied.")
+    abstentions = [delta for delta in deltas if delta.operation is RefinementOperation.ABSTAIN]
+    if abstentions and len(deltas) != 1:
+        raise RefinementValidationError(
+            "ABSTAIN cannot be combined with other refinement operations."
+        )
     seen_targets: set[str] = set()
     current = request.interpretation
     commitments: list[RefinementCommitment] = []
