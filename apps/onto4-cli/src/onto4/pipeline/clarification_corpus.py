@@ -17,12 +17,13 @@ class ClarificationCorpusCase:
     hidden_interpretation: Mapping[str, Any] | None
     expected_clarification: Mapping[str, Any] | None
     expected_after_answer: Mapping[str, Any]
+    model_input: str = "utterance_only"
 
     def public_input(self) -> dict[str, str]:
         """Return only fields allowed in a model-facing evaluation request."""
 
         result = {"utterance": self.utterance}
-        if self.context is not None:
+        if self.model_input == "contextual" and self.context is not None:
             result["context"] = self.context
         return result
 
@@ -32,6 +33,7 @@ class ClarificationCorpus:
     version: int
     name: str
     cases: tuple[ClarificationCorpusCase, ...]
+    model_input: str = "utterance_only"
 
 
 def _mapping(value: Any, path: str) -> Mapping[str, Any]:
@@ -53,6 +55,14 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
     name = root.get("name")
     if not isinstance(name, str) or not name.strip():
         raise ValueError("corpus.name must be a non-empty string.")
+    visibility = root.get("visibility", {})
+    if not isinstance(visibility, Mapping):
+        raise ValueError("corpus.visibility must be a mapping when supplied.")
+    model_input = visibility.get("model_input", "utterance_only")
+    if model_input not in {"utterance_only", "contextual"}:
+        raise ValueError(
+            "corpus.visibility.model_input must be 'utterance_only' or 'contextual'."
+        )
     raw_cases = root.get("cases")
     if not isinstance(raw_cases, list) or not raw_cases:
         raise ValueError("corpus.cases must be a non-empty array.")
@@ -93,12 +103,18 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
                 case_id=case_id,
                 utterance=utterance,
                 context=context,
+                model_input=model_input,
                 hidden_interpretation=hidden_interpretation,
                 expected_clarification=expected_clarification,
                 expected_after_answer=expected_after_answer,
             )
         )
-    return ClarificationCorpus(version=version, name=name, cases=tuple(cases))
+    return ClarificationCorpus(
+        version=version,
+        name=name,
+        cases=tuple(cases),
+        model_input=model_input,
+    )
 
 
 __all__ = ["ClarificationCorpus", "ClarificationCorpusCase", "load_clarification_corpus"]

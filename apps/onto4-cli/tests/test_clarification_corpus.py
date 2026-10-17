@@ -37,12 +37,14 @@ from onto4.reasoning import (
 
 ROOT = Path(__file__).parents[1]
 CORPUS = ROOT / "eval/clarification/corpus.yaml"
+EPISTEMIC_CORPUS = ROOT / "eval/clarification/epistemic-ontology-v1.yaml"
 
 
 def test_clarification_corpus_loads_and_hides_oracle_fields_from_public_input():
     corpus = load_clarification_corpus(CORPUS)
 
     assert corpus.version == 1
+    assert corpus.model_input == "utterance_only"
     assert len(corpus.cases) == 13
     assert len({case.case_id for case in corpus.cases}) == len(corpus.cases)
     assert any(case.expected_clarification is None for case in corpus.cases)
@@ -52,6 +54,75 @@ def test_clarification_corpus_loads_and_hides_oracle_fields_from_public_input():
         assert "hidden_interpretation" not in public
         assert "expected_clarification" not in public
         assert "expected_after_answer" not in public
+        assert "context" not in public
+
+
+def test_epistemic_ontology_corpus_is_recorded_and_hides_its_oracle():
+    corpus = load_clarification_corpus(EPISTEMIC_CORPUS)
+
+    assert corpus.version == 1
+    assert corpus.name == "epistemic-ontology-v1"
+    assert corpus.model_input == "utterance_only"
+    assert len(corpus.cases) == 27
+    assert len({case.case_id for case in corpus.cases}) == 27
+    assert sum(
+        case.expected_clarification is not None for case in corpus.cases
+    ) >= 8
+    assert any(
+        case.expected_after_answer.get("verdict") == "U"
+        for case in corpus.cases
+    )
+    assert any(
+        case.expected_after_answer.get("verdict") == "C"
+        for case in corpus.cases
+    )
+    assert any(
+        case.expected_after_answer.get("reason_family")
+        == "ontology_commitment"
+        for case in corpus.cases
+    )
+    dialogue_cases = [
+        case for case in corpus.cases if case.case_id == "genetic-essentialism-dialogue"
+    ]
+    assert len(dialogue_cases) == 1
+    assert dialogue_cases[0].context == "identity_and_genome"
+    assert dialogue_cases[0].expected_after_answer["disposition"] == (
+        "dialogue_reassessment_required"
+    )
+    for case in corpus.cases:
+        public = case.public_input()
+        assert public["utterance"] == case.utterance
+        assert "evaluation_class" not in public
+        assert "expected_clarification" not in public
+        assert "expected_after_answer" not in public
+        assert "oracle_notes" not in public
+        assert "context" not in public
+
+
+def test_contextual_visibility_explicitly_allows_context(tmp_path):
+    corpus_path = tmp_path / "contextual.yaml"
+    corpus_path.write_text(
+        """
+version: 1
+name: contextual
+visibility:
+  model_input: contextual
+cases:
+  - case_id: one
+    utterance: claim
+    context: supplied-context
+    expected_after_answer: {}
+""",
+        encoding="utf-8",
+    )
+
+    corpus = load_clarification_corpus(corpus_path)
+
+    assert corpus.model_input == "contextual"
+    assert corpus.cases[0].public_input() == {
+        "utterance": "claim",
+        "context": "supplied-context",
+    }
 
 
 class CorpusFormalizationProvider:

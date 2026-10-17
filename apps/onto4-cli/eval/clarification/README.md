@@ -30,6 +30,60 @@ The current file is an oracle specification, not a golden transcript. Exact
 question text, ordering and model phrasing must not be treated as correctness
 criteria.
 
+## Epistemic and ontological evaluation layer
+
+`epistemic-ontology-v1.yaml` is a second, deliberately separate corpus. It
+does not replace `everyday-clarification-v1`; it adds cases where a model can
+fail by applying common knowledge or a modern theory before the selected
+ontology and evidence policy are fixed.
+
+The cases cover four distinctions that must remain separate:
+
+- `U`: a meaningful claim for which the corpus supplies no adequate evidence;
+- `C`: a predicate or category that is inapplicable in the selected ontology;
+- ontology-dependent historical theories, such as caloric or phlogiston;
+- reference or presupposition failure, which is not automatically `C`.
+
+Some cases are explicitly marked as dialogue scenarios. Their hidden oracle
+expects an ontology clarification before an evidence question or assessment.
+The oracle is a test-driver contract, not a command to emit a fixed question.
+In particular, model pretraining must not be treated as an implicit
+`EvidenceStore`: an unusual statement is not false merely because the model
+has never encountered evidence for it.
+
+`genetic-essentialism-dialogue` is the first multi-turn protocol fixture. Its
+sequence is intentionally stronger than a single clarification:
+
+```text
+claim
+  -> ontology question
+  -> free-form answer
+  -> successor InterpretationSpace
+  -> explicit reassessment
+  -> identity-criterion question
+  -> another answer or `none_of_the_above`
+```
+
+The CLI now has a bounded interactive runner that can execute this sequence
+when supplied with model-backed interpretation, refinement and formalization
+providers. The host-controlled loop owns snapshot identity, transition
+provenance, progress admission and validation; the model may propose only
+semantic content for the next snapshot. Every question must also permit the
+user to reject all listed alternatives rather than forcing a false choice.
+
+The repository's fixture tests establish the transition protocol, including
+successor snapshots, explicit reassessment, abstention and turn limits. They
+are not evidence that Bonsai has produced the intended readings. Real Bonsai
+runs are recorded separately with provider, prompt and transport diagnostics;
+an incomplete, timed-out or schema-invalid case is not a semantic pass or
+failure. Until a reproducible evaluation runner scores the full corpus, this
+file must not be read as claiming that the dialogue corpus has been passed.
+
+The corpus is currently an evaluation fixture. It is loaded and checked for
+oracle isolation by unit tests, but it is not silently folded into the ordinary
+unit-test verdict tables. A real Bonsai run is recorded separately with the
+provider, prompt and transport diagnostics intact.
+
 ## Typed AST and the DSL experiment gate
 
 The current formalization boundary keeps the typed JSON AST. A second

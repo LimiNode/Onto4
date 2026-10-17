@@ -12,6 +12,7 @@ from onto4.core import (
 )
 from onto4.pipeline import (
     ClarificationSession,
+    ModelClarificationPolicy,
     apply_clarification_answer,
     answer_session_clarification,
     build_clarification_request,
@@ -220,6 +221,55 @@ def test_session_answer_none_preserves_exact_pending_state():
     assert waiting.turn_result.pending is issued.session.pending
     assert waiting.turn_result.turn is None
     assert waiting.turn_result.successor is None
+
+
+def test_interactive_none_of_the_above_is_allowed_for_fixed_choices():
+    context = clarification_context()
+    refinement = type(
+        "SameSnapshotRefinement",
+        (),
+        {"refine": lambda self, interpretation, question, answer: interpretation},
+    )()
+    policy = ModelClarificationPolicy(FixtureClarificationPolicy(), refinement)
+    issued = issue(ClarificationSession(context.interpretation), context, policy)
+
+    answered = answer_session_clarification(
+        issued.session,
+        context,
+        answer="none_of_the_above",
+        clarification_policy=policy,
+        allow_freeform_answers=True,
+    )
+
+    assert answered.session.interpretation is context.interpretation
+    assert answered.session.history.turns == (answered.turn_result.turn,)
+    assert answered.turn_result.turn is not None
+
+
+def test_interactive_free_form_answer_is_allowed_for_fixed_choices():
+    context = clarification_context()
+    successor = InterpretationSpace(
+        id="successor",
+        source_text=context.interpretation.source_text,
+        conceptual_depth=ConceptualDepth.Philosophical,
+    )
+    refinement = type(
+        "FreeFormRefinement",
+        (),
+        {"refine": lambda self, interpretation, question, answer: successor},
+    )()
+    policy = ModelClarificationPolicy(FixtureClarificationPolicy(), refinement)
+    issued = issue(ClarificationSession(context.interpretation), context, policy)
+
+    answered = answer_session_clarification(
+        issued.session,
+        context,
+        answer="a meaning not listed in the choices",
+        clarification_policy=policy,
+        allow_freeform_answers=True,
+    )
+
+    assert answered.session.interpretation is successor
 
 
 def test_session_abstention_is_a_no_op():
