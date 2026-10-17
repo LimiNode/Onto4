@@ -139,7 +139,7 @@ def _invoke_with_deadline(
 
     try:
         result = executor(case, request_timeout_seconds=timeout_seconds)
-    except BaseException as exc:  # converted to a typed transport outcome
+    except Exception as exc:  # provider failures become typed transport outcomes
         return CaseExecution(
             EvaluationOutcome.TRANSPORT_ERROR,
             detail_code=type(exc).__name__,

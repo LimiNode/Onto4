@@ -110,6 +110,24 @@ def test_timeout_result_finishes_before_retry_or_next_case():
     assert run.receipts[0].attempts == 2
 
 
+@pytest.mark.parametrize("signal", (KeyboardInterrupt, SystemExit))
+def test_process_control_signals_escape_executor_boundary(signal):
+    corpus = load_clarification_corpus(CORPUS)
+    calls = []
+
+    def executor(case, *, request_timeout_seconds):
+        calls.append(case.case_id)
+        raise signal()
+
+    with pytest.raises(signal):
+        SequentialEvaluationRunner(
+            executor,
+            config=EvaluationConfig(max_retries=1),
+        ).run(corpus, digest="digest")
+
+    assert len(calls) == 1
+
+
 def test_runner_resumes_completed_receipts_without_reexecuting(tmp_path):
     corpus = load_clarification_corpus(CORPUS)
     receipt_path = tmp_path / "receipts.jsonl"
