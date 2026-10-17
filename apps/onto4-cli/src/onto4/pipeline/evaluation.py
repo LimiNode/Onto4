@@ -48,6 +48,7 @@ class CaseExecution:
     outcome: EvaluationOutcome
     provider_calls: int = 0
     stage_timings: Mapping[str, float] = field(default_factory=dict)
+    stage_outcomes: Mapping[str, str] = field(default_factory=dict)
     semantic_verdict: str | None = None
     detail_code: str | None = None
 
@@ -62,7 +63,15 @@ class EvaluationConfig:
     model: str = "offline-fixture"
     mode: str = "offline"
     prompt_version: str = "unspecified"
+    prompt_hash: str | None = None
     commit_sha: str | None = None
+    model_artifact_digest: str | None = None
+    temperature: float | None = None
+    thinking_enabled: bool | None = None
+    max_output_tokens: int | None = None
+    variant: str = "default"
+    run_id: str | None = None
+    context_profile_digests: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.request_timeout_seconds <= 0:
@@ -73,6 +82,12 @@ class EvaluationConfig:
             raise ValueError("inter_case_delay_seconds must not be negative.")
         if self.max_retries < 0:
             raise ValueError("max_retries must not be negative.")
+        if self.temperature is not None and self.temperature < 0:
+            raise ValueError("temperature must not be negative.")
+        if self.max_output_tokens is not None and self.max_output_tokens <= 0:
+            raise ValueError("max_output_tokens must be positive.")
+        if not self.variant.strip():
+            raise ValueError("variant must not be empty.")
 
 
 @dataclass(frozen=True)
@@ -82,6 +97,7 @@ class CaseReceipt:
     outcome: EvaluationOutcome
     elapsed_seconds: float
     provider_stage_seconds: Mapping[str, float] = field(default_factory=dict)
+    provider_stage_outcomes: Mapping[str, str] = field(default_factory=dict)
     provider_calls: int = 0
     attempts: int = 1
     semantic_verdict: str | None = None
@@ -348,6 +364,7 @@ def _load_existing_receipts(
             outcome=EvaluationOutcome(item["outcome"]),
             elapsed_seconds=float(item["elapsed_seconds"]),
             provider_stage_seconds=item.get("provider_stage_seconds", {}),
+            provider_stage_outcomes=item.get("provider_stage_outcomes", {}),
             provider_calls=int(item.get("provider_calls", 0)),
             attempts=int(item.get("attempts", 1)),
             semantic_verdict=item.get("semantic_verdict"),
@@ -428,6 +445,7 @@ class SequentialEvaluationRunner:
                         EvaluationOutcome.CASE_DEADLINE_EXCEEDED,
                         provider_calls=execution.provider_calls,
                         stage_timings=execution.stage_timings,
+                        stage_outcomes=execution.stage_outcomes,
                         detail_code="case_deadline",
                     )
                 if not _retryable(execution.outcome) or attempts > self.config.max_retries:
@@ -439,6 +457,7 @@ class SequentialEvaluationRunner:
                 outcome=execution.outcome,
                 elapsed_seconds=max(0.0, self.clock() - started),
                 provider_stage_seconds=dict(execution.stage_timings),
+                provider_stage_outcomes=dict(execution.stage_outcomes),
                 provider_calls=execution.provider_calls,
                 attempts=attempts,
                 semantic_verdict=execution.semantic_verdict,
@@ -498,8 +517,12 @@ def write_markdown_report(run: EvaluationRun, path: str | Path) -> None:
         f"- Corpus digest: `{run.corpus_digest}`",
         f"- Mode: `{run.config.mode}`",
         f"- Provider/model: `{run.config.provider}` / `{run.config.model}`",
+        f"- Model artifact digest: `{run.config.model_artifact_digest or 'unspecified'}`",
         f"- Prompt version: `{run.config.prompt_version}`",
+        f"- Prompt hash: `{run.config.prompt_hash or 'unspecified'}`",
         f"- Commit: `{run.config.commit_sha or 'unspecified'}`",
+        f"- Variant: `{run.config.variant}`",
+        f"- Run ID: `{run.config.run_id or 'unspecified'}`",
         f"- Request timeout: `{run.config.request_timeout_seconds}s`",
         f"- Case deadline: `{run.config.case_deadline_seconds}s`",
         "",

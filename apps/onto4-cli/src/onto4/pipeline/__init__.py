@@ -36,6 +36,7 @@ from .evaluation import (
     offline_fixture_executor,
     write_markdown_report,
 )
+from .model_evaluation import ModelCaseExecutor
 from .refinement import (
     RefinementBatchResult,
     RefinementCommitLedger,
@@ -115,6 +116,7 @@ __all__ = [
     "corpus_digest",
     "offline_fixture_executor",
     "write_markdown_report",
+    "ModelCaseExecutor",
     "RefinementCommitLedger",
     "RefinementBatchResult",
     "RefinementCommitment",

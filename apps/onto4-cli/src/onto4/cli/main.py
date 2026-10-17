@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -16,6 +17,7 @@ from onto4.core import AssessmentResult
 from onto4.pipeline import (
     EvaluationConfig,
     ModelClarificationPolicy,
+    ModelCaseExecutor,
     SequentialEvaluationRunner,
     ask_per_reading,
     corpus_digest,
@@ -226,19 +228,73 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
     try:
         corpus = load_clarification_corpus(args.corpus)
         digest = corpus_digest(args.corpus)
+        contexts = {}
+        if args.mode == "model-backed":
+            if not args.endpoint or not args.model:
+                raise ValueError("Model-backed evaluation requires --endpoint and --model.")
+            if not args.context:
+                raise ValueError("Model-backed evaluation requires at least one --context.")
+            auth = EndpointAuthKind(args.auth)
+            token = os.environ.get(args.token_env) if auth is EndpointAuthKind.Bearer else None
+            profile = ProviderProfile(
+                base_url=args.endpoint,
+                model=args.model,
+                auth=auth,
+                timeout_seconds=args.timeout,
+                max_output_tokens=args.max_output_tokens,
+                disable_thinking=not args.enable_thinking,
+                temperature=args.temperature,
+            )
+            client = OpenAICompatibleClient(profile, bearer_token=token)
+            for context_path in args.context:
+                context_id = context_path.stem
+                if context_id in contexts:
+                    raise ValueError(f"Duplicate context id from --context: {context_id!r}.")
+                contexts[context_id] = load_context(context_path)
+            trace = _print_provider_trace if args.debug else None
+            interpretation_adapter = OpenAICompatibleInterpretationProvider(client)
+            formalization_adapter = OpenAICompatibleFormalizationProvider(
+                client, context_ids=tuple(contexts)
+            )
+            executor = ModelCaseExecutor(
+                interpretation_adapter,
+                formalization_adapter,
+                contexts,
+                max_turns=args.max_turns,
+                trace_sink=trace,
+            )
+            interpretation_adapter.trace = executor.provider_trace
+            formalization_adapter.trace = executor.provider_trace
+            provider = "openai-compatible"
+            model = args.model
+        else:
+            executor = offline_fixture_executor
+            provider = "fixture"
+            model = "offline-fixture"
         config = EvaluationConfig(
             request_timeout_seconds=args.timeout,
             case_deadline_seconds=args.case_deadline,
             inter_case_delay_seconds=args.inter_case_delay,
             max_retries=args.max_retries,
-            provider="fixture",
-            model="offline-fixture",
-            mode="offline",
+            provider=provider,
+            model=model,
+            mode=args.mode,
             prompt_version=args.prompt_version,
+            prompt_hash=args.prompt_hash,
             commit_sha=os.environ.get("ONTO4_COMMIT_SHA"),
+            model_artifact_digest=args.model_artifact_digest,
+            temperature=args.temperature if args.mode == "model-backed" else None,
+            thinking_enabled=args.enable_thinking if args.mode == "model-backed" else None,
+            max_output_tokens=args.max_output_tokens if args.mode == "model-backed" else None,
+            variant=args.variant,
+            run_id=args.run_id,
+            context_profile_digests={
+                path.stem: hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in args.context or ()
+            },
         )
         run = SequentialEvaluationRunner(
-            offline_fixture_executor,
+            executor,
             config=config,
             receipt_path=args.receipt,
         ).run(corpus, digest=digest)
@@ -341,6 +397,24 @@ def build_parser() -> argparse.ArgumentParser:
     corpus_parser.add_argument("--inter-case-delay", type=float, default=0.0)
     corpus_parser.add_argument("--max-retries", type=int, default=0)
     corpus_parser.add_argument("--prompt-version", default="unspecified")
+    corpus_parser.add_argument("--prompt-hash")
+    corpus_parser.add_argument("--model-artifact-digest")
+    corpus_parser.add_argument(
+        "--mode", choices=("offline", "model-backed"), default="offline",
+        help="Use deterministic protocol coverage or real provider execution.",
+    )
+    corpus_parser.add_argument("--endpoint", help="OpenAI-compatible base URL (model-backed).")
+    corpus_parser.add_argument("--model", help="Provider model identifier (model-backed).")
+    corpus_parser.add_argument("--auth", choices=("none", "bearer"), default="none")
+    corpus_parser.add_argument("--token-env", default="ONTO4_API_TOKEN")
+    corpus_parser.add_argument("--context", action="append", type=Path)
+    corpus_parser.add_argument("--max-output-tokens", type=int, default=1024)
+    corpus_parser.add_argument("--temperature", type=float, default=0.0)
+    corpus_parser.add_argument("--enable-thinking", action="store_true")
+    corpus_parser.add_argument("--max-turns", type=int, default=4)
+    corpus_parser.add_argument("--variant", default="default")
+    corpus_parser.add_argument("--run-id")
+    corpus_parser.add_argument("--debug", action="store_true")
     return parser
 
 

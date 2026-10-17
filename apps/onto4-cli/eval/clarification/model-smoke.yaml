@@ -1,0 +1,14 @@
+version: 2
+name: model-smoke
+visibility:
+  model_input: utterance_only
+context_profiles:
+  physical_objects: "The supplied physical-object ontology and evidence profile."
+cases:
+  - case_id: mass-integer-7
+    evaluation_class: operational_smoke
+    context: physical_objects
+    utterance: "What is the mass of integer 7?"
+    expected_clarification: none
+    expected_after_answer:
+      verdict: C
