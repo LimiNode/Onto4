@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -19,6 +19,8 @@ class ClarificationCorpusCase:
     expected_after_answer: Mapping[str, Any]
     model_input: str = "utterance_only"
     mode: str = "single_pass"
+    evaluation_class: str = "unspecified"
+    dialogue: tuple[Mapping[str, Any], ...] = ()
 
     def public_input(self) -> dict[str, str]:
         """Return only fields allowed in a model-facing evaluation request."""
@@ -35,6 +37,7 @@ class ClarificationCorpus:
     name: str
     cases: tuple[ClarificationCorpusCase, ...]
     model_input: str = "utterance_only"
+    context_profiles: Mapping[str, str] = field(default_factory=dict)
 
 
 def _mapping(value: Any, path: str) -> Mapping[str, Any]:
@@ -70,6 +73,18 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
     raw_cases = root.get("cases")
     if not isinstance(raw_cases, list) or not raw_cases:
         raise ValueError("corpus.cases must be a non-empty array.")
+    raw_profiles = root.get("context_profiles", {})
+    if not isinstance(raw_profiles, Mapping):
+        raise ValueError("corpus.context_profiles must be a mapping when supplied.")
+    context_profiles: dict[str, str] = {}
+    for profile_id, description in raw_profiles.items():
+        if not isinstance(profile_id, str) or not profile_id.strip():
+            raise ValueError("context_profiles keys must be non-empty strings.")
+        if not isinstance(description, str) or not description.strip():
+            raise ValueError(
+                f"context_profiles[{profile_id!r}] must be a non-empty description."
+            )
+        context_profiles[profile_id] = description
 
     cases: list[ClarificationCorpusCase] = []
     seen_ids: set[str] = set()
@@ -102,21 +117,77 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
         context = item.get("context")
         if context is not None and (not isinstance(context, str) or not context.strip()):
             raise ValueError(f"cases[{index}].context must be a non-empty string when supplied.")
+        if context is not None and context_profiles and context not in context_profiles:
+            raise ValueError(
+                f"cases[{index}].context {context!r} is not declared in context_profiles."
+            )
+        case_model_input = item.get("model_input", model_input)
+        if not isinstance(case_model_input, str) or case_model_input not in {
+            "utterance_only",
+            "contextual",
+        }:
+            raise ValueError(
+                f"cases[{index}].model_input must be 'utterance_only' or 'contextual'."
+            )
         mode = item.get("mode", "single_pass")
         if mode not in {"single_pass", "dialogue"}:
             raise ValueError(
                 f"cases[{index}].mode must be 'single_pass' or 'dialogue'."
+            )
+        evaluation_class = item.get("evaluation_class", "unspecified")
+        if not isinstance(evaluation_class, str) or not evaluation_class.strip():
+            raise ValueError(
+                f"cases[{index}].evaluation_class must be a non-empty string."
+            )
+        raw_dialogue = item.get("dialogue", [])
+        if raw_dialogue is None:
+            raw_dialogue = []
+        if not isinstance(raw_dialogue, list):
+            raise ValueError(f"cases[{index}].dialogue must be an array.")
+        if version < 2:
+            dialogue = []
+        else:
+            dialogue = []
+            seen_turn_ids: set[str] = set()
+            for turn_index, raw_turn in enumerate(raw_dialogue):
+                turn = _mapping(raw_turn, f"cases[{index}].dialogue[{turn_index}]")
+                turn_id = turn.get("turn_id")
+                role = turn.get("role")
+                text = turn.get("text")
+                if not isinstance(turn_id, str) or not turn_id.strip():
+                    raise ValueError(
+                        f"cases[{index}].dialogue[{turn_index}].turn_id must be non-empty."
+                    )
+                if turn_id in seen_turn_ids:
+                    raise ValueError(
+                        f"Duplicate dialogue turn_id {turn_id!r} in case {case_id!r}."
+                    )
+                seen_turn_ids.add(turn_id)
+                if role not in {"user", "assistant"}:
+                    raise ValueError(
+                        f"cases[{index}].dialogue[{turn_index}].role must be user or assistant."
+                    )
+                if not isinstance(text, str) or not text.strip():
+                    raise ValueError(
+                        f"cases[{index}].dialogue[{turn_index}].text must be non-empty."
+                    )
+                dialogue.append(dict(turn))
+        if version >= 2 and mode == "dialogue" and len(dialogue) < 2:
+            raise ValueError(
+                f"cases[{index}].dialogue must contain at least two turns."
             )
         cases.append(
             ClarificationCorpusCase(
                 case_id=case_id,
                 utterance=utterance,
                 context=context,
-                model_input=model_input,
+                model_input=case_model_input,
                 hidden_interpretation=hidden_interpretation,
                 expected_clarification=expected_clarification,
                 expected_after_answer=expected_after_answer,
                 mode=mode,
+                evaluation_class=evaluation_class,
+                dialogue=tuple(dialogue),
             )
         )
     return ClarificationCorpus(
@@ -124,6 +195,7 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
         name=name,
         cases=tuple(cases),
         model_input=model_input,
+        context_profiles=context_profiles,
     )
 
 
