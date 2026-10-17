@@ -127,9 +127,14 @@ intent mismatch is also recorded separately from a semantic verdict.
 The v2 corpus currently contains context specifications that are not all
 materialized as executable profiles. The available profile stems are
 `physical_objects`, `verified_physical_objects`, `continuity`,
-`identity_and_genome`, `process`, `relational_time` and `substance`; ids such as `ordinary_arithmetic`,
-`fictional_character`, `identity_path` and `historical_caloric` remain
-specification-only until their typed ontologies are added. The runner reports
+`identity_and_genome`, `process`, `relational_time` and `substance`. The
+remaining v2 ids — `ordinary_physical`, `fictional_character`,
+`ordinary_arithmetic`, `identity_path`, `identity_bytes`, `flash_drive_process`,
+`flash_drive_substrate`, `historical_caloric`, `modern_thermal`,
+`closed_box_unknown`, `closed_box_red_confirmed`, `ordinary_reference`,
+`fiction_holmes`, `truth_self_reference`, `quote_context`,
+`distinction_profile` and `sequence_time` — remain specification-only until
+their typed ontologies are added. The runner reports
 `context_unavailable` for a missing declared profile and never substitutes a
 different profile or treats its prose description as an executable ontology.
 
