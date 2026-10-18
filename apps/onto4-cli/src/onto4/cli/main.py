@@ -18,6 +18,7 @@ from onto4.pipeline import (
     EvaluationConfig,
     ModelCaseExecutor,
     run_paired_benchmark,
+    write_benchmark_diagnostics,
     write_benchmark_report,
     ModelClarificationPolicy,
     SequentialEvaluationRunner,
@@ -421,7 +422,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
             mode="model-backed",
             prompt_version=args.prompt_version,
             prompt_hash=args.prompt_hash,
-            commit_sha=os.environ.get("ONTO4_COMMIT_SHA"),
+            commit_sha=args.commit_sha,
             model_artifact_digest=args.model_artifact_digest,
             temperature=args.temperature,
             thinking_enabled=args.enable_thinking,
@@ -443,8 +444,22 @@ def _run_benchmark(args: argparse.Namespace) -> int:
             config=config,
             receipt_dir=args.artifacts_dir,
             output_cost_per_million=args.output_cost_per_million,
+            metadata={
+                "backend": args.backend_description,
+                "oracle_version": args.oracle_version,
+                "model_artifact_digest": args.model_artifact_digest,
+                "sampling": {
+                    "temperature": args.temperature,
+                    "max_output_tokens": args.max_output_tokens,
+                    "thinking_enabled": args.enable_thinking,
+                },
+            },
         )
         write_benchmark_report(run, args.report)
+        diagnostics_path = args.diagnostics or args.report.with_name(
+            f"{args.report.stem}.diagnostics.json"
+        )
+        write_benchmark_diagnostics(run, diagnostics_path)
         print(json.dumps({
             "corpus": run.corpus_name,
             "cases": run.summary.total_cases,
@@ -453,6 +468,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
             "semantic_errors": run.summary.semantic_errors,
             "operational_failures": run.summary.operational_failures,
             "report": str(args.report),
+            "diagnostics": str(diagnostics_path),
             "artifacts": str(args.artifacts_dir),
         }, ensure_ascii=False, indent=2))
         return 0
@@ -623,6 +639,21 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--prompt-hash")
     benchmark_parser.add_argument("--model-artifact-digest")
     benchmark_parser.add_argument(
+        "--commit-sha",
+        default=os.environ.get("ONTO4_COMMIT_SHA"),
+        help="Exact source Git SHA recorded in the benchmark manifest.",
+    )
+    benchmark_parser.add_argument(
+        "--backend-description",
+        default="unspecified",
+        help="Backend/runtime description recorded in the manifest.",
+    )
+    benchmark_parser.add_argument(
+        "--oracle-version",
+        default="ab-benchmark-v2",
+        help="Oracle/scorer version recorded in the manifest.",
+    )
+    benchmark_parser.add_argument(
         "--depth",
         choices=("auto", *(depth.value for depth in ConceptualDepth)),
         default="auto",
@@ -637,8 +668,13 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument(
         "--output-cost-per-million",
         type=float,
-        default=0.0,
+        default=None,
         help="Optional output-token price in USD per million tokens.",
+    )
+    benchmark_parser.add_argument(
+        "--diagnostics",
+        type=Path,
+        help="Optional safe per-case diagnostics report path.",
     )
     return parser
 

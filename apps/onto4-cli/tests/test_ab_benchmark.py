@@ -1,14 +1,29 @@
 from pathlib import Path
 
+import pytest
+
 from onto4.pipeline import (
+    BenchmarkStatus,
+    DEFAULT_BENCHMARK_CONDITIONS,
     EvaluationConfig,
     EvaluationOutcome,
+    IsolatedRefinementRun,
+    rescore_paired_receipts,
+    run_isolated_refinement_pair,
     run_paired_benchmark,
 )
 from onto4.pipeline.clarification_corpus import ClarificationCorpus, ClarificationCorpusCase
 from onto4.pipeline.clarification_corpus import load_clarification_corpus
 from onto4.pipeline.evaluation import CaseExecution
 from onto4.pipeline.ab_benchmark import BenchmarkCondition, write_benchmark_report
+from onto4.reasoning import (
+    Ambiguity,
+    ClarificationQuestion,
+    ClarificationKind,
+    ClarificationTurn,
+    ConceptualDepth,
+    InterpretationSpace,
+)
 
 
 def _corpus() -> ClarificationCorpus:
@@ -39,7 +54,7 @@ def test_paired_benchmark_runs_all_four_cells_and_preserves_pairing(tmp_path):
                 EvaluationOutcome.ASSESSMENT_COMPLETED,
                 provider_calls=2,
                 semantic_verdict="T" if wins else "F",
-                diagnostics={"clarification_turns": 1},
+                    diagnostics={"clarification_turns": 1, "clarification_turns_known": True},
                 stage_details={"formalization": "finish_reason=stop, completion_tokens=7"},
             )
 
@@ -60,6 +75,7 @@ def test_paired_benchmark_runs_all_four_cells_and_preserves_pairing(tmp_path):
     assert run.summary.semantic_errors == 2
     assert run.summary.pair_wins == {
         "A1_vs_B1": {"A1": 1, "B1": 0, "tie": 0},
+        "A2_vs_B2": {"A2": 1, "B2": 0, "tie": 0},
         "A1_vs_A2": {"A1": 0, "A2": 0, "tie": 1},
         "B1_vs_B2": {"B1": 0, "B2": 0, "tie": 1},
     }
@@ -72,7 +88,164 @@ def test_paired_benchmark_runs_all_four_cells_and_preserves_pairing(tmp_path):
 
     report = tmp_path / "benchmark.json"
     write_benchmark_report(run, report)
-    assert '"corpus_digest"' in report.read_text(encoding="utf-8")
+    payload = report.read_text(encoding="utf-8")
+    assert '"corpus_digest"' in payload
+    assert '"run_configs"' in payload
+    assert '"A2_vs_B2"' in payload
+
+
+def test_execution_failure_is_unverified_and_not_a_semantic_error():
+    corpus = _corpus()
+
+    def executor_factory(_condition):
+        return lambda case, *, request_timeout_seconds: CaseExecution(
+            EvaluationOutcome.SCHEMA_INVALID,
+            semantic_verdict="T",
+            diagnostics={"clarification_turns_known": False},
+        )
+
+    run = run_paired_benchmark(
+        corpus,
+        executor_factory=executor_factory,
+        config=EvaluationConfig(),
+    )
+
+    assert all(cell.semantic_status == BenchmarkStatus.UNVERIFIED.value for cell in run.cells)
+    assert run.summary.semantic_errors == 0
+    assert run.summary.operational_failures == 4
+
+
+def test_dialogue_incomplete_does_not_count_as_reassessment_success():
+    corpus = ClarificationCorpus(
+        version=2,
+        name="dialogue-oracle",
+        cases=(
+            ClarificationCorpusCase(
+                case_id="dialogue",
+                utterance="Claim.",
+                context=None,
+                hidden_interpretation=None,
+                expected_clarification={"kind": "Meaning"},
+                expected_after_answer={"disposition": "dialogue_reassessment_required"},
+                mode="dialogue",
+            ),
+        ),
+    )
+
+    def executor_factory(_condition):
+        return lambda case, *, request_timeout_seconds: CaseExecution(
+            EvaluationOutcome.DIALOGUE_INCOMPLETE,
+            diagnostics={
+                "questions_issued": 1,
+                "answers_consumed": 1,
+                "refinement_accepted": True,
+                "reassessment_performed": False,
+                "question_kind": "Meaning",
+                "clarification_turns_known": False,
+            },
+        )
+
+    run = run_paired_benchmark(corpus, executor_factory=executor_factory, config=EvaluationConfig())
+    assert all(cell.workflow_status == BenchmarkStatus.INCORRECT.value for cell in run.cells)
+    assert all(cell.semantic_status == BenchmarkStatus.NOT_COMPARABLE.value for cell in run.cells)
+    assert run.summary.semantic_errors == 0
+
+
+def test_missing_semantic_oracle_is_not_comparable():
+    corpus = ClarificationCorpus(
+        version=2,
+        name="no-semantic-oracle",
+        cases=(
+            ClarificationCorpusCase(
+                case_id="no-oracle",
+                utterance="Claim.",
+                context=None,
+                hidden_interpretation=None,
+                expected_clarification=None,
+                expected_after_answer={},
+            ),
+        ),
+    )
+    run = run_paired_benchmark(
+        corpus,
+        executor_factory=lambda _condition: (
+            lambda case, *, request_timeout_seconds: CaseExecution(
+                EvaluationOutcome.ASSESSMENT_COMPLETED,
+                diagnostics={"clarification_turns": 0, "clarification_turns_known": True},
+            )
+        ),
+        config=EvaluationConfig(),
+    )
+    assert all(cell.semantic_status == BenchmarkStatus.NOT_COMPARABLE.value for cell in run.cells)
+    assert run.summary.semantic_errors == 0
+    assert all(value is None for value in run.summary.estimated_output_cost_usd.values())
+
+
+def test_rescore_existing_receipts_without_provider_calls(tmp_path):
+    run = run_paired_benchmark(
+        _corpus(),
+        executor_factory=lambda _condition: (
+            lambda case, *, request_timeout_seconds: CaseExecution(
+                EvaluationOutcome.ASSESSMENT_COMPLETED,
+                semantic_verdict="T",
+                diagnostics={"clarification_turns": 0, "clarification_turns_known": True},
+            )
+        ),
+        config=EvaluationConfig(),
+        receipt_dir=tmp_path,
+    )
+    rescored = rescore_paired_receipts(_corpus(), tmp_path)
+    assert rescored.summary.semantic_errors == run.summary.semantic_errors == 0
+    assert rescored.metadata["benchmark_type"] == "e2e_paired_by_case_rescore"
+
+
+def test_e2e_runner_requires_the_complete_four_cell_design():
+    with pytest.raises(ValueError, match="requires exactly A1"):
+        run_paired_benchmark(
+            _corpus(),
+            executor_factory=lambda _condition: (
+                lambda case, *, request_timeout_seconds: CaseExecution(
+                    EvaluationOutcome.ASSESSMENT_COMPLETED
+                )
+            ),
+            config=EvaluationConfig(),
+            conditions=DEFAULT_BENCHMARK_CONDITIONS[:3],
+        )
+
+
+def test_isolated_refinement_pair_uses_one_initial_snapshot_and_validates_provenance():
+    initial = InterpretationSpace(
+        "initial",
+        "Claim.",
+        ConceptualDepth.Philosophical,
+        ambiguities=(Ambiguity("ambiguity-0", "same", "identity"),),
+    )
+    question = ClarificationQuestion(
+        "meaning:ambiguity-0",
+        ClarificationKind.Meaning,
+        "Clarify.",
+        ("ambiguity-0",),
+        target_family="same",
+    )
+
+    def transition(same_initial, same_question, answer):
+        assert same_initial is initial
+        assert same_question is question
+        successor = InterpretationSpace("successor", same_initial.source_text, same_initial.conceptual_depth)
+        return successor, ClarificationTurn(initial.id, question.id, answer, successor.id)
+
+    isolated = run_isolated_refinement_pair(
+        initial,
+        question,
+        "same individual",
+        full_snapshot=transition,
+        typed_delta=transition,
+        case_id="identity",
+    )
+    assert isinstance(isolated, IsolatedRefinementRun)
+    assert isolated.initial_snapshot_digest
+    assert [cell.outcome for cell in isolated.cells] == ["accepted", "accepted"]
+    assert isolated.cells[0].semantic_obligation_digest == isolated.cells[1].semantic_obligation_digest
 
 
 def test_philosophical_smoke_corpus_is_executable_and_has_two_dialogues():

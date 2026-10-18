@@ -73,6 +73,7 @@ class _ReplayPolicy:
     base: TransitionAwareClarificationPolicy
     expected_intents: tuple[_QuestionIntent, ...] = ()
     issued_questions: int = 0
+    telemetry: dict[str, object] = field(default_factory=dict, compare=False)
     _last_questions: tuple = field(default=(), init=False, compare=False)
 
     def questions(self, context):
@@ -123,21 +124,27 @@ class _ReplayPolicy:
         return self.base.choose_for_kind(context, kind)
 
     def successor(self, *, interpretation, question, answer):
-        return self.base.successor(
+        result = self.base.successor(
             interpretation=interpretation,
             question=question,
             answer=answer,
         )
+        self.telemetry["refinement_accepted"] = True
+        self.telemetry["last_stage"] = "refinement_accepted"
+        return result
 
     def prepare_successor(self, *, interpretation, question, answer):
         prepare = getattr(self.base, "prepare_successor", None)
         if prepare is None:
             return None
-        return prepare(
+        result = prepare(
             interpretation=interpretation,
             question=question,
             answer=answer,
         )
+        self.telemetry["refinement_accepted"] = True
+        self.telemetry["last_stage"] = "refinement_accepted"
+        return result
 
     def mark_issued(self) -> None:
         object.__setattr__(self, "issued_questions", self.issued_questions + 1)
@@ -406,9 +413,26 @@ class ModelCaseExecutor:
     ) -> CaseExecution:
         self._last_events = []
         self._set_provider_deadline(monotonic() + request_timeout_seconds)
+        workflow: dict[str, object] = {
+            "last_stage": "started",
+            "questions_issued": 0,
+            "answers_consumed": 0,
+            "refinement_accepted": False,
+            "reassessment_performed": False,
+            "clarification_turns": None,
+            "clarification_turns_known": False,
+        }
+
+        def with_workflow(diagnostics: Mapping[str, object] | None = None) -> dict[str, object]:
+            result = dict(diagnostics or {})
+            result.update(workflow)
+            return result
+
         try:
             request = self._request(case)
+            workflow["last_stage"] = "request_built"
             case_contexts = self._case_contexts(case)
+            workflow["last_stage"] = "contexts_bound"
             if case.mode == "dialogue" and not case.dialogue:
                 raise _ReplayError("script_exhausted")
             if case.mode == "dialogue" and case.dialogue:
@@ -421,6 +445,16 @@ class ModelCaseExecutor:
 
                 def validate_question(_, question) -> None:
                     policy.validate_issued(question)
+                    workflow.update(
+                        {
+                            "questions_issued": int(workflow["questions_issued"]) + 1,
+                            "question_id": question.id,
+                            "question_kind": question.kind.value,
+                            "question_target_family": question.target_family,
+                            "question_target_ids": tuple(question.target_ids),
+                            "last_stage": "question_issued",
+                        }
+                    )
 
                 def input_fn(_: str) -> str:
                     nonlocal answer_index
@@ -429,11 +463,18 @@ class ModelCaseExecutor:
                         raise _ReplayError("script_exhausted")
                     answer = answers[answer_index]
                     answer_index += 1
+                    workflow.update(
+                        {
+                            "answers_consumed": int(workflow["answers_consumed"]) + 1,
+                            "last_stage": "answer_consumed",
+                        }
+                    )
                     return answer
 
                 policy = _ReplayPolicy(
                     self._refinement_policy(),
                     expected_intents=expected_intents,
+                    telemetry=workflow,
                 )
                 result = run_interactive_dialogue(
                     request,
@@ -446,6 +487,20 @@ class ModelCaseExecutor:
                     output_fn=lambda _: None,
                     before_answer_fn=validate_question,
                     max_turns=self.max_turns,
+                )
+                workflow.update(
+                    {
+                        "clarification_turns": len(result.progress.entries),
+                        "clarification_turns_known": True,
+                        "reassessment_performed": bool(
+                            result.progress.entries and result.session.assessment is not None
+                        ),
+                        "last_stage": (
+                            "reassessment_completed"
+                            if result.progress.entries and result.session.assessment is not None
+                            else "initial_assessment_completed"
+                        ),
+                    }
                 )
                 if (
                     result.stop_reason == "complete"
@@ -465,7 +520,7 @@ class ModelCaseExecutor:
                         stage_outcomes=self._metadata()[2],
                         stage_details=self._metadata()[3],
                         detail_code="required_question_not_issued",
-                        diagnostics=(
+                        diagnostics=with_workflow(
                             self._diagnostics(
                                 assessment.ask_result,
                                 pending=result.session.clarification.pending is not None,
@@ -499,6 +554,14 @@ class ModelCaseExecutor:
                     contexts=case_contexts,
                     clarification_policy=policy,
                 )
+                workflow.update(
+                    {
+                        "clarification_turns": 0,
+                        "clarification_turns_known": True,
+                        "reassessment_performed": True,
+                        "last_stage": "assessment_completed",
+                    }
+                )
                 outcome = {
                     PipelineDisposition.Complete: EvaluationOutcome.ASSESSMENT_COMPLETED,
                     PipelineDisposition.AskClarification: EvaluationOutcome.CLARIFICATION_REQUESTED,
@@ -521,7 +584,7 @@ class ModelCaseExecutor:
                 stage_details=details,
                 semantic_verdict=verdict,
                 detail_code="model_backed",
-                diagnostics=self._diagnostics(
+                diagnostics=with_workflow(self._diagnostics(
                     ask_result,
                     pending=(
                         result.session.clarification.pending is not None
@@ -532,7 +595,7 @@ class ModelCaseExecutor:
                         bool(result.progress.entries) if case.mode == "dialogue" else False
                     ),
                     progress=(result.progress if case.mode == "dialogue" else None),
-                ) if ask_result is not None else {},
+                )) if ask_result is not None else with_workflow(),
             )
         except ProviderTransportError as exc:
             calls, timings, outcomes, details = self._metadata()
@@ -543,6 +606,7 @@ class ModelCaseExecutor:
                 stage_outcomes=outcomes,
                 stage_details=details,
                 detail_code=type(exc).__name__,
+                diagnostics=with_workflow(),
             )
 
         except ProviderSchemaError as exc:
@@ -554,6 +618,7 @@ class ModelCaseExecutor:
                 stage_outcomes=outcomes,
                 stage_details=details,
                 detail_code=getattr(exc, "code", "schema_invalid"),
+                diagnostics=with_workflow(),
             )
         except _ContextUnavailable as exc:
             calls, timings, outcomes, details = self._metadata()
@@ -564,6 +629,7 @@ class ModelCaseExecutor:
                 stage_outcomes=outcomes,
                 stage_details=details,
                 detail_code=str(exc),
+                diagnostics=with_workflow(),
             )
         except RefinementUnsupportedError as exc:
             calls, timings, outcomes, details = self._metadata()
@@ -574,6 +640,7 @@ class ModelCaseExecutor:
                 stage_outcomes=outcomes,
                 stage_details=details,
                 detail_code="typed_delta_unsupported",
+                diagnostics=with_workflow(),
             )
         except _ReplayError as exc:
             calls, timings, outcomes, details = self._metadata()
@@ -589,6 +656,7 @@ class ModelCaseExecutor:
                 stage_outcomes=outcomes,
                 stage_details=details,
                 detail_code=exc.code,
+                diagnostics=with_workflow(),
             )
         except (KeyError, ValueError) as exc:
             calls, timings, outcomes, details = self._metadata()
@@ -599,6 +667,7 @@ class ModelCaseExecutor:
                 stage_outcomes=outcomes,
                 stage_details=details,
                 detail_code=type(exc).__name__,
+                diagnostics=with_workflow(),
             )
         finally:
             self._set_provider_deadline(None)

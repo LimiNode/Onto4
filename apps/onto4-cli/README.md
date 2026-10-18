@@ -339,10 +339,12 @@ context_late      A1                  B1
 context_aware     A2                  B2
 ```
 
-`A1` versus `B1` is the refinement comparison. `A1` versus `A2` and `B1`
-versus `B2` are the context-timing comparisons. The pairing is by stable
-`case_id`; a cell is not compared with a different utterance or a different
-corpus version.
+`A1` versus `B1` and `A2` versus `B2` are the refinement comparisons.
+`A1` versus `A2` and `B1` versus `B2` are the context-timing comparisons. The
+pairing is by stable `case_id`; a cell is not compared with a different
+utterance or a different corpus version. This runner is explicitly an
+**E2E paired-by-case** experiment: it does not claim that the model produced
+identical initial `InterpretationSpace` snapshots in the four cells.
 
 The starter corpus is
 `eval/clarification/ab-philosophical-smoke.yaml`. It is deliberately small
@@ -370,16 +372,41 @@ onto4 benchmark \
   --report artifacts/ab-smoke/report.json
 ```
 
-Each cell writes privacy-preserving receipts. The paired report records oracle
-comparisons (when a case declares one), semantic mismatches separately from
-operational failures, clarification turns, provider calls, completion tokens,
-elapsed time and per-pair wins/ties. `--output-cost-per-million` may add an
-output-token-only cost estimate; prompt-token costs are not inferred.
+Each cell writes privacy-preserving receipts. The paired report keeps three
+axes separate:
+
+```text
+execution: successful | failed | incomplete | unsupported
+workflow:  correct | incorrect | unverified | not_comparable
+semantic:  correct | incorrect | unverified | not_comparable
+```
+
+Schema/provenance failures and exhausted scripts therefore do not become
+semantic errors. A semantic mismatch is counted only when a successful cell
+has a sufficient semantic oracle. Unknown clarification-turn counts remain
+`null`, rather than being reported as zero. The report also contains per-cell
+execution/workflow/semantic counts, success denominators, all four pairings,
+safe workflow diagnostics and the exact run configurations. An omitted
+`--output-cost-per-million` is recorded as `not_priced` with a `null` cost;
+prompt-token costs are never inferred.
+
+For a true refinement comparison, use the isolated protocol API
+`run_isolated_refinement_pair()`: one immutable initial snapshot, one
+host-issued question and one scripted answer are passed independently to the
+full-snapshot and typed-delta transitions. Their accepted transitions and
+semantic-obligation digests are reported separately from E2E metrics.
+
+Reports should include a source SHA, model artifact digest, prompt
+version/hash, context digests, sampling settings, backend description, oracle
+version and run identifier. A single condition order is not a latency claim;
+repeat runs with a warm-up and permuted condition order before comparing
+timings.
 
 The benchmark does not turn a model response into an Onto4 verdict. `T`, `F`,
 `U` and `C` still come only from the deterministic core, and no semantic
-fidelity claim is made without an oracle comparison. Until a real endpoint is
-run, the repository provides the corpus, runner and tests—not Bonsai results.
+fidelity claim is made without an oracle comparison. The command also writes a
+safe per-case diagnostics report; it contains stages, counts, provenance
+codes and failure classes, never prompts, raw model payloads or credentials.
 
 ## Interactive evaluation corpus
 
