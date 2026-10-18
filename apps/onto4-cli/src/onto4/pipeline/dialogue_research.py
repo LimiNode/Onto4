@@ -33,6 +33,8 @@ from .clarification_corpus import ClarificationCorpus
 from .evaluation import CaseExecutor, EvaluationConfig
 from .interactive import ModelClarificationPolicy, TypedDeltaClarificationPolicy
 from .orchestration import ReasoningSession
+from .decision_bridge import CLARIFICATION_KIND_BY_REFINEMENT
+from onto4.reasoning import PipelineDisposition
 
 
 @dataclass(frozen=True)
@@ -382,6 +384,27 @@ def run_session_bound_isolated_refinement_pair(
     question = pending.decision.question
     if question is None:
         raise ValueError("host-issued pending clarification has no question.")
+    assessment_question = session.assessment.ask_result.clarification_question
+    if (
+        assessment_question is None
+        or assessment_question.id != question.id
+        or assessment_question.kind is not question.kind
+        or tuple(assessment_question.target_ids) != tuple(question.target_ids)
+    ):
+        raise ValueError("pending question does not match the assessed host question.")
+    decision = pending.decision
+    decision_result = decision.decision_result
+    if (
+        decision.issued_question_id != question.id
+        or decision.issued_question_kind is not question.kind
+        or decision_result.request.state.get("interpretation_id")
+        != session.clarification.interpretation.id
+        or decision_result.disposition is not PipelineDisposition.AskClarification
+        or decision_result.selected_choice not in decision_result.request.choices
+        or CLARIFICATION_KIND_BY_REFINEMENT.get(decision_result.selected_choice)
+        is not question.kind
+    ):
+        raise ValueError("pending question provenance is not host-admissible.")
     return _run_session_bound_pair(
         session.clarification.interpretation,
         question,
