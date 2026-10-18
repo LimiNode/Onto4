@@ -285,6 +285,11 @@ def _cell(
     )
     diagnostic_keys = {
         "detail_code",
+        "question_candidate_generated",
+        "question_candidate_count",
+        "question_selected",
+        "intent_admitted",
+        "question_intent_failure_reason",
         "last_stage",
         "questions_issued",
         "answers_consumed",
