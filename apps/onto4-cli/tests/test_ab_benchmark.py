@@ -82,6 +82,7 @@ def test_philosophical_smoke_corpus_is_executable_and_has_two_dialogues():
     )
 
     assert corpus.name == "ab-philosophical-smoke"
+    assert corpus.model_input == "contextual"
     assert len(corpus.cases) == 4
     assert sum(case.mode == "dialogue" for case in corpus.cases) == 2
     assert {case.context for case in corpus.cases} == {

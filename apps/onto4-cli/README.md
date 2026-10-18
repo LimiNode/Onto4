@@ -349,7 +349,11 @@ The starter corpus is
 and executable: continuity and substance provide same-utterance controls, and
 the genome and intrinsic-time cases exercise bounded clarification dialogues.
 The hidden expected readings remain in the corpus for the evaluation driver;
-they are not included in model-facing input.
+they are not included in model-facing input. This smoke corpus is contextual:
+the `context_late` cells receive the case context identifier, while
+`context_aware` additionally receives the bounded ontology projection. This
+keeps the context-timing comparison executable rather than silently running
+the same interpretation input in all four cells.
 
 Run it against an OpenAI-compatible endpoint with:
 

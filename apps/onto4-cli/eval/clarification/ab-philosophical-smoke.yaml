@@ -1,7 +1,10 @@
 version: 2
 name: ab-philosophical-smoke
 visibility:
-  model_input: utterance_only
+  # Context visibility is enabled so A1/B1 and A2/B2 exercise different
+  # interpretation inputs. context_late receives only the case context id;
+  # context_aware additionally receives the bounded ontology projection.
+  model_input: contextual
 context_profiles:
   continuity: "Process continuity between the childhood and current person-state."
   substance: "Persistent-substance identity between the childhood and current person-state."
@@ -31,11 +34,11 @@ cases:
     mode: dialogue
     context: identity_and_genome
     utterance: "Does sharing a genome make two people one person?"
-    expected_clarification: {kind: Meaning, target: numerical_identity}
+    expected_clarification: {kind: Meaning, target: sharing_a_genome}
     expected_after_answer: {disposition: dialogue_reassessment_required}
     dialogue:
       - {turn_id: genome-0, role: user, text: "Does sharing a genome make two people one person?"}
-      - {turn_id: genome-1, role: assistant, text: "Do you mean numerical identity or a genetic relation?", question_kind: Meaning, target_family: reading, target_ids: [reading-0]}
+      - {turn_id: genome-1, role: assistant, text: "What exactly does sharing a genome mean in this question?", question_kind: Meaning, target_family: "sharing a genome", target_ids: [ambiguity-0]}
       - {turn_id: genome-2, role: user, text: "I mean numerical identity: they are one and the same individual."}
       - {turn_id: genome-3, role: assistant, text: "The numerical-identity reading is now explicit."}
 
@@ -44,10 +47,10 @@ cases:
     mode: dialogue
     context: relational_time
     utterance: "Does the sequence have an intrinsic present?"
-    expected_clarification: {kind: Meaning, target: intrinsic_time}
+    expected_clarification: {kind: Meaning, target: sequence}
     expected_after_answer: {disposition: dialogue_reassessment_required}
     dialogue:
       - {turn_id: sequence-0, role: user, text: "Does the sequence have an intrinsic present?"}
-      - {turn_id: sequence-1, role: assistant, text: "Do you mean an observer-independent intrinsic time?", question_kind: Meaning, target_family: reading, target_ids: [reading-0]}
+      - {turn_id: sequence-1, role: assistant, text: "What exactly does sequence mean in this question?", question_kind: Meaning, target_family: sequence, target_ids: [ambiguity-0]}
       - {turn_id: sequence-2, role: user, text: "Yes, I mean an observer-independent intrinsic time."}
       - {turn_id: sequence-3, role: assistant, text: "The intrinsic-time reading is now explicit."}
