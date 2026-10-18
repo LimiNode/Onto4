@@ -1,5 +1,7 @@
-import json
 import importlib
+import io
+import json
+import sys
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -122,6 +124,92 @@ def test_ask_command_runs_model_backed_pass_without_model_verdict(monkeypatch, c
     assert code == 0
     assert '"disposition": "Complete"' in output
     assert '"verdict": "C"' in output
+
+
+def test_interactive_ask_runs_typed_delta_refinement_end_to_end(monkeypatch, capsys):
+    import onto4.cli.main as cli_main
+
+    prompts = []
+
+    class FakeClient:
+        def complete(self, messages, **kwargs):
+            prompt = messages[1]["content"]
+            prompts.append(prompt)
+            if "Propose one or more semantic refinement operations" in prompt:
+                payload = {
+                    "deltas": [
+                        {
+                            "operation": "select_reading",
+                            "target_id": "reading-0",
+                            "resolved_ambiguity_ids": ["ambiguity-0"],
+                        }
+                    ]
+                }
+            elif "Formalize exactly the supplied semantic reading" in prompt:
+                payload = {
+                    "formalization": {
+                        "kind": "predicate",
+                        "name": "has_mass",
+                        "args": [{"name": "integer_7"}],
+                    },
+                    "assumptions": [],
+                }
+            else:
+                payload = {
+                    "id": "model-owned-id",
+                    "source_text": "What is the mass of integer 7?",
+                    "conceptual_depth": "ordinary",
+                    "ambiguities": [
+                        {
+                            "id": "model-ambiguity",
+                            "term": "mass",
+                            "description": "physical or abstract",
+                        }
+                    ],
+                    "presuppositions": [],
+                    "ontologies": [],
+                    "readings": [
+                        {
+                            "id": "model-reading",
+                            "label": "physical mass",
+                            "description": "physical mass of integer 7",
+                            "presupposition_indexes": [],
+                        }
+                    ],
+                }
+            return {"choices": [{"message": {"content": json.dumps(payload)}}]}
+
+    monkeypatch.setattr(
+        cli_main,
+        "OpenAICompatibleClient",
+        lambda profile, bearer_token=None: FakeClient(),
+    )
+    monkeypatch.setattr(sys, "stdin", io.StringIO("physical mass\n"))
+
+    code = cli_main.main(
+        [
+            "ask",
+            "What is the mass of integer 7?",
+            "--endpoint",
+            "http://example.test/v1",
+            "--model",
+            "fixture-model",
+            "--context",
+            str(ROOT / "profiles/contexts/physical_objects.yaml"),
+            "--interactive",
+            "--refinement-mode",
+            "typed_delta",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "Clarification:" in captured.out
+    assert "Stop reason: complete" in captured.out
+    assert sum(
+        "Propose one or more semantic refinement operations" in prompt
+        for prompt in prompts
+    ) == 1
 
 
 def test_ask_debug_reports_provider_stages_without_model_payload(monkeypatch, capsys):

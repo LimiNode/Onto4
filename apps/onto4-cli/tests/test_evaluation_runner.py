@@ -248,6 +248,7 @@ def test_runner_reads_pre_context_mode_manifest_as_context_late(tmp_path):
     lines = receipt_path.read_text(encoding="utf-8").splitlines()
     manifest = json.loads(lines[0])
     manifest["config"].pop("interpretation_context_mode")
+    manifest["config"].pop("refinement_mode")
     legacy_receipt = json.loads(lines[1])
     legacy_receipt.pop("attempt_history", None)
     receipt_path.write_text(
@@ -350,6 +351,23 @@ def test_runner_rejects_manifest_mismatch_before_resume(tmp_path):
         SequentialEvaluationRunner(
             offline_fixture_executor,
             config=EvaluationConfig(model="model-b"),
+            receipt_path=path,
+        ).run(corpus, digest="digest")
+
+
+def test_runner_rejects_refinement_mode_mismatch_before_resume(tmp_path):
+    corpus = load_clarification_corpus(CORPUS)
+    path = tmp_path / "receipts.jsonl"
+    SequentialEvaluationRunner(
+        offline_fixture_executor,
+        config=EvaluationConfig(refinement_mode="full_snapshot"),
+        receipt_path=path,
+    ).run(corpus, digest="digest")
+
+    with pytest.raises(ValueError, match="manifest"):
+        SequentialEvaluationRunner(
+            offline_fixture_executor,
+            config=EvaluationConfig(refinement_mode="typed_delta"),
             receipt_path=path,
         ).run(corpus, digest="digest")
 

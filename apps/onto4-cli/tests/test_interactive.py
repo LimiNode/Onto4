@@ -10,6 +10,7 @@ from onto4.pipeline import (
     FirstAdmissibleDecisionProvider,
     ModelClarificationPolicy,
     ProgressAwareClarificationPolicy,
+    TypedDeltaClarificationPolicy,
     answer_reasoning_clarification,
     interactive_decision_profile,
     issue_reasoning_clarification,
@@ -122,6 +123,238 @@ def test_interactive_dialogue_uses_successor_and_reassessment():
     assert refinement.calls == 1
     assert any("Clarification:" in line for line in output)
     assert result.progress.entries[0].kind is ClarificationProgressKind.StructuralResolution
+
+
+def test_typed_delta_dialogue_uses_same_question_and_host_applies_operation():
+    initial = _space("initial", ambiguous=True)
+    proposals = []
+
+    class DeltaProvider:
+        def propose_refinement_deltas(
+            self,
+            interpretation,
+            question,
+            answer,
+            **boundary,
+        ):
+            proposals.append((interpretation, question, answer, boundary))
+            return (
+                {
+                    "operation": "select_reading",
+                    "target_id": "reading-0",
+                    "resolved_ambiguity_ids": ["ambiguity-0"],
+                },
+                {
+                    "operation": "add_presupposition",
+                    "description": "genes are treated as an identity bearer",
+                },
+            )
+
+    policy = TypedDeltaClarificationPolicy(
+        FixtureClarificationPolicy(), DeltaProvider()
+    )
+    answer = "Genes carry the person's identity."
+    result = run_interactive_dialogue(
+        InterpretationRequest(initial.source_text),
+        interpretation_provider=_InterpretationProvider(initial),
+        refinement_provider=_RefinementProvider(initial),
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=policy,
+        input_fn=lambda prompt: answer,
+        output_fn=lambda line: None,
+        max_turns=2,
+    )
+
+    successor = result.session.clarification.interpretation
+    assert successor.id.startswith("interpretation-")
+    assert successor.source_text == initial.source_text
+    assert successor.conceptual_depth is initial.conceptual_depth
+    assert successor.ambiguities == ()
+    assert successor.readings == (initial.readings[0],)
+    assert successor.presuppositions[-1].description == (
+        "genes are treated as an identity bearer"
+    )
+    assert proposals[0][1].id == "meaning:ambiguity-0"
+    assert proposals[0][2] == answer
+    assert proposals[0][3]["allowed_reading_ids"] == ("reading-0",)
+    assert proposals[0][3]["allowed_ambiguity_ids"] == ("ambiguity-0",)
+
+
+def test_typed_delta_rejects_forged_target_without_publishing_successor():
+    initial = _space("initial", ambiguous=True)
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "select_reading",
+                "target_id": "model-invented",
+                "resolved_ambiguity_ids": ["ambiguity-0"],
+            },)
+
+    policy = TypedDeltaClarificationPolicy(
+        FixtureClarificationPolicy(), DeltaProvider()
+    )
+    question = FixtureClarificationPolicy().choose(
+        start_reasoning_session_per_reading(
+            ClarificationSession(initial),
+            formalization_provider=_FormalizationProvider(),
+            contexts={"identity": _context()},
+            clarification_policy=FixtureClarificationPolicy(),
+        ).session.assessment.clarification_context()
+    )
+
+    with pytest.raises(ValueError, match="Unknown or inadmissible reading target"):
+        policy.successor(
+            interpretation=initial,
+            question=question,
+            answer="invented reading",
+        )
+
+
+def test_typed_delta_rejects_mixed_abstention_atomically():
+    initial = _space("initial", ambiguous=True)
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return (
+                {
+                    "operation": "select_reading",
+                    "target_id": "reading-0",
+                    "resolved_ambiguity_ids": ["ambiguity-0"],
+                },
+                {"operation": "abstain", "reason": "uncertain"},
+            )
+
+    policy = TypedDeltaClarificationPolicy(
+        FixtureClarificationPolicy(), DeltaProvider()
+    )
+    assessment = start_reasoning_session_per_reading(
+        ClarificationSession(initial),
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=FixtureClarificationPolicy(),
+    ).session.assessment
+    question = FixtureClarificationPolicy().choose(
+        assessment.clarification_context()
+    )
+
+    with pytest.raises(ValueError, match="ABSTAIN cannot be combined"):
+        policy.successor(
+            interpretation=initial,
+            question=question,
+            answer="physical reading, but uncertain",
+        )
+
+    assert initial.id == "initial"
+    assert [item.id for item in initial.readings] == ["reading-0"]
+    assert [item.id for item in initial.ambiguities] == ["ambiguity-0"]
+
+
+def test_typed_delta_batch_failure_does_not_publish_partial_successor():
+    initial = _space("initial", ambiguous=True)
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return (
+                {
+                    "operation": "select_reading",
+                    "target_id": "reading-0",
+                    "resolved_ambiguity_ids": ["ambiguity-0"],
+                },
+                {
+                    "operation": "refine_ambiguity",
+                    "target_id": "ambiguity-0",
+                    "text": "identity",
+                    "description": "identity bearer",
+                },
+            )
+
+    policy = TypedDeltaClarificationPolicy(
+        FixtureClarificationPolicy(), DeltaProvider()
+    )
+    assessment = start_reasoning_session_per_reading(
+        ClarificationSession(initial),
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=FixtureClarificationPolicy(),
+    ).session.assessment
+    question = FixtureClarificationPolicy().choose(
+        assessment.clarification_context()
+    )
+
+    with pytest.raises(ValueError, match="Unknown or inadmissible ambiguity target"):
+        policy.successor(
+            interpretation=initial,
+            question=question,
+            answer="identity bearer",
+        )
+
+    assert initial.id == "initial"
+    assert [item.id for item in initial.readings] == ["reading-0"]
+    assert [item.id for item in initial.ambiguities] == ["ambiguity-0"]
+
+
+def test_typed_delta_none_of_the_above_abstains_without_model_call():
+    initial = _space("initial", ambiguous=True)
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            raise AssertionError("none_of_the_above must remain host-controlled")
+
+    policy = TypedDeltaClarificationPolicy(
+        FixtureClarificationPolicy(), DeltaProvider()
+    )
+    assessment = start_reasoning_session_per_reading(
+        ClarificationSession(initial),
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=FixtureClarificationPolicy(),
+    ).session.assessment
+    question = FixtureClarificationPolicy().choose(
+        assessment.clarification_context()
+    )
+
+    successor, turn = policy.successor(
+        interpretation=initial,
+        question=question,
+        answer="none_of_the_above",
+    )
+
+    assert successor is initial
+    assert turn.successor_interpretation_id == initial.id
+
+
+def test_typed_delta_does_not_expose_readings_for_unrelated_question():
+    initial = _space("initial", ambiguous=False)
+    boundaries = []
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **boundary):
+            boundaries.append(boundary)
+            return ({"operation": "abstain", "reason": "unsupported target"},)
+
+    policy = TypedDeltaClarificationPolicy(
+        FixtureClarificationPolicy(), DeltaProvider()
+    )
+    question = ClarificationQuestion(
+        "context:disambiguate",
+        ClarificationKind.Context,
+        "Which context?",
+        ("context-a", "context-b"),
+        ("context-a", "context-b"),
+        "context",
+    )
+
+    successor, _ = policy.successor(
+        interpretation=initial,
+        question=question,
+        answer="context-a",
+    )
+
+    assert successor is initial
+    assert boundaries[0]["allowed_reading_ids"] == ()
+    assert "select_reading" not in boundaries[0]["allowed_operations"]
 
 
 def test_interactive_dialogue_completes_two_question_fixture_loop():

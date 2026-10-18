@@ -15,19 +15,29 @@ from onto4.providers import (
     InterpretationRequest,
     ProviderSchemaError,
     ProviderTransportError,
+    RefinementDeltaProvider,
     project_assessment_context,
 )
 from onto4.providers.diagnostics import ProviderStageEvent, ProviderTrace
-from onto4.reasoning import ConceptualDepth, FixtureClarificationPolicy, PipelineDisposition
+from onto4.reasoning import (
+    ConceptualDepth,
+    FixtureClarificationPolicy,
+    PipelineDisposition,
+    TransitionAwareClarificationPolicy,
+)
 from onto4.reasoning import ClarificationKind
 
 from .clarification_corpus import ClarificationCorpusCase
 from .evaluation import CaseExecution, EvaluationOutcome
-from .interactive import ModelClarificationPolicy, run_interactive_dialogue
+from .interactive import (
+    ModelClarificationPolicy,
+    TypedDeltaClarificationPolicy,
+    run_interactive_dialogue,
+)
 
 
 _SAFE_STAGE_CODES = frozenset({"schema_valid", "transport", "schema", "unexpected"})
-_SAFE_STAGE_NAMES = frozenset({"interpretation", "formalization"})
+_SAFE_STAGE_NAMES = frozenset({"interpretation", "formalization", "refinement"})
 _SAFE_PHASES = frozenset(
     {"started", "response_received", "json_valid", "json_invalid", "completed", "failed"}
 )
@@ -56,9 +66,10 @@ class _QuestionIntent:
 
 
 @dataclass(frozen=True)
-class _ReplayPolicy(ModelClarificationPolicy):
+class _ReplayPolicy:
     """Validate each emitted question against the scripted intent binding."""
 
+    base: TransitionAwareClarificationPolicy
     expected_intents: tuple[_QuestionIntent, ...] = ()
     issued_questions: int = 0
     _last_questions: tuple = field(default=(), init=False, compare=False)
@@ -66,7 +77,12 @@ class _ReplayPolicy(ModelClarificationPolicy):
     def questions(self, context):
         # Preserve the host policy's order.  Replay admission is performed
         # against the question actually issued by the interactive loop.
-        questions = super().questions(context)
+        questions_method = getattr(self.base, "questions", None)
+        questions = (
+            questions_method(context)
+            if questions_method is not None
+            else tuple(filter(None, (self.base.choose(context),)))
+        )
         object.__setattr__(self, "_last_questions", tuple(questions))
         return questions
 
@@ -98,8 +114,19 @@ class _ReplayPolicy(ModelClarificationPolicy):
             return
         raise _ReplayError("question_intent_unverified")
 
+    def choose(self, context):
+        questions = self.questions(context)
+        return questions[0] if questions else None
+
     def choose_for_kind(self, context, kind: ClarificationKind):
-        return super().choose_for_kind(context, kind)
+        return self.base.choose_for_kind(context, kind)
+
+    def successor(self, *, interpretation, question, answer):
+        return self.base.successor(
+            interpretation=interpretation,
+            question=question,
+            answer=answer,
+        )
 
     def mark_issued(self) -> None:
         object.__setattr__(self, "issued_questions", self.issued_questions + 1)
@@ -123,6 +150,8 @@ class ModelCaseExecutor:
     max_turns: int = 4
     requested_conceptual_depth: ConceptualDepth | None = None
     interpretation_context_mode: str = "context_late"
+    refinement_mode: str = "full_snapshot"
+    refinement_delta_provider: RefinementDeltaProvider | None = None
     trace_sink: ProviderTrace | None = None
     _last_events: list[ProviderStageEvent] = field(default_factory=list, init=False)
 
@@ -131,6 +160,17 @@ class ModelCaseExecutor:
             raise ValueError(
                 "interpretation_context_mode must be context_late or context_aware."
             )
+        if self.refinement_mode not in {"full_snapshot", "typed_delta"}:
+            raise ValueError("refinement_mode must be full_snapshot or typed_delta.")
+        if self.refinement_mode == "typed_delta" and self.refinement_delta_provider is None:
+            raise ValueError("typed_delta mode requires a refinement_delta_provider.")
+
+    def _refinement_policy(self) -> TransitionAwareClarificationPolicy:
+        base = FixtureClarificationPolicy()
+        if self.refinement_mode == "typed_delta":
+            assert self.refinement_delta_provider is not None
+            return TypedDeltaClarificationPolicy(base, self.refinement_delta_provider)
+        return ModelClarificationPolicy(base, self.interpretation_provider)
 
     def _trace(self, event: ProviderStageEvent) -> None:
         self._last_events.append(event)
@@ -253,7 +293,13 @@ class ModelCaseExecutor:
 
     def _set_provider_deadline(self, deadline: float | None) -> None:
         seen: set[int] = set()
-        for provider in (self.interpretation_provider, self.formalization_provider):
+        for provider in (
+            self.interpretation_provider,
+            self.formalization_provider,
+            self.refinement_delta_provider,
+        ):
+            if provider is None:
+                continue
             client = getattr(provider, "client", None)
             if client is None or id(client) in seen:
                 continue
@@ -357,8 +403,7 @@ class ModelCaseExecutor:
                     return answer
 
                 policy = _ReplayPolicy(
-                    FixtureClarificationPolicy(),
-                    self.interpretation_provider,
+                    self._refinement_policy(),
                     expected_intents=expected_intents,
                 )
                 result = run_interactive_dialogue(

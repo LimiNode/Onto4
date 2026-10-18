@@ -164,6 +164,23 @@ class InterpretationRefinementProvider(Protocol):
         ...
 
 
+class RefinementDeltaProvider(Protocol):
+    """Propose bounded non-authoritative refinement operations as JSON content."""
+
+    def propose_refinement_deltas(
+        self,
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+        answer: str,
+        *,
+        allowed_operations: Sequence[str],
+        allowed_reading_ids: Sequence[str],
+        allowed_ambiguity_ids: Sequence[str],
+        allowed_ontology_ids: Sequence[str],
+    ) -> Sequence[Mapping[str, object]]:
+        ...
+
+
 @dataclass(frozen=True)
 class FormalizationRequest:
     """Request to turn an interpretation space into explicit candidates.

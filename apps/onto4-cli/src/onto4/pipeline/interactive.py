@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from typing import Callable, Mapping
@@ -13,6 +15,7 @@ from onto4.providers import (
     InterpretationProvider,
     InterpretationRefinementProvider,
     InterpretationRequest,
+    RefinementDeltaProvider,
     TypedDecision,
     TypedDecisionProvider,
 )
@@ -28,6 +31,13 @@ from onto4.reasoning import (
 )
 
 from .ask import assess_interpretation_per_reading
+from .refinement import (
+    RefinementDelta,
+    RefinementOperation,
+    RefinementRequest,
+    apply_refinement_batch,
+    apply_refinement_delta,
+)
 from .orchestration import (
     ClarificationSession,
     PreparedClarificationTransition,
@@ -115,6 +125,161 @@ class ModelClarificationPolicy(TransitionAwareClarificationPolicy):
                 raise ValueError(
                     "Clarification refinement changed the conceptual depth snapshot."
                 )
+        return successor, ClarificationTurn(
+            previous_interpretation_id=interpretation.id,
+            question_id=question.id,
+            answer=answer,
+            successor_interpretation_id=successor.id,
+        )
+
+
+@dataclass(frozen=True)
+class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
+    """Apply model-proposed operations through the host refinement boundary."""
+
+    base: ClarificationPolicy
+    refinement_provider: RefinementDeltaProvider
+
+    def questions(self, context):
+        questions = getattr(self.base, "questions", None)
+        if questions is None:
+            question = self.base.choose(context)
+            return () if question is None else (question,)
+        return questions(context)
+
+    def choose(self, context):
+        questions = self.questions(context)
+        return questions[0] if questions else None
+
+    def choose_for_kind(self, context, kind: ClarificationKind):
+        chooser = getattr(self.base, "choose_for_kind", None)
+        if chooser is None:
+            question = self.base.choose(context)
+            return question if question is not None and question.kind is kind else None
+        return chooser(context, kind)
+
+    @staticmethod
+    def _request(
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+    ) -> RefinementRequest:
+        targets = frozenset(question.target_ids)
+        reading_ids = frozenset(item.id for item in interpretation.readings)
+        ambiguity_ids = frozenset(
+            item.id for item in interpretation.ambiguities if item.id in targets
+        )
+        allowed_reading_ids = (
+            reading_ids if ambiguity_ids else reading_ids & targets
+        )
+        return RefinementRequest(
+            interpretation=interpretation,
+            assessment_interpretation_id=interpretation.id,
+            allowed_reading_ids=allowed_reading_ids,
+            allowed_ambiguity_ids=ambiguity_ids,
+            allowed_ontology_ids=frozenset(
+                item.id for item in interpretation.ontologies if item.id in targets
+            ),
+            allowed_presupposition_ids=frozenset(
+                item.id for item in interpretation.presuppositions if item.id in targets
+            ),
+        )
+
+    @staticmethod
+    def _successor_id(
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+        answer: str,
+        deltas: tuple[RefinementDelta, ...],
+    ) -> str:
+        encoded = json.dumps(
+            {
+                "interpretation_id": interpretation.id,
+                "question_id": question.id,
+                "answer": answer,
+                "deltas": [
+                    {
+                        "operation": delta.operation.value,
+                        "target_id": delta.target_id,
+                        "text": delta.text,
+                        "label": delta.label,
+                        "description": delta.description,
+                        "reason": delta.reason,
+                        "resolved_ambiguity_ids": list(delta.resolved_ambiguity_ids),
+                    }
+                    for delta in deltas
+                ],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+        return f"interpretation-{digest}"
+
+    def successor(
+        self,
+        *,
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+        answer: str,
+    ) -> tuple[InterpretationSpace, ClarificationTurn]:
+        request = self._request(interpretation, question)
+        if _is_none_of_the_above(answer):
+            deltas = (
+                RefinementDelta(
+                    RefinementOperation.ABSTAIN, reason="none_of_the_above"
+                ),
+            )
+        else:
+            allowed_operations = [
+                RefinementOperation.ADD_PRESUPPOSITION.value,
+                RefinementOperation.ABSTAIN.value,
+            ]
+            if request.allowed_reading_ids:
+                allowed_operations.append(RefinementOperation.SELECT_READING.value)
+            if request.allowed_ambiguity_ids:
+                allowed_operations.extend(
+                    (
+                        RefinementOperation.RETAIN_AMBIGUITY.value,
+                        RefinementOperation.REFINE_AMBIGUITY.value,
+                    )
+                )
+            if request.allowed_ontology_ids:
+                allowed_operations.append(
+                    RefinementOperation.QUALIFY_ONTOLOGY_CANDIDATE.value
+                )
+            proposals = self.refinement_provider.propose_refinement_deltas(
+                interpretation,
+                question,
+                answer,
+                allowed_operations=tuple(allowed_operations),
+                allowed_reading_ids=tuple(sorted(request.allowed_reading_ids)),
+                allowed_ambiguity_ids=tuple(sorted(request.allowed_ambiguity_ids)),
+                allowed_ontology_ids=tuple(sorted(request.allowed_ontology_ids)),
+            )
+            deltas = tuple(
+                RefinementDelta.from_mapping(proposal) for proposal in proposals
+            )
+        successor_id = self._successor_id(
+            interpretation, question, answer, deltas
+        )
+        if len(deltas) == 1 and deltas[0].operation in {
+            RefinementOperation.ABSTAIN,
+            RefinementOperation.RETAIN_AMBIGUITY,
+        }:
+            result = apply_refinement_delta(
+                request,
+                deltas[0],
+                successor_id=successor_id,
+            )
+            successor = result.successor
+        else:
+            result = apply_refinement_batch(
+                request,
+                deltas,
+                successor_id=successor_id,
+            )
+            successor = result.successor
         return successor, ClarificationTurn(
             previous_interpretation_id=interpretation.id,
             question_id=question.id,
@@ -576,6 +741,7 @@ __all__ = [
     "InteractiveDialogueResult",
     "ModelClarificationPolicy",
     "ProgressAwareClarificationPolicy",
+    "TypedDeltaClarificationPolicy",
     "NONE_OF_THE_ABOVE_ANSWERS",
     "interactive_decision_profile",
     "run_interactive_dialogue",

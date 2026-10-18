@@ -17,6 +17,7 @@ from .interactive import (
     ModelClarificationPolicy,
     NONE_OF_THE_ABOVE_ANSWERS,
     ProgressAwareClarificationPolicy,
+    TypedDeltaClarificationPolicy,
     interactive_decision_profile,
     run_interactive_dialogue,
 )
@@ -154,6 +155,7 @@ __all__ = [
     "InteractiveDialogueResult",
     "ModelClarificationPolicy",
     "ProgressAwareClarificationPolicy",
+    "TypedDeltaClarificationPolicy",
     "NONE_OF_THE_ABOVE_ANSWERS",
     "interactive_decision_profile",
     "run_interactive_dialogue",
