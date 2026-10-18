@@ -328,8 +328,10 @@ def _summary(
     execution_counts = _empty_counts(conditions)
     workflow_counts = _empty_counts(conditions)
     semantic_counts = _empty_counts(conditions)
+    clarification_totals: dict[str, int] = {condition.name: 0 for condition in conditions}
     clarification_turns: dict[str, int | None] = {condition.name: 0 for condition in conditions}
     clarification_known: dict[str, int] = {condition.name: 0 for condition in conditions}
+    clarification_unknown: set[str] = set()
     provider_calls = {condition.name: 0 for condition in conditions}
     completion_tokens = {condition.name: 0 for condition in conditions}
     estimated_cost = {
@@ -352,11 +354,9 @@ def _summary(
         elapsed_seconds[cell.condition] += cell.elapsed_seconds
         if cell.clarification_turns_known and cell.clarification_turns is not None:
             clarification_known[cell.condition] += 1
-            clarification_turns[cell.condition] = (
-                clarification_turns[cell.condition] or 0
-            ) + cell.clarification_turns
+            clarification_totals[cell.condition] += cell.clarification_turns
         else:
-            clarification_turns[cell.condition] = None
+            clarification_unknown.add(cell.condition)
         if estimated_cost[cell.condition] is not None:
             estimated_cost[cell.condition] += (
                 cell.completion_tokens * output_cost_per_million / 1_000_000
@@ -407,6 +407,11 @@ def _summary(
                 pair_wins[pair_name][left_name] += 1
             else:
                 pair_wins[pair_name][right_name] += 1
+    for condition in conditions:
+        if condition.name in clarification_unknown:
+            clarification_turns[condition.name] = None
+        else:
+            clarification_turns[condition.name] = clarification_totals[condition.name]
     return PairedBenchmarkSummary(
         total_cases=len(by_case),
         oracle_comparable_observations=oracle_observations,
@@ -497,6 +502,7 @@ def run_paired_benchmark(
         "output_cost_status",
         "priced" if output_cost_per_million is not None else "not_priced",
     )
+    report_metadata.setdefault("output_cost_per_million", output_cost_per_million)
     return PairedBenchmarkRun(
         corpus_name=corpus.name,
         corpus_version=corpus.version,
@@ -730,6 +736,7 @@ def rescore_paired_receipts(
         "output_cost_status",
         "priced" if output_cost_per_million is not None else "not_priced",
     )
+    report_metadata.setdefault("output_cost_per_million", output_cost_per_million)
     cell_tuple = tuple(cells)
     return PairedBenchmarkRun(
         corpus_name=corpus.name,
