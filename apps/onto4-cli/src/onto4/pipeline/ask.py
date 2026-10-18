@@ -256,6 +256,8 @@ def material_ambiguity(context: ClarificationContext) -> bool:
     interpretation = context.interpretation
     if interpretation.conceptual_depth.value not in {"ordinary", "reflective"}:
         return True
+    if len({item.context_id for item in context.assessments}) != 1:
+        return True
 
     by_reading: dict[str, list[object]] = {}
     for item in context.assessments:
