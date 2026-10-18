@@ -194,6 +194,54 @@ def test_different_presupposition_commitments_keep_clarification():
     assert result.disposition is PipelineDisposition.AskClarification
 
 
+def test_duplicate_presupposition_ids_keep_clarification_fail_closed():
+    readings = (
+        SemanticReading("first", "first", "same AST", ("shared", "shared")),
+        SemanticReading("second", "second", "same AST", ("shared",)),
+    )
+    result = run(
+        InterpretationSpace(
+            id="space",
+            source_text="question",
+            conceptual_depth=ConceptualDepth.Ordinary,
+            ambiguities=(Ambiguity("term", "личность", "identity criterion"),),
+            presuppositions=(Presupposition("shared", "a person is under discussion"),),
+            readings=readings,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("a"), reading_id="second"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_missing_presupposition_reference_keeps_clarification_fail_closed():
+    readings = (
+        SemanticReading("first", "first", "same AST", ("missing",)),
+        SemanticReading("second", "second", "same AST", ()),
+    )
+    result = run(
+        InterpretationSpace(
+            id="space",
+            source_text="question",
+            conceptual_depth=ConceptualDepth.Ordinary,
+            ambiguities=(Ambiguity("term", "личность", "identity criterion"),),
+            presuppositions=(),
+            readings=readings,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("a"), reading_id="second"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
 def test_missing_declared_reading_coverage_keeps_clarification():
     readings = (
         SemanticReading("first", "first", "first meaning"),
