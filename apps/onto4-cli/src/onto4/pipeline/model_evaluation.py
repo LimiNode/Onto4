@@ -26,6 +26,10 @@ from .interactive import ModelClarificationPolicy, run_interactive_dialogue
 
 
 _SAFE_STAGE_CODES = frozenset({"schema_valid", "transport", "schema", "unexpected"})
+_SAFE_STAGE_NAMES = frozenset({"interpretation", "formalization"})
+_SAFE_PHASES = frozenset(
+    {"started", "response_received", "json_valid", "json_invalid", "completed", "failed"}
+)
 _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "content_filter", "function_call", "unknown"}
 )
@@ -135,14 +139,16 @@ class ModelCaseExecutor:
         occurrences: dict[str, int] = {}
         active_keys: dict[str, str] = {}
         for event in self._last_events:
-            if event.phase == "started":
+            stage = self._safe_stage_name(event.stage)
+            phase = self._safe_phase(event.phase)
+            if phase == "started":
                 calls += 1
-                occurrences[event.stage] = occurrences.get(event.stage, 0) + 1
-                suffix = occurrences[event.stage]
-                active_keys[event.stage] = (
-                    event.stage if suffix == 1 else f"{event.stage}#{suffix}"
+                occurrences[stage] = occurrences.get(stage, 0) + 1
+                suffix = occurrences[stage]
+                active_keys[stage] = (
+                    stage if suffix == 1 else f"{stage}#{suffix}"
                 )
-            key = active_keys.get(event.stage, event.stage)
+            key = active_keys.get(stage, stage)
             if event.elapsed_seconds:
                 # A stage emits several observational events; the final event
                 # carries the full elapsed duration, so do not double-count
@@ -150,7 +156,7 @@ class ModelCaseExecutor:
                 timings[key] = max(
                     timings.get(key, 0.0), event.elapsed_seconds
                 )
-            outcomes[key] = event.phase
+            outcomes[key] = phase
             if event.detail:
                 safe_detail = self._safe_stage_detail(event.detail)
                 if safe_detail is not None:
@@ -161,6 +167,14 @@ class ModelCaseExecutor:
                         else f"{previous}; {safe_detail}"
                     )
         return calls, timings, outcomes, details
+
+    @staticmethod
+    def _safe_stage_name(stage: object) -> str:
+        return stage if isinstance(stage, str) and stage in _SAFE_STAGE_NAMES else "other"
+
+    @staticmethod
+    def _safe_phase(phase: object) -> str:
+        return phase if isinstance(phase, str) and phase in _SAFE_PHASES else "other"
 
     @staticmethod
     def _safe_stage_detail(detail: str) -> str | None:

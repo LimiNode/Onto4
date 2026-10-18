@@ -132,6 +132,23 @@ def test_model_case_executor_allowlists_stage_details():
     assert "SECRET" not in str(details)
 
 
+def test_model_case_executor_allowlists_stage_names_and_phases():
+    executor = _executor()
+    executor._last_events = [
+        ProviderStageEvent("stage-secret", "phase-secret", 0.1, "secret detail"),
+        ProviderStageEvent(["unhashable-secret"], {"phase": "secret"}, 0.2),
+    ]
+
+    calls, timings, outcomes, details = executor._metadata()
+
+    assert calls == 0
+    assert set(timings) == {"other"}
+    assert outcomes == {"other": "other"}
+    assert details == {}
+    safe = str((calls, timings, outcomes, details))
+    assert "secret" not in safe.lower()
+
+
 def test_model_case_executor_runs_dialogue_with_fake_refinement():
     context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
     initial = InterpretationSpace(
