@@ -240,16 +240,35 @@ def determine_disposition(context: ClarificationContext) -> tuple[PipelineDispos
 def material_ambiguity(context: ClarificationContext) -> bool:
     """Return whether an interpretation ambiguity changes this assessment.
 
-    An ambiguity is not material merely because a provider listed it.  When
-    at least two independently assessed candidates/readings agree in the
-    supplied contexts, the host has evidence that the distinction is
-    irrelevant to the current Onto4 assessment.  With only one candidate we
-    retain the conservative clarification behaviour because no comparison is
-    available.  Unresolved or conflicting landscapes remain material.
+    An ambiguity is not material merely because a provider listed it.  The
+    host may suppress it only when distinct readings have exactly the same
+    formal expression and assumptions in one assessed context.  Equal
+    ``T/F/U/C`` values alone are never enough: they can arise from different
+    meanings, missing evidence, or independent category errors.  With one
+    reading, repeated candidates, unresolved candidates, or a reflective/
+    philosophical depth we retain conservative clarification behaviour.
     """
 
     if not context.interpretation.ambiguities:
         return False
-    if len(context.assessments) < 2:
+    if context.landscape.status is not CrossCandidateStatus.StableAcrossCandidates:
         return True
-    return context.landscape.status is not CrossCandidateStatus.StableAcrossCandidates
+    interpretation = context.interpretation
+    if interpretation.conceptual_depth.value not in {"ordinary", "reflective"}:
+        return True
+
+    by_reading: dict[str, list[object]] = {}
+    for item in context.assessments:
+        reading_id = item.candidate.reading_id
+        if reading_id is None:
+            return True
+        by_reading.setdefault(reading_id, []).append(item)
+    if len(by_reading) < 2 or any(len(items) != 1 for items in by_reading.values()):
+        return True
+
+    footprints = [
+        (items[0].candidate.formalization, items[0].candidate.assumptions)
+        for items in by_reading.values()
+    ]
+    baseline = footprints[0]
+    return any(footprint != baseline for footprint in footprints[1:])

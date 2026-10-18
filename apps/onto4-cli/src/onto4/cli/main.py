@@ -179,15 +179,16 @@ def _run_ask(args: argparse.Namespace) -> int:
             context_ids=tuple(contexts),
             trace=trace,
         )
+        request_state = {}
+        if args.interpretation_context_mode == "context_aware":
+            request_state["context_projections"] = {
+                context_id: project_assessment_context(context_id, context).as_dict()
+                for context_id, context in contexts.items()
+            }
         request = InterpretationRequest(
             args.text,
             conceptual_depth=depth,
-            state={
-                "context_projections": {
-                    context_id: project_assessment_context(context_id, context).as_dict()
-                    for context_id, context in contexts.items()
-                }
-            },
+            state=request_state,
         )
         if args.interactive:
             dialogue_policy = ModelClarificationPolicy(
@@ -277,6 +278,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                 contexts,
                 max_turns=args.max_turns,
                 requested_conceptual_depth=requested_depth,
+                interpretation_context_mode=args.interpretation_context_mode,
                 trace_sink=trace,
             )
             interpretation_adapter.trace = executor.provider_trace
@@ -312,6 +314,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                 path.stem: hashlib.sha256(path.read_bytes()).hexdigest()
                 for path in args.context or ()
             },
+            interpretation_context_mode=args.interpretation_context_mode,
         )
         run = SequentialEvaluationRunner(
             executor,
@@ -387,6 +390,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto",
     )
     ask_parser.add_argument("--context", action="append", required=True, type=Path)
+    ask_parser.add_argument(
+        "--interpretation-context-mode",
+        choices=("context_late", "context_aware"),
+        default="context_late",
+        help="Interpretation baseline: omit context or provide bounded ontology affordances.",
+    )
     ask_parser.add_argument("--format", choices=("text", "json"), default="text")
     ask_parser.add_argument(
         "--debug",
@@ -439,6 +448,12 @@ def build_parser() -> argparse.ArgumentParser:
     corpus_parser.add_argument("--auth", choices=("none", "bearer"), default="none")
     corpus_parser.add_argument("--token-env", default="ONTO4_API_TOKEN")
     corpus_parser.add_argument("--context", action="append", type=Path)
+    corpus_parser.add_argument(
+        "--interpretation-context-mode",
+        choices=("context_late", "context_aware"),
+        default="context_late",
+        help="Interpretation baseline: omit context or provide bounded ontology affordances.",
+    )
     corpus_parser.add_argument("--max-output-tokens", type=int, default=1024)
     corpus_parser.add_argument("--temperature", type=float, default=0.0)
     corpus_parser.add_argument("--enable-thinking", action="store_true")

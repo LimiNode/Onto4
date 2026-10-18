@@ -115,7 +115,13 @@ def test_model_case_executor_only_exposes_context_projection_when_contextual():
     contextual_case = ClarificationCorpusCase(
         **{**_case().__dict__, "model_input": "contextual"}
     )
-    executor(contextual_case, request_timeout_seconds=1.0)
+    aware_executor = ModelCaseExecutor(
+        Provider(),
+        FixtureFormalizationProvider({}),
+        {"physical_objects": context},
+        interpretation_context_mode="context_aware",
+    )
+    aware_executor(contextual_case, request_timeout_seconds=1.0)
 
     assert "context_projections" not in observed[0]
     assert observed[1]["context_id"] == "physical_objects"

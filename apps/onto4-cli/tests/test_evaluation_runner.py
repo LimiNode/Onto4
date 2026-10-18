@@ -227,6 +227,46 @@ def test_runner_reads_legacy_receipts_without_attempt_history(tmp_path):
     assert resumed.receipts[0].outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
 
 
+def test_runner_reads_pre_context_mode_manifest_as_context_late(tmp_path):
+    corpus = replace(
+        load_clarification_corpus(CORPUS),
+        cases=(load_clarification_corpus(CORPUS).cases[0],),
+    )
+    receipt_path = tmp_path / "receipts.jsonl"
+    calls = []
+
+    def executor(case, *, request_timeout_seconds):
+        calls.append(case.case_id)
+        return CaseExecution(EvaluationOutcome.ASSESSMENT_COMPLETED)
+
+    config = EvaluationConfig()
+    runner = SequentialEvaluationRunner(
+        executor, config=config, receipt_path=receipt_path
+    )
+    runner.run(corpus, digest="digest")
+
+    lines = receipt_path.read_text(encoding="utf-8").splitlines()
+    manifest = json.loads(lines[0])
+    manifest["config"].pop("interpretation_context_mode")
+    legacy_receipt = json.loads(lines[1])
+    legacy_receipt.pop("attempt_history", None)
+    receipt_path.write_text(
+        "\n".join(
+            [
+                json.dumps(manifest, sort_keys=True),
+                json.dumps(legacy_receipt, sort_keys=True),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    resumed = runner.run(corpus, digest="digest")
+
+    assert calls == [corpus.cases[0].case_id]
+    assert resumed.receipts[0].outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
+
+
 def test_runner_classifies_timeout_and_retries_only_transport_classes(tmp_path):
     corpus = load_clarification_corpus(CORPUS)
     calls = 0

@@ -211,6 +211,27 @@ def test_interpretation_prompt_receives_bounded_context_projection():
     assert "verdict" in prompt
 
 
+def test_interpretation_prompt_does_not_forward_oracle_state_without_projection():
+    client = FakeClient(interpretation_payload())
+
+    OpenAICompatibleInterpretationProvider(client).interpret(
+        InterpretationRequest(
+            "The door is closed.",
+            state={
+                "hidden_interpretation": "HIDDEN_ORACLE_MARKER",
+                "expected_verdict": "EXPECTED_VERDICT_MARKER",
+                "evidence": "EVIDENCE_MARKER",
+            },
+        )
+    )
+
+    prompt = client.messages[1]["content"]
+    assert "HIDDEN_ORACLE_MARKER" not in prompt
+    assert "EXPECTED_VERDICT_MARKER" not in prompt
+    assert "EVIDENCE_MARKER" not in prompt
+    assert "context_projections:" not in prompt
+
+
 def test_interpretation_adapter_allows_model_depth_selection_when_unspecified():
     client = FakeClient(interpretation_payload())
 

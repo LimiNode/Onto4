@@ -122,8 +122,15 @@ class ModelCaseExecutor:
     contexts: Mapping[str, AssessmentContext]
     max_turns: int = 4
     requested_conceptual_depth: ConceptualDepth | None = None
+    interpretation_context_mode: str = "context_late"
     trace_sink: ProviderTrace | None = None
     _last_events: list[ProviderStageEvent] = field(default_factory=list, init=False)
+
+    def __post_init__(self) -> None:
+        if self.interpretation_context_mode not in {"context_late", "context_aware"}:
+            raise ValueError(
+                "interpretation_context_mode must be context_late or context_aware."
+            )
 
     def _trace(self, event: ProviderStageEvent) -> None:
         self._last_events.append(event)
@@ -220,7 +227,8 @@ class ModelCaseExecutor:
         if case.model_input == "contextual" and case.context is not None:
             state["context_id"] = case.context
         if (
-            case.model_input == "contextual"
+            self.interpretation_context_mode == "context_aware"
+            and case.model_input == "contextual"
             and case.context is not None
             and case.context in self.contexts
         ):
