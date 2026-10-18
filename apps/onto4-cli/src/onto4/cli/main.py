@@ -393,7 +393,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                 client, context_ids=tuple(contexts)
             )
             delta_adapter = OpenAICompatibleRefinementDeltaProvider(client)
-            return ModelCaseExecutor(
+            executor = ModelCaseExecutor(
                 interpretation_adapter,
                 formalization_adapter,
                 contexts,
@@ -403,6 +403,13 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                 refinement_mode=condition.refinement_mode,
                 refinement_delta_provider=delta_adapter,
             )
+            # Keep benchmark telemetry at the same boundary as eval-corpus:
+            # adapters emit safe stage events into the executor, which owns
+            # per-case accounting and strips payloads before receipts.
+            interpretation_adapter.trace = executor.provider_trace
+            formalization_adapter.trace = executor.provider_trace
+            delta_adapter.trace = executor.provider_trace
+            return executor
 
         config = EvaluationConfig(
             request_timeout_seconds=args.timeout,

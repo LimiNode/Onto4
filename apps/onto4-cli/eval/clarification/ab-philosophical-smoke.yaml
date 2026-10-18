@@ -17,14 +17,14 @@ cases:
     context: continuity
     utterance: "Is the person now the same person who was a child?"
     expected_clarification: none
-    expected_after_answer: {verdict: U}
+    expected_after_answer: {disposition: clarification_required}
 
   - case_id: same-person-substance
     evaluation_class: philosophical_control
     context: substance
     utterance: "Is the person now the same person who was a child?"
     expected_clarification: none
-    expected_after_answer: {verdict: U}
+    expected_after_answer: {disposition: clarification_required}
 
   - case_id: genome-identity-dialogue
     evaluation_class: philosophical_dialogue
