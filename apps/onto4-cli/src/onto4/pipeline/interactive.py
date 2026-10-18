@@ -477,6 +477,7 @@ def run_interactive_dialogue(
     clarification_policy: TransitionAwareClarificationPolicy,
     input_fn: Callable[[str], str] = input,
     output_fn: Callable[[str], None] = print,
+    before_answer_fn: Callable[[ReasoningSession, ClarificationQuestion], None] | None = None,
     max_turns: int = 4,
 ) -> InteractiveDialogueResult:
     """Run bounded clarification, answer, successor and reassessment steps."""
@@ -552,6 +553,8 @@ def run_interactive_dialogue(
         if question.choices:
             output_fn("Choices: " + ", ".join(question.choices))
         output_fn("You may answer freely or type 'none_of_the_above'.")
+        if before_answer_fn is not None:
+            before_answer_fn(current, question)
         answer = input_fn("> ")
         if not answer.strip():
             raise ValueError("An interactive clarification answer must not be empty.")

@@ -229,6 +229,9 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
         corpus = load_clarification_corpus(args.corpus)
         digest = corpus_digest(args.corpus)
         contexts = {}
+        requested_depth = (
+            None if args.depth == "auto" else ConceptualDepth(args.depth)
+        )
         if args.mode == "model-backed":
             if not args.endpoint or not args.model:
                 raise ValueError("Model-backed evaluation requires --endpoint and --model.")
@@ -263,6 +266,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                 formalization_adapter,
                 contexts,
                 max_turns=args.max_turns,
+                requested_conceptual_depth=requested_depth,
                 trace_sink=trace,
             )
             interpretation_adapter.trace = executor.provider_trace
@@ -290,6 +294,9 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
             max_output_tokens=args.max_output_tokens if args.mode == "model-backed" else None,
             variant=args.variant,
             prompt_variant=args.prompt_variant,
+            requested_conceptual_depth=(
+                requested_depth.value if requested_depth is not None else "auto"
+            ),
             run_id=args.run_id,
             context_profile_digests={
                 path.stem: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -400,6 +407,12 @@ def build_parser() -> argparse.ArgumentParser:
     corpus_parser.add_argument("--inter-case-delay", type=float, default=0.0)
     corpus_parser.add_argument("--max-retries", type=int, default=0)
     corpus_parser.add_argument("--prompt-version", default="unspecified")
+    corpus_parser.add_argument(
+        "--depth",
+        choices=("auto", *(depth.value for depth in ConceptualDepth)),
+        default="auto",
+        help="Requested interpretation depth for model-backed runs (default: auto).",
+    )
     corpus_parser.add_argument(
         "--prompt-variant",
         choices=("baseline", "explicit_depth", "compact_json"),

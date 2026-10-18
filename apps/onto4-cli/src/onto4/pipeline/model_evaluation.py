@@ -16,7 +16,7 @@ from onto4.providers import (
     ProviderTransportError,
 )
 from onto4.providers.diagnostics import ProviderStageEvent, ProviderTrace
-from onto4.reasoning import FixtureClarificationPolicy, PipelineDisposition
+from onto4.reasoning import ConceptualDepth, FixtureClarificationPolicy, PipelineDisposition
 from onto4.reasoning import ClarificationKind
 
 from .clarification_corpus import ClarificationCorpusCase
@@ -45,32 +45,42 @@ class _ReplayPolicy(ModelClarificationPolicy):
 
     expected_intents: tuple[_QuestionIntent, ...] = ()
     issued_questions: int = 0
+    _last_questions: tuple = field(default=(), init=False, compare=False)
 
     def questions(self, context):
+        # Preserve the host policy's order.  Replay admission is performed
+        # against the question actually issued by the interactive loop.
         questions = super().questions(context)
+        object.__setattr__(self, "_last_questions", tuple(questions))
+        return questions
+
+    def validate_issued(self, question) -> None:
+        """Validate the concrete host-issued question without reordering it."""
+
         if self.issued_questions >= len(self.expected_intents):
             raise _ReplayError("script_exhausted")
         expected = self.expected_intents[self.issued_questions]
         if expected.kind is None or not expected.target_family or not expected.target_ids:
             raise _ReplayError("question_intent_unverified")
-        bound_candidates = tuple(
-            question
-            for question in questions
-            if question.kind is expected.kind
-            and tuple(question.target_ids) == expected.target_ids
-        )
-        if bound_candidates and all(
-            question.target_family is None for question in bound_candidates
-        ):
+        if question.target_family is None:
             raise _ReplayError("question_intent_unverified")
-        matching = tuple(
-            question
-            for question in bound_candidates
-            if question.target_family == expected.target_family
-        )
-        if not matching:
+        if question.kind is not expected.kind:
             raise _ReplayError("question_intent_mismatch")
-        return (*matching, *tuple(question for question in questions if question not in matching))
+        if question.target_family != expected.target_family:
+            raise _ReplayError("question_intent_mismatch")
+        candidates = tuple(
+            candidate
+            for candidate in self._last_questions
+            if candidate.kind is expected.kind
+            and candidate.target_family == expected.target_family
+        )
+        if not candidates:
+            raise _ReplayError("question_intent_mismatch")
+        if len(candidates) == 1:
+            return
+        if tuple(question.target_ids) == expected.target_ids:
+            return
+        raise _ReplayError("question_intent_unverified")
 
     def choose_for_kind(self, context, kind: ClarificationKind):
         return super().choose_for_kind(context, kind)
@@ -95,6 +105,7 @@ class ModelCaseExecutor:
     formalization_provider: FormalizationProvider
     contexts: Mapping[str, AssessmentContext]
     max_turns: int = 4
+    requested_conceptual_depth: ConceptualDepth | None = None
     trace_sink: ProviderTrace | None = None
     _last_events: list[ProviderStageEvent] = field(default_factory=list, init=False)
 
@@ -103,9 +114,12 @@ class ModelCaseExecutor:
         if self.trace_sink is not None:
             self.trace_sink(event)
 
-    def _metadata(self) -> tuple[int, dict[str, float], dict[str, str]]:
+    def _metadata(
+        self,
+    ) -> tuple[int, dict[str, float], dict[str, str], dict[str, str]]:
         timings: dict[str, float] = {}
         outcomes: dict[str, str] = {}
+        details: dict[str, str] = {}
         calls = 0
         occurrences: dict[str, int] = {}
         active_keys: dict[str, str] = {}
@@ -126,7 +140,30 @@ class ModelCaseExecutor:
                     timings.get(key, 0.0), event.elapsed_seconds
                 )
             outcomes[key] = event.phase
-        return calls, timings, outcomes
+            if event.detail:
+                previous = details.get(key)
+                details[key] = (
+                    event.detail if previous is None else f"{previous}; {event.detail}"
+                )
+        return calls, timings, outcomes, details
+
+    @staticmethod
+    def _diagnostics(
+        ask_result,
+        *,
+        pending: bool = False,
+        clarification_issued: bool = False,
+    ) -> dict[str, object]:
+        interpretation = ask_result.interpretation
+        return {
+            "landscape_status": ask_result.landscape.status.value,
+            "disposition": ask_result.disposition.value,
+            "reason": ask_result.reason,
+            "reading_count": len(interpretation.readings),
+            "ambiguity_count": len(interpretation.ambiguities),
+            "pending_clarification": pending,
+            "clarification_issued": clarification_issued,
+        }
 
     def _request(self, case: ClarificationCorpusCase) -> InterpretationRequest:
         state = {
@@ -135,7 +172,11 @@ class ModelCaseExecutor:
         }
         if case.model_input == "contextual" and case.context is not None:
             state["context_id"] = case.context
-        return InterpretationRequest(case.utterance, state=state)
+        return InterpretationRequest(
+            case.utterance,
+            conceptual_depth=self.requested_conceptual_depth,
+            state=state,
+        )
 
     def _case_contexts(self, case: ClarificationCorpusCase) -> Mapping[str, AssessmentContext]:
         if case.context is None:
@@ -238,6 +279,9 @@ class ModelCaseExecutor:
                 )
                 answer_index = 0
 
+                def validate_question(_, question) -> None:
+                    policy.validate_issued(question)
+
                 def input_fn(_: str) -> str:
                     nonlocal answer_index
                     policy.mark_issued()
@@ -261,6 +305,7 @@ class ModelCaseExecutor:
                     clarification_policy=policy,
                     input_fn=input_fn,
                     output_fn=lambda _: None,
+                    before_answer_fn=validate_question,
                     max_turns=self.max_turns,
                 )
                 if (
@@ -273,12 +318,23 @@ class ModelCaseExecutor:
                     result.stop_reason == "complete"
                     and policy.issued_questions < len(expected_intents)
                 ):
+                    assessment = result.session.assessment
                     return CaseExecution(
                         EvaluationOutcome.DIALOGUE_INCOMPLETE,
                         provider_calls=self._metadata()[0],
                         stage_timings=self._metadata()[1],
                         stage_outcomes=self._metadata()[2],
+                        stage_details=self._metadata()[3],
                         detail_code="required_question_not_issued",
+                        diagnostics=(
+                            self._diagnostics(
+                                assessment.ask_result,
+                                pending=result.session.clarification.pending is not None,
+                                clarification_issued=bool(result.progress.entries),
+                            )
+                            if assessment is not None
+                            else {}
+                        ),
                     )
                 if policy.issued_questions > scripted_questions:
                     raise _ReplayError("script_exhausted")
@@ -309,7 +365,7 @@ class ModelCaseExecutor:
                     PipelineDisposition.NeedEvidence: EvaluationOutcome.NEED_EVIDENCE,
                     PipelineDisposition.CannotProceed: EvaluationOutcome.CANNOT_PROCEED,
                 }[ask_result.disposition]
-            calls, timings, outcomes = self._metadata()
+            calls, timings, outcomes, details = self._metadata()
             verdict = None
             if ask_result is not None and len(ask_result.assessments) == 1:
                 verdict = (
@@ -322,39 +378,54 @@ class ModelCaseExecutor:
                 provider_calls=calls,
                 stage_timings=timings,
                 stage_outcomes=outcomes,
+                stage_details=details,
                 semantic_verdict=verdict,
                 detail_code="model_backed",
+                diagnostics=self._diagnostics(
+                    ask_result,
+                    pending=(
+                        result.session.clarification.pending is not None
+                        if case.mode == "dialogue"
+                        else False
+                    ),
+                    clarification_issued=(
+                        bool(result.progress.entries) if case.mode == "dialogue" else False
+                    ),
+                ) if ask_result is not None else {},
             )
         except ProviderTransportError as exc:
-            calls, timings, outcomes = self._metadata()
+            calls, timings, outcomes, details = self._metadata()
             return CaseExecution(
                 EvaluationOutcome.TRANSPORT_ERROR,
                 provider_calls=calls,
                 stage_timings=timings,
                 stage_outcomes=outcomes,
+                stage_details=details,
                 detail_code=type(exc).__name__,
             )
 
         except ProviderSchemaError as exc:
-            calls, timings, outcomes = self._metadata()
+            calls, timings, outcomes, details = self._metadata()
             return CaseExecution(
                 EvaluationOutcome.SCHEMA_INVALID,
                 provider_calls=calls,
                 stage_timings=timings,
                 stage_outcomes=outcomes,
+                stage_details=details,
                 detail_code=getattr(exc, "code", "schema_invalid"),
             )
         except _ContextUnavailable as exc:
-            calls, timings, outcomes = self._metadata()
+            calls, timings, outcomes, details = self._metadata()
             return CaseExecution(
                 EvaluationOutcome.CONTEXT_UNAVAILABLE,
                 provider_calls=calls,
                 stage_timings=timings,
                 stage_outcomes=outcomes,
+                stage_details=details,
                 detail_code=str(exc),
             )
         except _ReplayError as exc:
-            calls, timings, outcomes = self._metadata()
+            calls, timings, outcomes, details = self._metadata()
             outcome = {
                 "script_exhausted": EvaluationOutcome.SCRIPT_EXHAUSTED,
                 "question_intent_mismatch": EvaluationOutcome.QUESTION_INTENT_MISMATCH,
@@ -365,15 +436,17 @@ class ModelCaseExecutor:
                 provider_calls=calls,
                 stage_timings=timings,
                 stage_outcomes=outcomes,
+                stage_details=details,
                 detail_code=exc.code,
             )
         except (KeyError, ValueError) as exc:
-            calls, timings, outcomes = self._metadata()
+            calls, timings, outcomes, details = self._metadata()
             return CaseExecution(
                 EvaluationOutcome.PROVENANCE_INVALID,
                 provider_calls=calls,
                 stage_timings=timings,
                 stage_outcomes=outcomes,
+                stage_details=details,
                 detail_code=type(exc).__name__,
             )
         finally:

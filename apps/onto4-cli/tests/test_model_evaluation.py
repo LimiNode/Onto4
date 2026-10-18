@@ -67,6 +67,30 @@ def test_model_case_executor_records_safe_outcome_without_payloads():
     assert execution.detail_code == "model_backed"
 
 
+def test_model_case_executor_forwards_requested_conceptual_depth():
+    observed = []
+
+    class Provider:
+        def interpret(self, request):
+            observed.append(request.conceptual_depth)
+            return InterpretationSpace(
+                "depth-space",
+                request.source_text,
+                ConceptualDepth.Ordinary,
+            )
+
+    executor = ModelCaseExecutor(
+        Provider(),
+        FixtureFormalizationProvider({}),
+        {"physical_objects": load_context(ROOT / "profiles/contexts/physical_objects.yaml")},
+        requested_conceptual_depth=ConceptualDepth.Ordinary,
+    )
+
+    executor(_case(), request_timeout_seconds=1.0)
+
+    assert observed == [ConceptualDepth.Ordinary]
+
+
 def test_model_case_executor_classifies_transport_failure():
     class BrokenInterpretationProvider:
         def interpret(self, request):
@@ -200,11 +224,15 @@ def _dialogue_case(*, expected_kind="Meaning", turns=None):
     )
 
 
-def _ambiguous_dialogue_executor():
+def _ambiguous_dialogue_executor(*, ambiguity_count=1, ambiguity_ids=None):
     context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
+    ids = tuple(ambiguity_ids or (f"ambiguity-{index}" for index in range(ambiguity_count)))
     initial = InterpretationSpace(
         "dialogue-space", "What is the mass of integer 7?", ConceptualDepth.Ordinary,
-        ambiguities=(Ambiguity("ambiguity-0", "mass", "meaning"),),
+        ambiguities=tuple(
+            Ambiguity(item_id, term, "meaning")
+            for item_id, term in zip(ids, ("mass", "identity")[:ambiguity_count])
+        ),
     )
     successor = InterpretationSpace(
         "dialogue-successor", initial.source_text, initial.conceptual_depth,
@@ -255,6 +283,34 @@ def test_dialogue_replay_rejects_wrong_target_family():
     execution = _ambiguous_dialogue_executor()(case, request_timeout_seconds=1.0)
 
     assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
+
+
+def test_dialogue_replay_does_not_reorder_host_questions_for_script():
+    case = _dialogue_case(
+        turns=(
+            {"turn_id": "initial", "role": "user", "text": "What is the mass of integer 7?"},
+            {
+                "turn_id": "question", "role": "assistant", "text": "Clarify identity",
+                "question_kind": "Meaning", "target_family": "identity",
+                "target_ids": ["ambiguity-1"],
+            },
+            {"turn_id": "answer", "role": "user", "text": "personal identity"},
+        )
+    )
+
+    execution = _ambiguous_dialogue_executor(ambiguity_count=2)(
+        case, request_timeout_seconds=1.0
+    )
+
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
+
+
+def test_dialogue_replay_allows_semantic_target_reindex_when_binding_is_unique():
+    execution = _ambiguous_dialogue_executor(ambiguity_ids=("runtime-mass",))(
+        _dialogue_case(), request_timeout_seconds=1.0
+    )
+
+    assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
 
 
 def test_dialogue_replay_refuses_unbound_question_intent():

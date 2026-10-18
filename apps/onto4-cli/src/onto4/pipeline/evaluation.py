@@ -56,8 +56,10 @@ class CaseExecution:
     provider_calls: int = 0
     stage_timings: Mapping[str, float] = field(default_factory=dict)
     stage_outcomes: Mapping[str, str] = field(default_factory=dict)
+    stage_details: Mapping[str, str] = field(default_factory=dict)
     semantic_verdict: str | None = None
     detail_code: str | None = None
+    diagnostics: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,7 @@ class EvaluationConfig:
     max_output_tokens: int | None = None
     variant: str = "default"
     prompt_variant: str = "baseline"
+    requested_conceptual_depth: str = "auto"
     run_id: str | None = None
     context_profile_digests: Mapping[str, str] = field(default_factory=dict)
 
@@ -96,6 +99,14 @@ class EvaluationConfig:
             raise ValueError("max_output_tokens must be positive.")
         if not self.variant.strip():
             raise ValueError("variant must not be empty.")
+        if self.requested_conceptual_depth not in {
+            "auto",
+            "ordinary",
+            "reflective",
+            "philosophical",
+            "ontology_sensitive",
+        }:
+            raise ValueError("requested_conceptual_depth must be a supported depth or auto.")
 
 
 @dataclass(frozen=True)
@@ -106,10 +117,12 @@ class CaseReceipt:
     elapsed_seconds: float
     provider_stage_seconds: Mapping[str, float] = field(default_factory=dict)
     provider_stage_outcomes: Mapping[str, str] = field(default_factory=dict)
+    provider_stage_details: Mapping[str, str] = field(default_factory=dict)
     provider_calls: int = 0
     attempts: int = 1
     semantic_verdict: str | None = None
     detail_code: str | None = None
+    diagnostics: Mapping[str, object] = field(default_factory=dict)
     complete: bool = True
     resume_allowed: bool = False
 
@@ -395,10 +408,12 @@ def _load_existing_receipts(
             elapsed_seconds=float(item["elapsed_seconds"]),
             provider_stage_seconds=item.get("provider_stage_seconds", {}),
             provider_stage_outcomes=item.get("provider_stage_outcomes", {}),
+            provider_stage_details=item.get("provider_stage_details", {}),
             provider_calls=int(item.get("provider_calls", 0)),
             attempts=int(item.get("attempts", 1)),
             semantic_verdict=item.get("semantic_verdict"),
             detail_code=item.get("detail_code"),
+            diagnostics=item.get("diagnostics", {}),
             complete=bool(item.get("complete", True)),
             resume_allowed=bool(item.get("resume_allowed", False)),
         )
@@ -475,7 +490,9 @@ class SequentialEvaluationRunner:
                         provider_calls=execution.provider_calls,
                         stage_timings=execution.stage_timings,
                         stage_outcomes=execution.stage_outcomes,
+                        stage_details=execution.stage_details,
                         detail_code="case_deadline",
+                        diagnostics=execution.diagnostics,
                     )
                 if not _retryable(execution.outcome) or attempts > self.config.max_retries:
                     break
@@ -487,10 +504,12 @@ class SequentialEvaluationRunner:
                 elapsed_seconds=max(0.0, self.clock() - started),
                 provider_stage_seconds=dict(execution.stage_timings),
                 provider_stage_outcomes=dict(execution.stage_outcomes),
+                provider_stage_details=dict(execution.stage_details),
                 provider_calls=execution.provider_calls,
                 attempts=attempts,
                 semantic_verdict=execution.semantic_verdict,
                 detail_code=execution.detail_code,
+                diagnostics=dict(execution.diagnostics),
                 complete=True,
                 resume_allowed=execution.outcome in {
                     EvaluationOutcome.TRANSPORT_ERROR,
@@ -553,6 +572,7 @@ def write_markdown_report(run: EvaluationRun, path: str | Path) -> None:
         f"- Model artifact digest: `{run.config.model_artifact_digest or 'unspecified'}`",
         f"- Prompt version: `{run.config.prompt_version}`",
         f"- Prompt variant: `{run.config.prompt_variant}`",
+        f"- Requested conceptual depth: `{run.config.requested_conceptual_depth}`",
         f"- Prompt hash: `{run.config.prompt_hash or 'unspecified'}`",
         f"- Commit: `{run.config.commit_sha or 'unspecified'}`",
         f"- Variant: `{run.config.variant}`",
