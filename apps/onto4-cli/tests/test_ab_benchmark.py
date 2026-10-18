@@ -210,6 +210,74 @@ def test_rescore_existing_receipts_without_provider_calls(tmp_path):
     assert rescored.metadata["benchmark_type"] == "e2e_paired_by_case_rescore"
 
 
+def test_paired_benchmark_assigns_one_non_empty_run_id_and_rescore_requires_it(tmp_path):
+    run = run_paired_benchmark(
+        _corpus(),
+        executor_factory=lambda _condition: (
+            lambda case, *, request_timeout_seconds: CaseExecution(EvaluationOutcome.ASSESSMENT_COMPLETED)
+        ),
+        config=EvaluationConfig(),
+        receipt_dir=tmp_path,
+    )
+    run_ids = {
+        json.loads((tmp_path / f"{name}.receipts.jsonl").read_text(encoding="utf-8").splitlines()[0])[
+            "config"
+        ]["run_id"]
+        for name in run.runs
+    }
+    assert len(run_ids) == 1
+    assert next(iter(run_ids))
+
+
+def test_rescore_rejects_receipts_from_different_run_ids(tmp_path):
+    run_paired_benchmark(
+        _corpus(),
+        executor_factory=lambda _condition: (
+            lambda case, *, request_timeout_seconds: CaseExecution(EvaluationOutcome.ASSESSMENT_COMPLETED)
+        ),
+        config=EvaluationConfig(),
+        receipt_dir=tmp_path,
+    )
+    path = tmp_path / "B2.receipts.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    manifest = json.loads(lines[0])
+    manifest["config"]["run_id"] = "different-run"
+    path.write_text("\n".join([json.dumps(manifest), *lines[1:]]) + "\n", encoding="utf-8")
+    with pytest.raises(ReceiptProvenanceError, match="run_id"):
+        rescore_paired_receipts(_corpus(), tmp_path)
+
+
+def test_unknown_target_family_values_do_not_compare_equal_as_opaque():
+    corpus = ClarificationCorpus(
+        version=2,
+        name="target-family",
+        cases=(
+            ClarificationCorpusCase(
+                case_id="case",
+                utterance="Claim.",
+                context=None,
+                hidden_interpretation=None,
+                expected_clarification={"kind": "Meaning", "target_family": "secret-A"},
+                expected_after_answer={"disposition": "clarification_required"},
+            ),
+        ),
+    )
+    run = run_paired_benchmark(
+        corpus,
+        executor_factory=lambda _condition: (
+            lambda case, *, request_timeout_seconds: CaseExecution(
+                EvaluationOutcome.CLARIFICATION_REQUESTED,
+                diagnostics={
+                    "question_kind": "Meaning",
+                    "question_target_family": "secret-B",
+                },
+            )
+        ),
+        config=EvaluationConfig(),
+    )
+    assert all(cell.workflow_status == BenchmarkStatus.UNVERIFIED.value for cell in run.cells)
+
+
 def test_e2e_runner_requires_the_complete_four_cell_design():
     with pytest.raises(ValueError, match="requires exactly A1"):
         run_paired_benchmark(

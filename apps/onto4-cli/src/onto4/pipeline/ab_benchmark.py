@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import uuid
 from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from pathlib import Path
@@ -179,17 +180,6 @@ def _execution_status(outcome: EvaluationOutcome) -> ExecutionStatus:
     return ExecutionStatus.SUCCESSFUL
 
 
-def _public_target_family(value: object) -> str | None:
-    """Return a structural family code, never a user/model term."""
-
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip().casefold()
-    if normalized in {"candidate", "context", "reading", "ambiguity", "ontology"}:
-        return normalized
-    return "opaque"
-
-
 def _workflow_status(
     case: ClarificationCorpusCase,
     receipt: CaseReceipt,
@@ -241,13 +231,8 @@ def _workflow_status(
             )
         expected_target_family = expected_clarification.get("target_family")
         if isinstance(expected_target_family, str):
-            observed_family = receipt.diagnostics.get("question_target_family")
-            checks.append(
-                _public_target_family(observed_family)
-                == _public_target_family(expected_target_family)
-                if observed_family is not None
-                else None
-            )
+            observed_match = receipt.diagnostics.get("question_target_family_match")
+            checks.append(observed_match if isinstance(observed_match, bool) else None)
 
     if not checks:
         return BenchmarkStatus.NOT_COMPARABLE
@@ -304,6 +289,7 @@ def _cell(
         "question_id",
         "question_kind",
         "question_target_family",
+        "question_target_family_match",
         "question_target_ids",
         "refinement_accepted",
         "reassessment_performed",
@@ -474,6 +460,37 @@ def _validate_conditions(conditions: tuple[BenchmarkCondition, ...]) -> None:
             )
 
 
+def _paired_run_id(
+    config: EvaluationConfig,
+    artifact_dir: Path | None,
+    conditions: tuple[BenchmarkCondition, ...],
+) -> str:
+    """Resolve one run identity for all cells, preserving an existing resume."""
+
+    if config.run_id is not None:
+        if not isinstance(config.run_id, str) or not config.run_id.strip():
+            raise ValueError("paired benchmark run_id must be a non-empty string.")
+        return config.run_id
+    if artifact_dir is not None:
+        existing_ids: set[str] = set()
+        for condition in conditions:
+            receipt_path = artifact_dir / f"{condition.name}.receipts.jsonl"
+            if not receipt_path.exists():
+                continue
+            try:
+                manifest = json.loads(receipt_path.read_text(encoding="utf-8").splitlines()[0])
+                existing = manifest.get("config", {}).get("run_id")
+            except (OSError, IndexError, json.JSONDecodeError, AttributeError):
+                existing = None
+            if isinstance(existing, str) and existing.strip():
+                existing_ids.add(existing)
+        if len(existing_ids) > 1:
+            raise ValueError("Existing paired receipts disagree on run_id.")
+        if existing_ids:
+            return next(iter(existing_ids))
+    return f"paired-{uuid.uuid4().hex}"
+
+
 def run_paired_benchmark(
     corpus: ClarificationCorpus,
     *,
@@ -501,9 +518,11 @@ def run_paired_benchmark(
     artifact_dir = Path(receipt_dir) if receipt_dir is not None else None
     if artifact_dir is not None:
         artifact_dir.mkdir(parents=True, exist_ok=True)
+    paired_run_id = _paired_run_id(config, artifact_dir, conditions)
     for condition in conditions:
         condition_config = replace(
             config,
+            run_id=paired_run_id,
             variant=condition.name,
             interpretation_context_mode=condition.interpretation_context_mode,
             refinement_mode=condition.refinement_mode,
@@ -836,6 +855,10 @@ def rescore_paired_receipts(
         cells.extend(_cell(condition, case, by_id[case.case_id]) for case in corpus.cases)
     baseline = manifests[conditions[0].name]
     baseline_config = configs[conditions[0].name]
+    if not isinstance(baseline_config.run_id, str) or not baseline_config.run_id.strip():
+        raise ReceiptProvenanceError(
+            "Paired receipt manifests have no non-empty run_id provenance."
+        )
     for condition in conditions[1:]:
         config = configs[condition.name]
         for field_name in _PROVENANCE_CONFIG_FIELDS:

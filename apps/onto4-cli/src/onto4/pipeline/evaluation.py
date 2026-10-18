@@ -411,6 +411,14 @@ def _load_existing_receipts(
     expected = dict(expected_manifest)
     if manifest != expected:
         legacy_manifest = dict(manifest)
+        if (
+            "manifest_schema_version" not in legacy_manifest
+            and expected.get("manifest_schema_version") == 2
+        ):
+            # Receipts written before schema versioning remain resumable when
+            # every other provenance field still matches this run.  The
+            # benchmark re-scorer deliberately does not use this migration.
+            legacy_manifest["manifest_schema_version"] = expected["manifest_schema_version"]
         legacy_config = legacy_manifest.get("config")
         expected_config = expected.get("config")
         if isinstance(legacy_config, dict) and isinstance(expected_config, dict):
