@@ -217,12 +217,15 @@ def run_bounded_dialogue_research(
     output_cost_per_million: float | None = None,
     conditions: tuple[BenchmarkCondition, ...] | None = None,
     metadata: Mapping[str, object] | None = None,
+    intent_manifest: Sequence[DiscoveredQuestionIntent] | None = None,
 ) -> BoundedDialogueResearchRun:
     """Run only dialogue cases while preserving the paired benchmark contract."""
 
     dialogue_cases = tuple(case for case in corpus.cases if case.mode == "dialogue")
     if not dialogue_cases:
         raise ValueError("Bounded dialogue research requires at least one dialogue case.")
+    if intent_manifest is not None:
+        validate_dialogue_intent_manifest(corpus, intent_manifest)
     dialogue_corpus = ClarificationCorpus(
         version=corpus.version,
         name=corpus.name,
