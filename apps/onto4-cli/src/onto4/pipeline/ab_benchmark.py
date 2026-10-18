@@ -725,6 +725,7 @@ _PROVENANCE_CONFIG_FIELDS = (
     "context_profile_digests",
     "request_timeout_seconds",
     "case_deadline_seconds",
+    "inter_case_delay_seconds",
     "max_retries",
 )
 
