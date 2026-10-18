@@ -87,6 +87,33 @@ class _ReplayPolicy:
     issued_questions: int = 0
     telemetry: dict[str, object] = field(default_factory=dict, compare=False)
     _last_questions: tuple = field(default=(), init=False, compare=False)
+    _admitted_tokens: tuple[tuple[object, ...], ...] = field(
+        default=(), init=False, compare=False
+    )
+
+    def _record_admission(self, question) -> None:
+        """Record one admission event, idempotently for the current turn.
+
+        Selection telemetry and the pre-answer validation callback both inspect
+        the same host-issued question.  Admission is an event, not a property
+        of each validation call, so the second inspection must not increment
+        the turn counter again.
+        """
+
+        token = (
+            self.issued_questions,
+            question.id,
+            question.kind,
+            question.target_family,
+            tuple(question.target_ids),
+        )
+        if token not in self._admitted_tokens:
+            object.__setattr__(self, "_admitted_tokens", self._admitted_tokens + (token,))
+            self.telemetry["admitted_turns"] = int(
+                self.telemetry.get("admitted_turns", 0)
+            ) + 1
+        self.telemetry["intent_admitted"] = True
+        self.telemetry["last_stage"] = "intent_admitted"
 
     def questions(self, context):
         # Preserve the host policy's order.  Replay admission is performed
@@ -133,14 +160,10 @@ class _ReplayPolicy:
             self.telemetry["intent_admitted"] = False
             raise _ReplayError("question_intent_mismatch", "no_candidate")
         if len(candidates) == 1:
-            self.telemetry["intent_admitted"] = True
-            self.telemetry["admitted_turns"] = int(self.telemetry.get("admitted_turns", 0)) + 1
-            self.telemetry["last_stage"] = "intent_admitted"
+            self._record_admission(question)
             return
         if tuple(question.target_ids) == expected.target_ids:
-            self.telemetry["intent_admitted"] = True
-            self.telemetry["admitted_turns"] = int(self.telemetry.get("admitted_turns", 0)) + 1
-            self.telemetry["last_stage"] = "intent_admitted"
+            self._record_admission(question)
             return
         self.telemetry["intent_admitted"] = False
         raise _ReplayError(

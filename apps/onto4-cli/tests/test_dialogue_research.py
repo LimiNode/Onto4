@@ -19,15 +19,26 @@ from onto4.pipeline import (
 )
 from onto4.pipeline.clarification_corpus import ClarificationCorpus, ClarificationCorpusCase
 from onto4.pipeline.clarification_corpus import load_clarification_corpus
-from onto4.pipeline.dialogue_research import _dialogue_status
+from onto4.pipeline.dialogue_research import _corpus_binding, _dialogue_status
 from onto4.pipeline.evaluation import CaseExecution
 from onto4.reasoning import (
     Ambiguity,
     ClarificationKind,
     ClarificationQuestion,
     ConceptualDepth,
+    FixtureClarificationPolicy,
     InterpretationSpace,
     SemanticReading,
+)
+from onto4.pipeline.orchestration import (
+    ClarificationSession,
+    ReasoningSession,
+    issue_reasoning_clarification,
+    start_reasoning_session_per_reading,
+)
+from onto4.pipeline.interactive import (
+    FirstAdmissibleDecisionProvider,
+    interactive_decision_profile,
 )
 
 
@@ -206,11 +217,7 @@ def test_intent_manifest_is_checked_without_rewriting_oracle():
             "Ontology",
             "criterion",
             ("a",),
-            corpus_binding=json.dumps(
-                {"name": "bounded-dialogue", "version": 2, "cases": ["single", "control"]},
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
+            corpus_binding=_corpus_binding(_dialogue_corpus()),
             snapshot_id="snapshot-0",
             assessment_id="assessment-0",
         ),
@@ -255,11 +262,7 @@ def test_one_completed_turn_cannot_claim_two_turn_dialogue_complete():
 
 def test_preflight_rejects_foreign_or_duplicate_provenance():
     corpus = _dialogue_corpus()
-    binding = json.dumps(
-        {"name": "bounded-dialogue", "version": 2, "cases": ["single", "control"]},
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    binding = _corpus_binding(corpus)
     item = DiscoveredQuestionIntent(
         "foreign", 0, "Meaning", "criterion", ("a",), binding,
         "snapshot", None, "assessment",
@@ -267,3 +270,105 @@ def test_preflight_rejects_foreign_or_duplicate_provenance():
     with pytest.raises(ValueError, match="foreign"):
         validate_dialogue_intent_manifest(corpus, (item,))
     assert "criterion" not in item.safe_record().values()
+
+
+def test_corpus_binding_changes_when_script_or_oracle_changes():
+    corpus = _dialogue_corpus()
+    changed_case = ClarificationCorpusCase(
+        **{**corpus.cases[0].__dict__, "utterance": "Changed claim."}
+    )
+    changed = ClarificationCorpus(
+        version=corpus.version,
+        name=corpus.name,
+        cases=(changed_case, corpus.cases[1]),
+        model_input=corpus.model_input,
+        context_profiles=corpus.context_profiles,
+    )
+    assert _corpus_binding(corpus) != _corpus_binding(changed)
+
+
+def test_preflight_requires_global_dialogue_coverage_and_unique_snapshots():
+    first = _dialogue_corpus().cases[0]
+    second = ClarificationCorpusCase(**{**first.__dict__, "case_id": "second"})
+    corpus = ClarificationCorpus(
+        version=2,
+        name="two-dialogues",
+        cases=(first, second),
+    )
+    binding = _corpus_binding(corpus)
+    item = DiscoveredQuestionIntent(
+        "single", 0, "Meaning", "criterion", ("a",), binding,
+        "same-snapshot", None, "assessment-a",
+    )
+    with pytest.raises(ValueError, match="exactly"):
+        validate_dialogue_intent_manifest(corpus, (item,))
+    second_item = DiscoveredQuestionIntent(
+        "second", 0, "Meaning", "criterion", ("a",), binding,
+        "same-snapshot", None, "assessment-b",
+    )
+    with pytest.raises(ValueError, match="globally unique"):
+        validate_dialogue_intent_manifest(corpus, (item, second_item))
+
+
+def test_dialogue_status_requires_successful_assessment_execution():
+    assert _dialogue_status(
+        1, 1, 1, 1, 1, True, True, True, True,
+        "failed", "assessment_completed",
+    ) == "incomplete"
+    assert _dialogue_status(
+        1, 1, 1, 1, 1, True, True, True, True,
+        "successful", "dialogue_incomplete",
+    ) == "incomplete"
+
+
+def test_session_bound_refinement_accepts_real_host_issued_question():
+    initial = InterpretationSpace(
+        "session-initial",
+        "Claim.",
+        ConceptualDepth.Philosophical,
+        ambiguities=(Ambiguity("ambiguity-0", "identity", "criterion"),),
+        readings=(SemanticReading("reading-0", "identity", "identity reading"),),
+    )
+
+    class EmptyFormalizer:
+        def formalize(self, request):
+            return ()
+
+    started = start_reasoning_session_per_reading(
+        ClarificationSession(initial),
+        formalization_provider=EmptyFormalizer(),
+        contexts={},
+        clarification_policy=FixtureClarificationPolicy(),
+    ).session
+    issued = issue_reasoning_clarification(
+        started,
+        profile=interactive_decision_profile(),
+        provider=FirstAdmissibleDecisionProvider(),
+        clarification_policy=FixtureClarificationPolicy(),
+    ).session
+    assert issued.clarification.pending is not None
+
+    class FullProvider:
+        def refine(self, interpretation, question, answer):
+            return InterpretationSpace(
+                "full-successor", interpretation.source_text, interpretation.conceptual_depth,
+                readings=interpretation.readings,
+            )
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, interpretation, question, answer, **boundary):
+            return ({
+                "operation": "select_reading",
+                "target_id": "reading-0",
+                "resolved_ambiguity_ids": ["ambiguity-0"],
+            },)
+
+    result = run_session_bound_isolated_refinement_pair(
+        issued,
+        "identity criterion",
+        full_snapshot_provider=FullProvider(),
+        typed_delta_provider=DeltaProvider(),
+    )
+    assert result.protocol == "session_bound_isolated_refinement"
+    assert [cell.outcome for cell in result.cells] == ["accepted", "accepted"]
+    assert all(cell.transition_valid for cell in result.cells)

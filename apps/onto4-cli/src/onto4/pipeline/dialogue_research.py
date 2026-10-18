@@ -7,6 +7,7 @@ Onto4 verdict and it never relaxes the existing replay or provenance checks.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -118,12 +119,45 @@ class HostQuestionDiscovery:
 
 
 def _corpus_binding(corpus: ClarificationCorpus) -> str:
+    """Digest every corpus field that can affect host intent replay."""
+
+    def canonical(value):
+        if isinstance(value, Mapping):
+            return {
+                str(key): canonical(item)
+                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            }
+        if isinstance(value, (tuple, list)):
+            return [canonical(item) for item in value]
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)
+
     payload = {
         "name": corpus.name,
         "version": corpus.version,
-        "cases": [case.case_id for case in corpus.cases],
+        "model_input": corpus.model_input,
+        "context_profiles": canonical(corpus.context_profiles),
+        "cases": [
+            {
+                "case_id": case.case_id,
+                "utterance": case.utterance,
+                "context": case.context,
+                "hidden_interpretation": canonical(case.hidden_interpretation),
+                "expected_clarification": canonical(case.expected_clarification),
+                "expected_after_answer": canonical(case.expected_after_answer),
+                "model_input": case.model_input,
+                "mode": case.mode,
+                "evaluation_class": case.evaluation_class,
+                "dialogue": canonical(case.dialogue),
+            }
+            for case in corpus.cases
+        ],
     }
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def discover_host_question_intents(
@@ -223,15 +257,35 @@ def validate_dialogue_intent_manifest(
 ) -> None:
     """Require a frozen preflight manifest to cover the scripted dialogue."""
 
+    corpus_cases = {case.case_id: case for case in corpus.cases}
+    dialogue_cases = {
+        case.case_id for case in corpus.cases if case.mode == "dialogue"
+    }
     by_case: dict[str, list[DiscoveredQuestionIntent]] = {}
+    seen_snapshots: set[str] = set()
+    seen_assessments: set[str] = set()
+    seen_turns: set[tuple[str, int]] = set()
     for item in manifest:
-        if item.case_id not in {case.case_id for case in corpus.cases}:
+        if item.case_id not in corpus_cases:
             raise ValueError("Host intent preflight contains a foreign case.")
+        if item.case_id not in dialogue_cases:
+            raise ValueError("Host intent preflight contains a non-dialogue case.")
         if item.corpus_binding != _corpus_binding(corpus):
             raise ValueError("Host intent preflight corpus binding is invalid.")
         if not item.snapshot_id or not item.assessment_id:
             raise ValueError("Host intent preflight lacks assessment/snapshot provenance.")
+        if (item.case_id, item.turn_index) in seen_turns:
+            raise ValueError("Host intent preflight contains a duplicate turn.")
+        if item.snapshot_id in seen_snapshots:
+            raise ValueError("Host intent preflight snapshots are not globally unique.")
+        if item.assessment_id in seen_assessments:
+            raise ValueError("Host intent preflight assessments are not globally unique.")
+        seen_turns.add((item.case_id, item.turn_index))
+        seen_snapshots.add(item.snapshot_id)
+        seen_assessments.add(item.assessment_id)
         by_case.setdefault(item.case_id, []).append(item)
+    if set(by_case) != dialogue_cases:
+        raise ValueError("Host intent preflight does not cover exactly the dialogue cases.")
     for case in corpus.cases:
         if case.mode != "dialogue":
             continue
@@ -240,7 +294,9 @@ def validate_dialogue_intent_manifest(
             for turn in case.dialogue
             if turn.get("role") == "assistant" and "question_kind" in turn
         )
-        actual = tuple(by_case.get(case.case_id, ()))
+        actual = tuple(
+            sorted(by_case.get(case.case_id, ()), key=lambda item: item.turn_index)
+        )
         if len(actual) != len(expected):
             raise ValueError(
                 f"Host intent preflight turn count is invalid for case {case.case_id!r}."
@@ -288,7 +344,13 @@ def _dialogue_status(
     answer_consumed: bool | None,
     refinement_accepted: bool | None,
     reassessment_performed: bool | None,
+    execution_status: str | None = None,
+    outcome: str | None = None,
 ) -> str:
+    if execution_status is not None and execution_status != "successful":
+        return "incomplete"
+    if outcome is not None and outcome != "assessment_completed":
+        return "incomplete"
     if required_turns is not None:
         counts = (
             admitted_turns,
@@ -359,6 +421,8 @@ def _cell_from_benchmark(cell) -> DialogueResearchCell:
             answer_consumed,
             refinement_accepted,
             reassessment_performed,
+            cell.execution_status,
+            cell.outcome,
         ),
         semantic_status=cell.semantic_status,
         semantic_verdict=cell.semantic_verdict,

@@ -125,6 +125,68 @@ def test_interactive_dialogue_uses_successor_and_reassessment():
     assert result.progress.entries[0].kind is ClarificationProgressKind.StructuralResolution
 
 
+def test_interactive_dialogue_executes_two_turn_host_chain_without_double_admission():
+    initial = InterpretationSpace(
+        id="initial-two-turn",
+        source_text="Claim.",
+        conceptual_depth=ConceptualDepth.Ordinary,
+        ambiguities=(
+            Ambiguity("ambiguity-0", "identity", "first criterion"),
+            Ambiguity("ambiguity-1", "continuity", "second criterion"),
+        ),
+        readings=(SemanticReading("reading-0", "identity", "identity claim"),),
+    )
+    first = InterpretationSpace(
+        id="successor-one",
+        source_text=initial.source_text,
+        conceptual_depth=initial.conceptual_depth,
+        ambiguities=(initial.ambiguities[1],),
+        readings=initial.readings,
+    )
+    second = InterpretationSpace(
+        id="successor-two",
+        source_text=initial.source_text,
+        conceptual_depth=initial.conceptual_depth,
+        readings=initial.readings,
+    )
+
+    class TwoStepRefinement:
+        def __init__(self):
+            self.calls = []
+
+        def refine(self, interpretation, question, answer):
+            self.calls.append((interpretation.id, question.id, answer))
+            return first if len(self.calls) == 1 else second
+
+    refinement = TwoStepRefinement()
+    answers = iter(("first answer", "second answer"))
+    result = run_interactive_dialogue(
+        InterpretationRequest(initial.source_text),
+        interpretation_provider=_InterpretationProvider(initial),
+        refinement_provider=refinement,
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=ModelClarificationPolicy(
+            FixtureClarificationPolicy(), refinement
+        ),
+        input_fn=lambda _prompt: next(answers),
+        output_fn=lambda _line: None,
+        max_turns=3,
+    )
+
+    assert result.stop_reason == "complete"
+    assert result.turns == 2
+    assert len(result.progress.entries) == 2
+    assert len(result.session.clarification.history.turns) == 2
+    assert [turn.previous_interpretation_id for turn in result.session.clarification.history.turns] == [
+        "initial-two-turn", "successor-one"
+    ]
+    assert [turn.successor_interpretation_id for turn in result.session.clarification.history.turns] == [
+        "successor-one", "successor-two"
+    ]
+    assert len(refinement.calls) == 2
+
+
 def test_typed_delta_dialogue_uses_same_question_and_host_applies_operation():
     initial = _space("initial", ambiguous=True)
     proposals = []

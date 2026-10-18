@@ -203,21 +203,36 @@ def _workflow_status(
         elif expected_disposition == "clarification_required":
             checks.append(receipt.outcome is EvaluationOutcome.CLARIFICATION_REQUESTED)
         elif expected_disposition == "dialogue_reassessment_required":
-            required = (
+            required_turns = diagnostics.get("required_turns")
+            counters = (
                 diagnostics.get("questions_issued"),
                 diagnostics.get("answers_consumed"),
+                diagnostics.get("admitted_turns"),
+                diagnostics.get("answered_turns"),
+                diagnostics.get("accepted_refinements"),
+                diagnostics.get("completed_reassessments"),
+            )
+            required = counters + (
                 diagnostics.get("refinement_accepted"),
                 diagnostics.get("reassessment_performed"),
             )
-            if any(value is None for value in required):
+            if receipt.outcome in {
+                EvaluationOutcome.DIALOGUE_INCOMPLETE,
+                EvaluationOutcome.SCRIPT_EXHAUSTED,
+            }:
+                checks.append(False)
+            elif any(value is None for value in required):
+                checks.append(None)
+            elif any(type(value) is not int for value in counters):
+                checks.append(None)
+            elif type(required_turns) is not int or required_turns < 1:
                 checks.append(None)
             else:
                 checks.append(
                     receipt.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
-                    and all(
-                        bool(value) for value in required[:3]
-                    )
-                    and bool(required[3])
+                    and all(int(value) >= required_turns for value in counters)
+                    and bool(required[-2])
+                    and bool(required[-1])
                 )
         else:
             checks.append(None)

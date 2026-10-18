@@ -16,6 +16,8 @@ from onto4.providers import (
 from onto4.providers.diagnostics import ProviderStageEvent
 from onto4.reasoning import (
     Ambiguity,
+    ClarificationKind,
+    ClarificationQuestion,
     ConceptualDepth,
     FormalizationCandidate,
     InterpretationSpace,
@@ -80,6 +82,32 @@ def test_replay_telemetry_does_not_call_empty_candidates_generated():
     assert policy.questions(object()) == ()
     assert telemetry["question_candidate_generated"] is False
     assert telemetry["question_candidate_count"] == 0
+
+
+def test_replay_admission_is_counted_once_for_selection_and_validation():
+    question = ClarificationQuestion(
+        "meaning:ambiguity-0",
+        ClarificationKind.Meaning,
+        "Clarify",
+        ("ambiguity-0",),
+        target_family="mass",
+    )
+    telemetry = {}
+    policy = _ReplayPolicy(
+        type("Base", (), {"questions": lambda self, _context: (question,)})(),
+        expected_intents=(
+            type("Intent", (), {
+                "kind": ClarificationKind.Meaning,
+                "target_family": "mass",
+                "target_ids": ("ambiguity-0",),
+            })(),
+        ),
+        telemetry=telemetry,
+    )
+    assert policy.questions(object()) == (question,)
+    policy.record_question_selected(question)
+    policy.validate_issued(question)
+    assert telemetry["admitted_turns"] == 1
 
 
 def test_model_case_executor_forwards_requested_conceptual_depth():
