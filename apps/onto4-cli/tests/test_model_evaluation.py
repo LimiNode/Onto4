@@ -92,6 +92,38 @@ def test_model_case_executor_forwards_requested_conceptual_depth():
     assert observed == [ConceptualDepth.Ordinary]
 
 
+def test_model_case_executor_only_exposes_context_projection_when_contextual():
+    observed = []
+
+    class Provider:
+        def interpret(self, request):
+            observed.append(request.state)
+            return InterpretationSpace(
+                "context-space",
+                request.source_text,
+                ConceptualDepth.Ordinary,
+            )
+
+    context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
+    executor = ModelCaseExecutor(
+        Provider(),
+        FixtureFormalizationProvider({}),
+        {"physical_objects": context},
+    )
+
+    executor(_case(), request_timeout_seconds=1.0)
+    contextual_case = ClarificationCorpusCase(
+        **{**_case().__dict__, "model_input": "contextual"}
+    )
+    executor(contextual_case, request_timeout_seconds=1.0)
+
+    assert "context_projections" not in observed[0]
+    assert observed[1]["context_id"] == "physical_objects"
+    assert observed[1]["context_projections"]["physical_objects"]["ontology"] == (
+        "physical_objects"
+    )
+
+
 def test_model_case_executor_classifies_transport_failure():
     class BrokenInterpretationProvider:
         def interpret(self, request):

@@ -38,6 +38,7 @@ from onto4.providers import (
     ProviderStageEvent,
     ProviderSchemaError,
     ProviderTransportError,
+    project_assessment_context,
 )
 from onto4.reasoning import ConceptualDepth, FixtureClarificationPolicy
 from onto4.providers import InterpretationRequest
@@ -178,7 +179,16 @@ def _run_ask(args: argparse.Namespace) -> int:
             context_ids=tuple(contexts),
             trace=trace,
         )
-        request = InterpretationRequest(args.text, conceptual_depth=depth)
+        request = InterpretationRequest(
+            args.text,
+            conceptual_depth=depth,
+            state={
+                "context_projections": {
+                    context_id: project_assessment_context(context_id, context).as_dict()
+                    for context_id, context in contexts.items()
+                }
+            },
+        )
         if args.interactive:
             dialogue_policy = ModelClarificationPolicy(
                 FixtureClarificationPolicy(),

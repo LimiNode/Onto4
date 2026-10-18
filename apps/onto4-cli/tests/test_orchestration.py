@@ -104,6 +104,49 @@ def test_material_ambiguity_requests_meaning_clarification():
     assert result.clarification_question.target_ids == ("identity-term",)
 
 
+def test_ambiguity_is_not_material_when_all_readings_agree_in_context():
+    readings = (
+        SemanticReading("numeric", "numeric", "numeric comparison"),
+        SemanticReading("ordinal", "ordinal", "ordinal comparison"),
+    )
+    result = run(
+        space(
+            ambiguities=(Ambiguity("greater", "больше", "quantity or order"),),
+            readings=readings,
+        ),
+        [
+            candidate("numeric", "numeric", "fixture", atom("a"), reading_id="numeric"),
+            candidate("ordinal", "ordinal", "fixture", atom("a"), reading_id="ordinal"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.Complete
+    assert result.reason == "assessed"
+    assert result.clarification_question is None
+
+
+def test_ambiguity_remains_material_when_readings_change_assessment():
+    readings = (
+        SemanticReading("numeric", "numeric", "numeric comparison"),
+        SemanticReading("ordinal", "ordinal", "ordinal comparison"),
+    )
+    result = run(
+        space(
+            ambiguities=(Ambiguity("greater", "больше", "quantity or order"),),
+            readings=readings,
+        ),
+        [
+            candidate("numeric", "numeric", "fixture", atom("a"), reading_id="numeric"),
+            candidate("ordinal", "ordinal", "fixture", atom("b"), reading_id="ordinal"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T, "b()": Verdict.F})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+    assert result.reason == "material_ambiguity"
+
+
 def test_context_dependence_requests_context_clarification():
     result = run(
         space(),

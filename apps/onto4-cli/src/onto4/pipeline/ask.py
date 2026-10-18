@@ -207,7 +207,7 @@ def determine_disposition(context: ClarificationContext) -> tuple[PipelineDispos
     landscape = context.landscape
     if landscape.status is CrossCandidateStatus.InvalidRequest:
         return PipelineDisposition.CannotProceed, "invalid_request"
-    if context.interpretation.ambiguities:
+    if material_ambiguity(context):
         return PipelineDisposition.AskClarification, "material_ambiguity"
     if landscape.status is CrossCandidateStatus.FormalizationUnresolved:
         return PipelineDisposition.AskClarification, "formalization_unresolved"
@@ -235,3 +235,21 @@ def determine_disposition(context: ClarificationContext) -> tuple[PipelineDispos
     ):
         return PipelineDisposition.NeedEvidence, "insufficient_or_conflicting_evidence"
     return PipelineDisposition.Complete, "assessed"
+
+
+def material_ambiguity(context: ClarificationContext) -> bool:
+    """Return whether an interpretation ambiguity changes this assessment.
+
+    An ambiguity is not material merely because a provider listed it.  When
+    at least two independently assessed candidates/readings agree in the
+    supplied contexts, the host has evidence that the distinction is
+    irrelevant to the current Onto4 assessment.  With only one candidate we
+    retain the conservative clarification behaviour because no comparison is
+    available.  Unresolved or conflicting landscapes remain material.
+    """
+
+    if not context.interpretation.ambiguities:
+        return False
+    if len(context.assessments) < 2:
+        return True
+    return context.landscape.status is not CrossCandidateStatus.StableAcrossCandidates

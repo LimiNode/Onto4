@@ -15,6 +15,7 @@ from onto4.providers import (
     InterpretationRequest,
     ProviderSchemaError,
     ProviderTransportError,
+    project_assessment_context,
 )
 from onto4.providers.diagnostics import ProviderStageEvent, ProviderTrace
 from onto4.reasoning import ConceptualDepth, FixtureClarificationPolicy, PipelineDisposition
@@ -218,6 +219,16 @@ class ModelCaseExecutor:
         }
         if case.model_input == "contextual" and case.context is not None:
             state["context_id"] = case.context
+        if (
+            case.model_input == "contextual"
+            and case.context is not None
+            and case.context in self.contexts
+        ):
+            state["context_projections"] = {
+                case.context: project_assessment_context(
+                    case.context, self.contexts[case.context]
+                ).as_dict()
+            }
         return InterpretationRequest(
             case.utterance,
             conceptual_depth=self.requested_conceptual_depth,

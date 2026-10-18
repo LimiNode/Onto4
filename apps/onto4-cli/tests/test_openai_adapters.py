@@ -188,6 +188,29 @@ def test_interpretation_adapter_preserves_explicit_requested_depth():
     assert "Preserve this requested conceptual_depth exactly" in client.messages[1]["content"]
 
 
+def test_interpretation_prompt_receives_bounded_context_projection():
+    client = FakeClient(interpretation_payload())
+    projection = AssessmentContextProjection(
+        id="arithmetic",
+        ontology="arithmetic",
+        symbols=(("two", "Number"),),
+    )
+
+    OpenAICompatibleInterpretationProvider(client).interpret(
+        InterpretationRequest(
+            "The door is closed.",
+            state={"context_projections": {"arithmetic": projection.as_dict()}},
+        )
+    )
+
+    prompt = client.messages[1]["content"]
+    assert "context_projections" in prompt
+    assert "arithmetic" in prompt
+    assert '"symbols"' in prompt
+    assert "evidence" in prompt
+    assert "verdict" in prompt
+
+
 def test_interpretation_adapter_allows_model_depth_selection_when_unspecified():
     client = FakeClient(interpretation_payload())
 
