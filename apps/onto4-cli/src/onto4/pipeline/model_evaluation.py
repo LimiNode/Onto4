@@ -51,6 +51,17 @@ _FINISH_DETAIL_RE = re.compile(
 )
 
 
+def _safe_target_family(value: object) -> str | None:
+    """Publish only structural target classes, never user/model terms."""
+
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().casefold()
+    if normalized in {"candidate", "context", "reading", "ambiguity", "ontology"}:
+        return normalized
+    return "opaque"
+
+
 class _ReplayError(ValueError):
     """A scripted dialogue cannot be safely replayed against this model turn."""
 
@@ -450,7 +461,7 @@ class ModelCaseExecutor:
                             "questions_issued": int(workflow["questions_issued"]) + 1,
                             "question_id": question.id,
                             "question_kind": question.kind.value,
-                            "question_target_family": question.target_family,
+                            "question_target_family": _safe_target_family(question.target_family),
                             "question_target_ids": tuple(question.target_ids),
                             "last_stage": "question_issued",
                         }

@@ -370,6 +370,7 @@ def _receipt_json(receipt: CaseReceipt) -> dict[str, Any]:
 
 def _manifest(corpus: ClarificationCorpus, digest: str, config: EvaluationConfig) -> dict[str, Any]:
     return {
+        "manifest_schema_version": 2,
         "record_type": "manifest",
         "corpus_name": corpus.name,
         "corpus_version": corpus.version,

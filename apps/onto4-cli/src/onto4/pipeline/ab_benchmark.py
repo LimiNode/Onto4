@@ -25,6 +25,13 @@ from .evaluation import (
 
 _COMPLETION_TOKENS = re.compile(r"completion_tokens=(?P<tokens>[0-9]{1,9})")
 _REQUIRED_CONDITION_NAMES = frozenset({"A1", "A2", "B1", "B2"})
+_EXPECTED_CONDITION_MODES = {
+    "A1": ("context_late", "full_snapshot"),
+    "A2": ("context_aware", "full_snapshot"),
+    "B1": ("context_late", "typed_delta"),
+    "B2": ("context_aware", "typed_delta"),
+}
+_RECEIPT_MANIFEST_SCHEMA_VERSION = 2
 _FAILED_OUTCOMES = frozenset(
     {
         EvaluationOutcome.TRANSPORT_ERROR,
@@ -60,6 +67,10 @@ class ExecutionStatus(str, Enum):
     FAILED = "failed"
     INCOMPLETE = "incomplete"
     UNSUPPORTED = "unsupported"
+
+
+class ReceiptProvenanceError(ValueError):
+    """Receipt artifacts cannot be trusted for paired re-scoring."""
 
 
 @dataclass(frozen=True)
@@ -168,6 +179,17 @@ def _execution_status(outcome: EvaluationOutcome) -> ExecutionStatus:
     return ExecutionStatus.SUCCESSFUL
 
 
+def _public_target_family(value: object) -> str | None:
+    """Return a structural family code, never a user/model term."""
+
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().casefold()
+    if normalized in {"candidate", "context", "reading", "ambiguity", "ontology"}:
+        return normalized
+    return "opaque"
+
+
 def _workflow_status(
     case: ClarificationCorpusCase,
     receipt: CaseReceipt,
@@ -221,20 +243,19 @@ def _workflow_status(
         if isinstance(expected_target_family, str):
             observed_family = receipt.diagnostics.get("question_target_family")
             checks.append(
-                observed_family == expected_target_family
+                _public_target_family(observed_family)
+                == _public_target_family(expected_target_family)
                 if observed_family is not None
                 else None
             )
 
     if not checks:
         return BenchmarkStatus.NOT_COMPARABLE
+    if any(check is False for check in checks):
+        return BenchmarkStatus.INCORRECT
     if any(check is None for check in checks):
         return BenchmarkStatus.UNVERIFIED
-    return (
-        BenchmarkStatus.CORRECT
-        if all(checks)
-        else BenchmarkStatus.INCORRECT
-    )
+    return BenchmarkStatus.CORRECT
 
 
 def _semantic_status(
@@ -444,6 +465,13 @@ def _validate_conditions(conditions: tuple[BenchmarkCondition, ...]) -> None:
     names = tuple(condition.name for condition in conditions)
     if set(names) != _REQUIRED_CONDITION_NAMES or len(names) != len(_REQUIRED_CONDITION_NAMES):
         raise ValueError("The paired E2E benchmark requires exactly A1, A2, B1 and B2.")
+    for condition in conditions:
+        expected = _EXPECTED_CONDITION_MODES[condition.name]
+        actual = (condition.interpretation_context_mode, condition.refinement_mode)
+        if actual != expected:
+            raise ValueError(
+                f"Condition {condition.name} has {actual!r}; expected {expected!r}."
+            )
 
 
 def run_paired_benchmark(
@@ -536,6 +564,10 @@ def corpus_digest_for_loaded(corpus: ClarificationCorpus) -> str:
 
 
 def _semantic_obligation_payload(interpretation: InterpretationSpace) -> dict[str, object]:
+    presupposition_by_id = {
+        item.id: " ".join(item.description.split()).casefold()
+        for item in interpretation.presuppositions
+    }
     return {
         "source_text": interpretation.source_text,
         "conceptual_depth": interpretation.conceptual_depth.value,
@@ -553,6 +585,10 @@ def _semantic_obligation_payload(interpretation: InterpretationSpace) -> dict[st
                 "label": item.label,
                 "description": item.description,
                 "presupposition_count": len(item.presupposition_ids),
+                "presupposition_signatures": [
+                    presupposition_by_id.get(item_id, f"missing:{item_id}")
+                    for item_id in item.presupposition_ids
+                ],
             }
             for item in interpretation.readings
         ],
@@ -672,22 +708,66 @@ def write_benchmark_report(run: PairedBenchmarkRun, path: str | Path) -> None:
     target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _load_receipt_file(path: Path) -> tuple[EvaluationConfig, tuple[CaseReceipt, ...]]:
+_PROVENANCE_CONFIG_FIELDS = (
+    "provider",
+    "model",
+    "mode",
+    "prompt_version",
+    "prompt_hash",
+    "commit_sha",
+    "model_artifact_digest",
+    "temperature",
+    "thinking_enabled",
+    "max_output_tokens",
+    "prompt_variant",
+    "requested_conceptual_depth",
+    "run_id",
+    "context_profile_digests",
+    "request_timeout_seconds",
+    "case_deadline_seconds",
+    "max_retries",
+)
+
+
+def _load_receipt_file(
+    path: Path,
+) -> tuple[Mapping[str, object], EvaluationConfig, tuple[CaseReceipt, ...]]:
+    if not path.exists():
+        raise ReceiptProvenanceError(f"Receipt file {path} does not exist.")
     lines = path.read_text(encoding="utf-8").splitlines()
     if not lines:
-        raise ValueError(f"Receipt file {path} is empty.")
+        raise ReceiptProvenanceError(f"Receipt file {path} is empty.")
     manifest = json.loads(lines[0])
-    if not isinstance(manifest, Mapping) or not isinstance(manifest.get("config"), Mapping):
-        raise ValueError(f"Receipt file {path} has no usable manifest.")
+    if not isinstance(manifest, Mapping):
+        raise ReceiptProvenanceError(f"Receipt file {path} has no usable manifest.")
+    if manifest.get("manifest_schema_version") != _RECEIPT_MANIFEST_SCHEMA_VERSION:
+        raise ReceiptProvenanceError(
+            f"Receipt file {path} is legacy or missing manifest metadata "
+            "(legacy_missing_metadata)."
+        )
+    if manifest.get("record_type") != "manifest":
+        raise ReceiptProvenanceError(f"Receipt file {path} has an invalid manifest record type.")
+    if not isinstance(manifest.get("config"), Mapping):
+        raise ReceiptProvenanceError(f"Receipt file {path} has no usable manifest config.")
+    for key in ("corpus_name", "corpus_version", "corpus_digest"):
+        if key not in manifest:
+            raise ReceiptProvenanceError(f"Receipt file {path} is missing {key} metadata.")
     config = EvaluationConfig(**dict(manifest["config"]))
     receipts: list[CaseReceipt] = []
+    seen_ids: set[str] = set()
     for line in lines[1:]:
         if not line.strip():
             continue
         item = json.loads(line)
+        if not isinstance(item, Mapping) or item.get("record_type") == "manifest":
+            raise ReceiptProvenanceError(f"Receipt file {path} contains an invalid receipt record.")
+        case_id = str(item["case_id"])
+        if case_id in seen_ids:
+            raise ReceiptProvenanceError(f"Receipt file {path} contains duplicate case_id {case_id!r}.")
+        seen_ids.add(case_id)
         receipts.append(
             CaseReceipt(
-                case_id=str(item["case_id"]),
+                case_id=case_id,
                 case_mode=str(item.get("case_mode", "single_pass")),
                 outcome=EvaluationOutcome(item["outcome"]),
                 elapsed_seconds=float(item.get("elapsed_seconds", 0.0)),
@@ -700,7 +780,7 @@ def _load_receipt_file(path: Path) -> tuple[EvaluationConfig, tuple[CaseReceipt,
                 diagnostics=item.get("diagnostics", {}),
             )
         )
-    return config, tuple(receipts)
+    return manifest, config, tuple(receipts)
 
 
 def rescore_paired_receipts(
@@ -719,16 +799,54 @@ def rescore_paired_receipts(
     runs: dict[str, EvaluationRun] = {}
     configs: dict[str, EvaluationConfig] = {}
     cells: list[BenchmarkCell] = []
+    manifests: dict[str, Mapping[str, object]] = {}
+    expected_case_ids = {case.case_id for case in corpus.cases}
     for condition in conditions:
-        config, receipts = _load_receipt_file(root / f"{condition.name}.receipts.jsonl")
+        manifest, config, receipts = _load_receipt_file(root / f"{condition.name}.receipts.jsonl")
+        manifests[condition.name] = manifest
+        if manifest.get("corpus_digest") != digest:
+            raise ReceiptProvenanceError(
+                f"Receipt file for {condition.name} has a corpus digest mismatch."
+            )
+        if manifest.get("corpus_name") != corpus.name or manifest.get("corpus_version") != corpus.version:
+            raise ReceiptProvenanceError(
+                f"Receipt file for {condition.name} has corpus metadata mismatch."
+            )
+        expected_modes = _EXPECTED_CONDITION_MODES[condition.name]
+        if config.variant != condition.name or (
+            config.interpretation_context_mode,
+            config.refinement_mode,
+        ) != expected_modes:
+            raise ReceiptProvenanceError(
+                f"Receipt file for {condition.name} has condition provenance mismatch."
+            )
         configs[condition.name] = config
         by_id = {receipt.case_id: receipt for receipt in receipts}
+        foreign = sorted(set(by_id) - expected_case_ids)
+        if foreign:
+            raise ReceiptProvenanceError(
+                f"Receipt file for {condition.name} has foreign cases: {', '.join(foreign)}"
+            )
         missing = [case.case_id for case in corpus.cases if case.case_id not in by_id]
         if missing:
-            raise ValueError(
+            raise ReceiptProvenanceError(
                 f"Receipt file for {condition.name} is missing cases: {', '.join(missing)}"
             )
         cells.extend(_cell(condition, case, by_id[case.case_id]) for case in corpus.cases)
+    baseline = manifests[conditions[0].name]
+    baseline_config = configs[conditions[0].name]
+    for condition in conditions[1:]:
+        config = configs[condition.name]
+        for field_name in _PROVENANCE_CONFIG_FIELDS:
+            if getattr(config, field_name) != getattr(baseline_config, field_name):
+                raise ReceiptProvenanceError(
+                    f"Receipt manifests disagree on shared configuration {field_name!r}."
+                )
+        for key in ("corpus_name", "corpus_version", "corpus_digest"):
+            if manifests[condition.name].get(key) != baseline.get(key):
+                raise ReceiptProvenanceError(
+                    f"Receipt manifests disagree on shared corpus metadata {key!r}."
+                )
     report_metadata = dict(metadata or {})
     report_metadata.setdefault("benchmark_type", "e2e_paired_by_case_rescore")
     report_metadata.setdefault("condition_order", [condition.name for condition in conditions])
@@ -790,6 +908,7 @@ __all__ = [
     "BenchmarkStatus",
     "DEFAULT_BENCHMARK_CONDITIONS",
     "ExecutionStatus",
+    "ReceiptProvenanceError",
     "IsolatedRefinementCell",
     "IsolatedRefinementRun",
     "PairedBenchmarkRun",

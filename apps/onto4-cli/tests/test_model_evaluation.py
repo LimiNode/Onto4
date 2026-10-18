@@ -485,6 +485,8 @@ def test_dialogue_replay_allows_semantic_target_reindex_when_binding_is_unique()
     )
 
     assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
+    assert execution.diagnostics["question_target_family"] == "opaque"
+    assert '"question_target_family": "mass"' not in json.dumps(execution.diagnostics)
 
 
 def test_dialogue_replay_refuses_unbound_question_intent():

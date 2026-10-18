@@ -1,3 +1,5 @@
+import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -15,7 +17,14 @@ from onto4.pipeline import (
 from onto4.pipeline.clarification_corpus import ClarificationCorpus, ClarificationCorpusCase
 from onto4.pipeline.clarification_corpus import load_clarification_corpus
 from onto4.pipeline.evaluation import CaseExecution
-from onto4.pipeline.ab_benchmark import BenchmarkCondition, write_benchmark_report
+from onto4.pipeline.ab_benchmark import (
+    BenchmarkCondition,
+    ReceiptProvenanceError,
+    _semantic_obligation_payload,
+    _snapshot_digest,
+    write_benchmark_report,
+)
+from onto4.pipeline.evaluation import CaseReceipt
 from onto4.reasoning import (
     Ambiguity,
     ClarificationQuestion,
@@ -23,6 +32,8 @@ from onto4.reasoning import (
     ClarificationTurn,
     ConceptualDepth,
     InterpretationSpace,
+    Presupposition,
+    SemanticReading,
 )
 
 
@@ -211,6 +222,88 @@ def test_e2e_runner_requires_the_complete_four_cell_design():
             config=EvaluationConfig(),
             conditions=DEFAULT_BENCHMARK_CONDITIONS[:3],
         )
+
+
+def test_e2e_runner_rejects_condition_label_with_wrong_semantics():
+    conditions = list(DEFAULT_BENCHMARK_CONDITIONS)
+    conditions[0] = BenchmarkCondition("A1", "context_aware", "typed_delta")
+    with pytest.raises(ValueError, match="Condition A1"):
+        run_paired_benchmark(
+            _corpus(),
+            executor_factory=lambda _condition: (
+                lambda case, *, request_timeout_seconds: CaseExecution(
+                    EvaluationOutcome.ASSESSMENT_COMPLETED
+                )
+            ),
+            config=EvaluationConfig(),
+            conditions=tuple(conditions),
+        )
+
+
+def test_workflow_false_is_not_hidden_by_missing_secondary_check():
+    corpus = ClarificationCorpus(
+        version=2,
+        name="workflow-tristate",
+        cases=(
+            ClarificationCorpusCase(
+                case_id="case",
+                utterance="Claim.",
+                context=None,
+                hidden_interpretation=None,
+                expected_clarification={"kind": "Meaning", "target_family": "SECRET_USER_SOURCE_123"},
+                expected_after_answer={"disposition": "clarification_required"},
+            ),
+        ),
+    )
+
+    def executor_factory(_condition):
+        return lambda case, *, request_timeout_seconds: CaseExecution(
+            EvaluationOutcome.ASSESSMENT_COMPLETED,
+            diagnostics={"question_kind": "Ontology"},
+        )
+
+    run = run_paired_benchmark(corpus, executor_factory=executor_factory, config=EvaluationConfig())
+    assert all(cell.workflow_status == BenchmarkStatus.INCORRECT.value for cell in run.cells)
+    payload = json.dumps([cell.workflow_diagnostics for cell in run.cells])
+    assert "SECRET_USER_SOURCE_123" not in payload
+
+
+def test_semantic_digest_includes_reading_presupposition_bindings():
+    presuppositions = (
+        # IDs are intentionally opaque; only semantic content should bind.
+        Presupposition("p1", "A stable object"),
+        Presupposition("p2", "A continuing process"),
+    )
+    left = InterpretationSpace(
+        "left", "Claim.", ConceptualDepth.Philosophical,
+        presuppositions=presuppositions,
+        readings=(SemanticReading("r1", "one", "one", ("p1",)),),
+    )
+    right = replace(
+        left,
+        id="right",
+        readings=(SemanticReading("r1", "one", "one", ("p2",)),),
+    )
+    assert _semantic_obligation_payload(left)["readings"][0]["presupposition_count"] == 1
+    assert _snapshot_digest(left) != _snapshot_digest(right)
+
+
+def test_rescore_rejects_legacy_receipts(tmp_path):
+    run_paired_benchmark(
+        _corpus(),
+        executor_factory=lambda _condition: (
+            lambda case, *, request_timeout_seconds: CaseExecution(EvaluationOutcome.ASSESSMENT_COMPLETED)
+        ),
+        config=EvaluationConfig(),
+        receipt_dir=tmp_path,
+    )
+    manifest_path = tmp_path / "A1.receipts.jsonl"
+    lines = manifest_path.read_text(encoding="utf-8").splitlines()
+    manifest = json.loads(lines[0])
+    manifest.pop("manifest_schema_version")
+    manifest_path.write_text("\n".join([json.dumps(manifest), *lines[1:]]) + "\n", encoding="utf-8")
+    with pytest.raises(ReceiptProvenanceError, match="legacy_missing_metadata"):
+        rescore_paired_receipts(_corpus(), tmp_path)
 
 
 def test_isolated_refinement_pair_uses_one_initial_snapshot_and_validates_provenance():
