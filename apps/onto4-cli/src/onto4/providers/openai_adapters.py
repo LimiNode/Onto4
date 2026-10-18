@@ -27,6 +27,7 @@ from .protocols import (
     FormalizationRequest,
     InterpretationProvider,
     InterpretationRequest,
+    MAX_REFINEMENT_OPERATIONS,
     RefinementDeltaProvider,
 )
 
@@ -671,7 +672,8 @@ class OpenAICompatibleRefinementDeltaProvider(RefinementDeltaProvider):
                         "content": (
                             "Propose one or more semantic refinement operations after the "
                             "user's answer. Return {\"deltas\": [{...}]}. Every operation "
-                            "must be allowed and may reference only host IDs listed in "
+                            f"must be allowed, and the total must be at or below {MAX_REFINEMENT_OPERATIONS}. "
+                            "Operations may reference only host IDs listed in "
                             "allowed_boundary. Do not return a successor snapshot, invented IDs, "
                             "an Onto4 verdict, evidence, history or assessment. "
                             "Operation fields are: select_reading(target_id, "
@@ -697,6 +699,11 @@ class OpenAICompatibleRefinementDeltaProvider(RefinementDeltaProvider):
             raw_deltas = payload["deltas"]
             if not isinstance(raw_deltas, list) or not raw_deltas:
                 raise ProviderSchemaError("deltas must be a non-empty JSON array.")
+            if len(raw_deltas) > MAX_REFINEMENT_OPERATIONS:
+                raise ProviderSchemaError(
+                    "deltas exceeds the host operation limit of "
+                    f"{MAX_REFINEMENT_OPERATIONS}."
+                )
             deltas = []
             for index, raw_delta in enumerate(raw_deltas):
                 path = f"deltas[{index}]"

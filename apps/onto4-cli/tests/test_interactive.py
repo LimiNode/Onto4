@@ -398,6 +398,64 @@ def test_typed_delta_attached_add_presupposition_is_admitted_as_new_content():
     assert policy.ledger.entries[0].refinement_committed is True
 
 
+def test_typed_delta_refine_ambiguity_is_unresolved_not_structural_resolution():
+    initial = _space("initial", ambiguous=True)
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "refine_ambiguity",
+                "target_id": "ambiguity-0",
+                "text": "term",
+                "description": "one more specific formulation",
+            },)
+
+    policy = ProgressAwareClarificationPolicy(
+        TypedDeltaClarificationPolicy(FixtureClarificationPolicy(), DeltaProvider())
+    )
+    question = ClarificationQuestion(
+        "meaning:ambiguity-0",
+        ClarificationKind.Meaning,
+        "What does the term mean?",
+        ("ambiguity-0",),
+    )
+
+    policy.successor(interpretation=initial, question=question, answer="clarify")
+
+    assert policy.ledger.entries[0].kind is ClarificationProgressKind.Unresolved
+
+
+def test_typed_delta_qualify_ontology_is_unresolved_not_ontology_selection():
+    initial = replace(
+        _space("initial", ambiguous=False),
+        ontologies=(
+            OntologyCandidate("ontology-0", "ordinary", "ordinary objects"),
+        ),
+    )
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "qualify_ontology_candidate",
+                "target_id": "ontology-0",
+                "description": "a more specific ontology description",
+            },)
+
+    policy = ProgressAwareClarificationPolicy(
+        TypedDeltaClarificationPolicy(FixtureClarificationPolicy(), DeltaProvider())
+    )
+    question = ClarificationQuestion(
+        "ontology:ontology-0",
+        ClarificationKind.Ontology,
+        "Which ontology is intended?",
+        ("ontology-0",),
+    )
+
+    policy.successor(interpretation=initial, question=question, answer="clarify")
+
+    assert policy.ledger.entries[0].kind is ClarificationProgressKind.Unresolved
+
+
 def test_typed_delta_none_of_the_above_abstains_without_model_call():
     initial = _space("initial", ambiguous=True)
 

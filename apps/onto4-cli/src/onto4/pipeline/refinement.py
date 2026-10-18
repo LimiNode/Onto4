@@ -19,6 +19,7 @@ from onto4.reasoning import (
     Presupposition,
     SemanticReading,
 )
+from onto4.providers.protocols import MAX_REFINEMENT_OPERATIONS
 
 
 class RefinementOperation(str, Enum):
@@ -497,6 +498,11 @@ def apply_refinement_batch(
 
     if not deltas:
         raise RefinementValidationError("A refinement batch must not be empty.")
+    if len(deltas) > MAX_REFINEMENT_OPERATIONS:
+        raise RefinementValidationError(
+            "A refinement batch exceeds the host operation limit of "
+            f"{MAX_REFINEMENT_OPERATIONS}."
+        )
     if batch_id is not None and not batch_id.strip():
         raise RefinementValidationError("batch_id must be non-empty when supplied.")
     abstentions = [delta for delta in deltas if delta.operation is RefinementOperation.ABSTAIN]

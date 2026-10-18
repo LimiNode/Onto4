@@ -250,6 +250,11 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
     try:
         corpus = load_clarification_corpus(args.corpus)
         digest = corpus_digest(args.corpus)
+        if args.mode == "offline" and args.refinement_mode == "typed_delta":
+            raise ValueError(
+                "offline mode does not execute typed_delta refinement; "
+                "use --refinement-mode full_snapshot or --mode model-backed."
+            )
         contexts = {}
         requested_depth = (
             None if args.depth == "auto" else ConceptualDepth(args.depth)

@@ -12,6 +12,7 @@ from onto4.pipeline import (
     apply_refinement_batch,
     apply_refinement_delta,
 )
+from onto4.providers import MAX_REFINEMENT_OPERATIONS
 from onto4.reasoning import (
     Ambiguity,
     ConceptualDepth,
@@ -265,6 +266,22 @@ def test_batch_applies_multiple_nonconflicting_operations_atomically():
         RefinementOperation.REFINE_AMBIGUITY,
         RefinementOperation.ADD_PRESUPPOSITION,
     ]
+
+
+def test_batch_rejects_operation_count_over_host_limit_before_application():
+    request = _request()
+    deltas = tuple(
+        RefinementDelta(
+            RefinementOperation.ADD_PRESUPPOSITION,
+            description=f"presupposition-{index}",
+        )
+        for index in range(MAX_REFINEMENT_OPERATIONS + 1)
+    )
+
+    with pytest.raises(RefinementValidationError, match="operation limit"):
+        apply_refinement_batch(request, deltas, successor_id="successor")
+
+    assert request.interpretation == _space()
 
 
 @pytest.mark.parametrize(

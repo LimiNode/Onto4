@@ -410,3 +410,25 @@ def test_max_turns_output_does_not_repeat_unissued_question(capsys):
     output = capsys.readouterr().out
     assert "Stop reason: max_turns_reached" in output
     assert "A question that is not issued" not in output
+
+
+def test_eval_corpus_rejects_offline_typed_delta_mode(tmp_path, capsys):
+    code = main(
+        [
+            "eval-corpus",
+            "--corpus",
+            str(ROOT / "eval" / "clarification" / "model-smoke.yaml"),
+            "--receipt",
+            str(tmp_path / "receipts.jsonl"),
+            "--report",
+            str(tmp_path / "report.md"),
+            "--mode",
+            "offline",
+            "--refinement-mode",
+            "typed_delta",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "offline mode does not execute typed_delta" in captured.err

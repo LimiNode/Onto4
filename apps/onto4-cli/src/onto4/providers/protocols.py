@@ -17,6 +17,10 @@ from onto4.reasoning import (
 from .projection import AssessmentContextProjection
 
 
+# Host-side bound shared by typed refinement providers and batch admission.
+MAX_REFINEMENT_OPERATIONS = 16
+
+
 @dataclass(frozen=True)
 class TypedDecisionRequest:
     profile: str

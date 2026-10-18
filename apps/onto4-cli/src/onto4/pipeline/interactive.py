@@ -537,9 +537,19 @@ def _classify_progress(
                 kind = ClarificationProgressKind.Unverified
             elif (
                 evidence is not None
-                and RefinementOperation.REFINE_AMBIGUITY in evidence.operations
-                and target_preserved
+                and any(
+                    operation
+                    in {
+                        RefinementOperation.REFINE_AMBIGUITY,
+                        RefinementOperation.QUALIFY_ONTOLOGY_CANDIDATE,
+                    }
+                    for operation in evidence.operations
+                )
+                and any(effect is RefinementEffect.APPLIED for effect in evidence.effects)
             ):
+                # Host-admitted content changes do not establish that the
+                # user's intended reading or ontology was selected. They
+                # remain unresolved even when the old signature disappears.
                 kind = ClarificationProgressKind.Unresolved
             elif new_semantic_signatures and target_preserved:
                 kind = ClarificationProgressKind.New

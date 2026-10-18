@@ -157,6 +157,38 @@ def test_refinement_delta_adapter_rejects_empty_batch():
         )
 
 
+def test_refinement_delta_adapter_rejects_batch_over_host_operation_limit():
+    from onto4.providers import MAX_REFINEMENT_OPERATIONS
+
+    provider = OpenAICompatibleRefinementDeltaProvider(
+        FakeClient(
+            {
+                "deltas": [
+                    {"operation": "abstain"}
+                    for _ in range(MAX_REFINEMENT_OPERATIONS + 1)
+                ]
+            }
+        )
+    )
+    interpretation = InterpretationSpace(
+        "space", "The door is closed.", ConceptualDepth.Ordinary
+    )
+    question = ClarificationQuestion(
+        "question", ClarificationKind.Meaning, "Clarify", ()
+    )
+
+    with pytest.raises(ProviderSchemaError, match="operation limit"):
+        provider.propose_refinement_deltas(
+            interpretation,
+            question,
+            "none",
+            allowed_operations=("abstain",),
+            allowed_reading_ids=(),
+            allowed_ambiguity_ids=(),
+            allowed_ontology_ids=(),
+        )
+
+
 @pytest.mark.parametrize(
     ("variant", "marker"),
     (
