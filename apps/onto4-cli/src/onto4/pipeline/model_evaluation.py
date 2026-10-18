@@ -457,19 +457,25 @@ class ModelCaseExecutor:
                 def validate_question(_, question) -> None:
                     policy.validate_issued(question)
                     expected_intent = expected_intents[policy.issued_questions]
-                    workflow.update(
-                        {
-                            "questions_issued": int(workflow["questions_issued"]) + 1,
-                            "question_id": question.id,
-                            "question_kind": question.kind.value,
-                            "question_target_family": _safe_target_family(question.target_family),
-                            "question_target_family_match": (
-                                question.target_family == expected_intent.target_family
-                            ),
-                            "question_target_ids": tuple(question.target_ids),
-                            "last_stage": "question_issued",
-                        }
-                    )
+                    telemetry = {
+                        "questions_issued": int(workflow["questions_issued"]) + 1,
+                        "question_id": question.id,
+                        "question_kind": question.kind.value,
+                        "question_target_family": _safe_target_family(question.target_family),
+                        "question_script_target_family_match": (
+                            question.target_family == expected_intent.target_family
+                        ),
+                        "question_target_ids": tuple(question.target_ids),
+                        "last_stage": "question_issued",
+                    }
+                    expected_clarification = case.expected_clarification
+                    if isinstance(expected_clarification, Mapping):
+                        expected_family = expected_clarification.get("target_family")
+                        if isinstance(expected_family, str) and expected_family.strip():
+                            telemetry["question_target_family_match"] = (
+                                question.target_family == expected_family
+                            )
+                    workflow.update(telemetry)
 
                 def input_fn(_: str) -> str:
                     nonlocal answer_index

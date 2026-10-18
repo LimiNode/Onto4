@@ -193,6 +193,20 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
                         f"cases[{index}].dialogue[{turn_index}].target_family must be non-empty."
                     )
                 dialogue.append(dict(turn))
+        if isinstance(expected_clarification, Mapping):
+            expected_family = expected_clarification.get("target_family")
+            if isinstance(expected_family, str) and expected_family.strip():
+                scripted_families = tuple(
+                    turn.get("target_family")
+                    for turn in dialogue
+                    if turn.get("role") == "assistant"
+                    and isinstance(turn.get("target_family"), str)
+                    and turn.get("target_family", "").strip()
+                )
+                if scripted_families and scripted_families[0] != expected_family:
+                    raise ValueError(
+                        f"cases[{index}] has contradictory expected and scripted target_family."
+                    )
         if version >= 2 and mode == "dialogue" and len(dialogue) < 2:
             raise ValueError(
                 f"cases[{index}].dialogue must contain at least two turns."

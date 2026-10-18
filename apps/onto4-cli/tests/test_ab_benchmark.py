@@ -278,6 +278,38 @@ def test_unknown_target_family_values_do_not_compare_equal_as_opaque():
     assert all(cell.workflow_status == BenchmarkStatus.UNVERIFIED.value for cell in run.cells)
 
 
+def test_workflow_target_family_uses_corpus_match_not_script_match():
+    corpus = ClarificationCorpus(
+        version=2,
+        name="independent-target-oracle",
+        cases=(
+            ClarificationCorpusCase(
+                case_id="case",
+                utterance="Claim.",
+                context=None,
+                hidden_interpretation=None,
+                expected_clarification={"kind": "Meaning", "target_family": "corpus-family"},
+                expected_after_answer={"disposition": "clarification_required"},
+            ),
+        ),
+    )
+    run = run_paired_benchmark(
+        corpus,
+        executor_factory=lambda _condition: (
+            lambda case, *, request_timeout_seconds: CaseExecution(
+                EvaluationOutcome.CLARIFICATION_REQUESTED,
+                diagnostics={
+                    "question_kind": "Meaning",
+                    "question_script_target_family_match": True,
+                    "question_target_family_match": False,
+                },
+            )
+        ),
+        config=EvaluationConfig(),
+    )
+    assert all(cell.workflow_status == BenchmarkStatus.INCORRECT.value for cell in run.cells)
+
+
 def test_e2e_runner_requires_the_complete_four_cell_design():
     with pytest.raises(ValueError, match="requires exactly A1"):
         run_paired_benchmark(
