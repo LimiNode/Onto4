@@ -27,6 +27,7 @@ from onto4.reasoning import (
     FormalizationCandidate,
     InterpretationSpace,
     PipelineDisposition,
+    Presupposition,
     SemanticReading,
 )
 
@@ -59,7 +60,15 @@ def run(space, candidates, contexts, *, source="question"):
     )
 
 
-def candidate(identifier, formalization_id, context_id, expression, *, reading_id=None):
+def candidate(
+    identifier,
+    formalization_id,
+    context_id,
+    expression,
+    *,
+    reading_id=None,
+    assumptions=(),
+):
     return FormalizationCandidate(
         id=identifier,
         label=identifier,
@@ -67,6 +76,7 @@ def candidate(identifier, formalization_id, context_id, expression, *, reading_i
         context_id=context_id,
         formalization=expression,
         reading_id=reading_id,
+        assumptions=assumptions,
     )
 
 
@@ -131,6 +141,107 @@ def test_ambiguity_is_not_material_when_all_readings_agree_in_context():
     assert result.disposition is PipelineDisposition.Complete
     assert result.reason == "assessed"
     assert result.clarification_question is None
+
+
+def test_equivalent_readings_require_equal_presupposition_commitments():
+    readings = (
+        SemanticReading("first", "first", "same AST", ("shared",)),
+        SemanticReading("second", "second", "same AST", ("shared",)),
+    )
+    result = run(
+        InterpretationSpace(
+            id="space",
+            source_text="question",
+            conceptual_depth=ConceptualDepth.Ordinary,
+            ambiguities=(Ambiguity("term", "личность", "identity criterion"),),
+            presuppositions=(Presupposition("shared", "a person is under discussion"),),
+            readings=readings,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("a"), reading_id="second"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.Complete
+
+
+def test_different_presupposition_commitments_keep_clarification():
+    readings = (
+        SemanticReading("first", "first", "same AST", ("cause",)),
+        SemanticReading("second", "second", "same AST", ("essence",)),
+    )
+    result = run(
+        InterpretationSpace(
+            id="space",
+            source_text="question",
+            conceptual_depth=ConceptualDepth.Ordinary,
+            ambiguities=(Ambiguity("term", "личность", "identity criterion"),),
+            presuppositions=(
+                Presupposition("cause", "genes influence development"),
+                Presupposition("essence", "genes carry identity essence"),
+            ),
+            readings=readings,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("a"), reading_id="second"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_missing_declared_reading_coverage_keeps_clarification():
+    readings = (
+        SemanticReading("first", "first", "first meaning"),
+        SemanticReading("second", "second", "second meaning"),
+    )
+    result = run(
+        space(
+            ambiguities=(Ambiguity("term", "личность", "two meanings"),),
+            readings=readings,
+            depth=ConceptualDepth.Ordinary,
+        ),
+        [candidate("first", "first", "fixture", atom("a"), reading_id="first")],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_unknown_reading_id_keeps_clarification():
+    readings = (
+        SemanticReading("first", "first", "first meaning"),
+        SemanticReading("second", "second", "second meaning"),
+    )
+    interpretation = space(
+        ambiguities=(Ambiguity("term", "личность", "two meanings"),),
+        readings=readings,
+        depth=ConceptualDepth.Ordinary,
+    )
+    candidates = (
+        candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+        candidate("unknown", "unknown", "fixture", atom("a"), reading_id="not-supplied"),
+    )
+
+    class UntrustedFormalizer:
+        def formalize(self, request):
+            return candidates
+
+    result = ask(
+        InterpretationRequest("question", conceptual_depth=ConceptualDepth.Ordinary),
+        interpretation_provider=FixtureInterpretationProvider(
+            {("question", ConceptualDepth.Ordinary): interpretation}
+        ),
+        formalization_provider=UntrustedFormalizer(),
+        contexts={"fixture": context(verdicts={"a()": Verdict.T})},
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
 
 
 def test_distinct_formalizations_with_same_true_verdict_remain_material():

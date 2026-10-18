@@ -259,18 +259,41 @@ def material_ambiguity(context: ClarificationContext) -> bool:
     if len({item.context_id for item in context.assessments}) != 1:
         return True
 
-    by_reading: dict[str, list[object]] = {}
+    declared_readings = tuple(interpretation.readings)
+    declared_ids = tuple(reading.id for reading in declared_readings)
+    if len(set(declared_ids)) != len(declared_ids):
+        return True
+    presuppositions = {item.id: item.description for item in interpretation.presuppositions}
+    if len(presuppositions) != len(interpretation.presuppositions):
+        return True
+    by_reading: dict[str, list[CandidateAssessment]] = {}
     for item in context.assessments:
         reading_id = item.candidate.reading_id
         if reading_id is None:
             return True
         by_reading.setdefault(reading_id, []).append(item)
-    if len(by_reading) < 2 or any(len(items) != 1 for items in by_reading.values()):
+    if (
+        len(by_reading) < 2
+        or set(by_reading) != set(declared_ids)
+        or any(len(items) != 1 for items in by_reading.values())
+    ):
         return True
 
-    footprints = [
-        (items[0].candidate.formalization, items[0].candidate.assumptions)
-        for items in by_reading.values()
-    ]
+    if any(
+        len(reading.presupposition_ids) != len(set(reading.presupposition_ids))
+        or any(item not in presuppositions for item in reading.presupposition_ids)
+        for reading in declared_readings
+    ):
+        return True
+    footprints = []
+    for reading in declared_readings:
+        item = by_reading[reading.id][0]
+        commitments = tuple(
+            (presupposition_id, presuppositions[presupposition_id])
+            for presupposition_id in reading.presupposition_ids
+        )
+        footprints.append(
+            (item.candidate.formalization, item.candidate.assumptions, commitments)
+        )
     baseline = footprints[0]
     return any(footprint != baseline for footprint in footprints[1:])
