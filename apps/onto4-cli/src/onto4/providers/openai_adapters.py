@@ -677,7 +677,7 @@ class OpenAICompatibleRefinementDeltaProvider(RefinementDeltaProvider):
                             "Operation fields are: select_reading(target_id, "
                             "resolved_ambiguity_ids), retain_ambiguity(target_id, reason), "
                             "refine_ambiguity(target_id, text, description, reason), "
-                            "add_presupposition(description, reason), "
+                            "add_presupposition(reading_id, description, reason), "
                             "qualify_ontology_candidate(target_id, description, reason), "
                             "or abstain(reason). Omit fields not used by the operation. "
                             "abstain and retain_ambiguity must each be the only operation "
@@ -711,6 +711,7 @@ class OpenAICompatibleRefinementDeltaProvider(RefinementDeltaProvider):
                         "label",
                         "description",
                         "reason",
+                        "reading_id",
                         "resolved_ambiguity_ids",
                     },
                 )

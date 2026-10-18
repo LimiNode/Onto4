@@ -50,6 +50,8 @@ from .refinement import (
     RefinementRequest,
     RefinementResult,
     RefinementValidationError,
+    RefinementUnsupportedError,
+    RefinementTransitionEvidence,
     apply_refinement_batch,
     apply_refinement_delta,
 )
@@ -131,6 +133,8 @@ __all__ = [
     "RefinementRequest",
     "RefinementResult",
     "RefinementValidationError",
+    "RefinementUnsupportedError",
+    "RefinementTransitionEvidence",
     "apply_refinement_batch",
     "apply_refinement_delta",
     "build_clarification_request",

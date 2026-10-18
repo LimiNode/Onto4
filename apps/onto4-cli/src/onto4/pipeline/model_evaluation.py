@@ -34,6 +34,7 @@ from .interactive import (
     TypedDeltaClarificationPolicy,
     run_interactive_dialogue,
 )
+from .refinement import RefinementUnsupportedError
 
 
 _SAFE_STAGE_CODES = frozenset({"schema_valid", "transport", "schema", "unexpected"})
@@ -123,6 +124,16 @@ class _ReplayPolicy:
 
     def successor(self, *, interpretation, question, answer):
         return self.base.successor(
+            interpretation=interpretation,
+            question=question,
+            answer=answer,
+        )
+
+    def prepare_successor(self, *, interpretation, question, answer):
+        prepare = getattr(self.base, "prepare_successor", None)
+        if prepare is None:
+            return None
+        return prepare(
             interpretation=interpretation,
             question=question,
             answer=answer,
@@ -247,8 +258,21 @@ class ModelCaseExecutor:
         *,
         pending: bool = False,
         clarification_issued: bool = False,
+        progress=None,
     ) -> dict[str, object]:
         interpretation = ask_result.interpretation
+        entries = tuple(getattr(progress, "entries", ()))
+        operation_counts: dict[str, int] = {}
+        effect_counts: dict[str, int] = {}
+        committed = 0
+        proposed = 0
+        for entry in entries:
+            for operation in getattr(entry, "refinement_operations", ()):
+                operation_counts[operation] = operation_counts.get(operation, 0) + 1
+            for effect in getattr(entry, "refinement_effects", ()):
+                effect_counts[effect] = effect_counts.get(effect, 0) + 1
+            committed += int(bool(getattr(entry, "refinement_committed", False)))
+            proposed += int(getattr(entry, "refinement_proposed_count", 0))
         return {
             "landscape_status": ask_result.landscape.status.value,
             "disposition": ask_result.disposition.value,
@@ -257,6 +281,10 @@ class ModelCaseExecutor:
             "ambiguity_count": len(interpretation.ambiguities),
             "pending_clarification": pending,
             "clarification_issued": clarification_issued,
+            "refinement_operations": operation_counts,
+            "refinement_effects": effect_counts,
+            "refinement_commits": committed,
+            "refinement_proposed": proposed,
         }
 
     def _request(self, case: ClarificationCorpusCase) -> InterpretationRequest:
@@ -441,6 +469,7 @@ class ModelCaseExecutor:
                                 assessment.ask_result,
                                 pending=result.session.clarification.pending is not None,
                                 clarification_issued=bool(result.progress.entries),
+                                progress=result.progress,
                             )
                             if assessment is not None
                             else {}
@@ -501,6 +530,7 @@ class ModelCaseExecutor:
                     clarification_issued=(
                         bool(result.progress.entries) if case.mode == "dialogue" else False
                     ),
+                    progress=(result.progress if case.mode == "dialogue" else None),
                 ) if ask_result is not None else {},
             )
         except ProviderTransportError as exc:
@@ -533,6 +563,16 @@ class ModelCaseExecutor:
                 stage_outcomes=outcomes,
                 stage_details=details,
                 detail_code=str(exc),
+            )
+        except RefinementUnsupportedError as exc:
+            calls, timings, outcomes, details = self._metadata()
+            return CaseExecution(
+                EvaluationOutcome.UNSUPPORTED_DIALOGUE_STEP,
+                provider_calls=calls,
+                stage_timings=timings,
+                stage_outcomes=outcomes,
+                stage_details=details,
+                detail_code="typed_delta_unsupported",
             )
         except _ReplayError as exc:
             calls, timings, outcomes, details = self._metadata()

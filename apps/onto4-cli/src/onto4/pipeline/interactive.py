@@ -33,8 +33,12 @@ from onto4.reasoning import (
 from .ask import assess_interpretation_per_reading
 from .refinement import (
     RefinementDelta,
+    RefinementEffect,
     RefinementOperation,
     RefinementRequest,
+    RefinementTransitionEvidence,
+    RefinementUnsupportedError,
+    RefinementValidationError,
     apply_refinement_batch,
     apply_refinement_delta,
 )
@@ -204,6 +208,7 @@ class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
                         "label": delta.label,
                         "description": delta.description,
                         "reason": delta.reason,
+                        "reading_id": delta.reading_id,
                         "resolved_ambiguity_ids": list(delta.resolved_ambiguity_ids),
                     }
                     for delta in deltas
@@ -223,6 +228,20 @@ class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
         question: ClarificationQuestion,
         answer: str,
     ) -> tuple[InterpretationSpace, ClarificationTurn]:
+        prepared = self.prepare_successor(
+            interpretation=interpretation,
+            question=question,
+            answer=answer,
+        )
+        return prepared.successor, prepared.turn
+
+    def prepare_successor(
+        self,
+        *,
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+        answer: str,
+    ) -> PreparedClarificationTransition:
         request = self._request(interpretation, question)
         if _is_none_of_the_above(answer):
             deltas = (
@@ -232,9 +251,14 @@ class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
             )
         else:
             allowed_operations = [
-                RefinementOperation.ADD_PRESUPPOSITION.value,
                 RefinementOperation.ABSTAIN.value,
             ]
+            if request.allowed_ambiguity_ids or (
+                question.target_family == "reading" and request.allowed_reading_ids
+            ):
+                allowed_operations.append(
+                    RefinementOperation.ADD_PRESUPPOSITION.value
+                )
             if request.allowed_reading_ids:
                 allowed_operations.append(RefinementOperation.SELECT_READING.value)
             if request.allowed_ambiguity_ids:
@@ -248,6 +272,12 @@ class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
                 allowed_operations.append(
                     RefinementOperation.QUALIFY_ONTOLOGY_CANDIDATE.value
                 )
+            meaningful = set(allowed_operations) - {RefinementOperation.ABSTAIN.value}
+            if not meaningful:
+                raise RefinementUnsupportedError(
+                    f"Typed delta refinement does not support clarification kind "
+                    f"{question.kind.value!r} with target family {question.target_family!r}."
+                )
             proposals = self.refinement_provider.propose_refinement_deltas(
                 interpretation,
                 question,
@@ -260,6 +290,14 @@ class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
             deltas = tuple(
                 RefinementDelta.from_mapping(proposal) for proposal in proposals
             )
+            if any(
+                delta.operation is RefinementOperation.ADD_PRESUPPOSITION
+                and delta.reading_id is None
+                for delta in deltas
+            ):
+                raise RefinementValidationError(
+                    "Typed add_presupposition requires a host-bound reading_id."
+                )
         successor_id = self._successor_id(
             interpretation, question, answer, deltas
         )
@@ -273,6 +311,11 @@ class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
                 successor_id=successor_id,
             )
             successor = result.successor
+            evidence = RefinementTransitionEvidence(
+                operations=(deltas[0].operation,),
+                effects=(result.commitment.effect,),
+                proposed_count=len(deltas),
+            )
         else:
             result = apply_refinement_batch(
                 request,
@@ -280,11 +323,21 @@ class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
                 successor_id=successor_id,
             )
             successor = result.successor
-        return successor, ClarificationTurn(
+            evidence = RefinementTransitionEvidence(
+                operations=tuple(item.operation for item in deltas),
+                effects=tuple(item.effect for item in result.commitments),
+                proposed_count=len(deltas),
+            )
+        turn = ClarificationTurn(
             previous_interpretation_id=interpretation.id,
             question_id=question.id,
             answer=answer,
             successor_interpretation_id=successor.id,
+        )
+        return PreparedClarificationTransition(
+            successor,
+            turn,
+            metadata=evidence,
         )
 
 
@@ -298,6 +351,7 @@ class ClarificationProgressKind(str, Enum):
     NoEffect = "no_effect"
     Unverified = "unverified"
     Abstained = "abstained"
+    Retained = "retained"
 
 
 @dataclass(frozen=True)
@@ -309,6 +363,10 @@ class ClarificationProgress:
     kind: ClarificationProgressKind
     new_item_ids: tuple[str, ...] = ()
     new_semantic_signatures: tuple[str, ...] = ()
+    refinement_operations: tuple[str, ...] = ()
+    refinement_effects: tuple[str, ...] = ()
+    refinement_committed: bool = False
+    refinement_proposed_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -388,6 +446,7 @@ def _classify_progress(
     successor: InterpretationSpace,
     question: ClarificationQuestion,
     answer: str,
+    metadata: object | None = None,
 ) -> ClarificationProgress:
     before = _snapshot_items(previous)
     after = _snapshot_items(successor)
@@ -407,7 +466,19 @@ def _classify_progress(
             for _ in range(max(0, count - before_signature_counts.get(signature, 0)))
         )
     )
-    if _is_none_of_the_above(answer):
+    evidence = (
+        metadata if isinstance(metadata, RefinementTransitionEvidence) else None
+    )
+    if evidence is not None and all(
+        effect is RefinementEffect.ABSTAINED for effect in evidence.effects
+    ):
+        kind = ClarificationProgressKind.Abstained
+    elif evidence is not None and all(
+        operation is RefinementOperation.RETAIN_AMBIGUITY
+        for operation in evidence.operations
+    ):
+        kind = ClarificationProgressKind.Retained
+    elif _is_none_of_the_above(answer):
         kind = ClarificationProgressKind.Abstained
     elif successor == previous:
         kind = ClarificationProgressKind.NoEffect
@@ -464,6 +535,12 @@ def _classify_progress(
                 # targets does not identify which technical target was answered.
                 # Do not claim a verified resolution from multiplicity alone.
                 kind = ClarificationProgressKind.Unverified
+            elif (
+                evidence is not None
+                and RefinementOperation.REFINE_AMBIGUITY in evidence.operations
+                and target_preserved
+            ):
+                kind = ClarificationProgressKind.Unresolved
             elif new_semantic_signatures and target_preserved:
                 kind = ClarificationProgressKind.New
             elif target_preserved:
@@ -494,6 +571,16 @@ def _classify_progress(
         kind=kind,
         new_item_ids=new_item_ids,
         new_semantic_signatures=new_semantic_signatures,
+        refinement_operations=(
+            tuple(item.value for item in evidence.operations)
+            if evidence is not None
+            else ()
+        ),
+        refinement_effects=(
+            tuple(item.value for item in evidence.effects) if evidence is not None else ()
+        ),
+        refinement_committed=evidence.committed if evidence is not None else False,
+        refinement_proposed_count=evidence.proposed_count if evidence is not None else 0,
     )
 
 
@@ -576,11 +663,26 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
     ) -> PreparedClarificationTransition:
         if not answer:
             raise ValueError("A clarification answer must not be empty.")
-        successor, turn = self.base.successor(
-            interpretation=interpretation,
-            question=question,
-            answer=answer,
+        base_prepare = getattr(self.base, "prepare_successor", None)
+        base_prepared = (
+            base_prepare(
+                interpretation=interpretation,
+                question=question,
+                answer=answer,
+            )
+            if base_prepare is not None
+            else None
         )
+        if base_prepared is None:
+            successor, turn = self.base.successor(
+                interpretation=interpretation,
+                question=question,
+                answer=answer,
+            )
+            metadata = None
+        else:
+            successor, turn = base_prepared.successor, base_prepared.turn
+            metadata = base_prepared.metadata
         expected_turn = ClarificationTurn(
             previous_interpretation_id=interpretation.id,
             question_id=question.id,
@@ -591,17 +693,28 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
             raise ValueError(
                 "Clarification transition returned inconsistent turn provenance."
             )
-        progress = _classify_progress(interpretation, successor, question, answer)
+        progress = _classify_progress(
+            interpretation, successor, question, answer, metadata
+        )
         if progress.kind in {
             ClarificationProgressKind.NoEffect,
-            ClarificationProgressKind.New,
             ClarificationProgressKind.Unverified,
         }:
             raise ValueError(
                 "Clarification answer did not affect its target distinction "
                 f"(progress={progress.kind.value})."
             )
-        return PreparedClarificationTransition(successor, turn, progress)
+        if (
+            progress.kind is ClarificationProgressKind.New
+            and metadata is None
+        ):
+            raise ValueError(
+                "Clarification answer did not affect its target distinction "
+                "(progress=new)."
+            )
+        return PreparedClarificationTransition(
+            successor, turn, progress, metadata=metadata
+        )
 
     def commit_prepared(self, prepared: PreparedClarificationTransition) -> None:
         if not isinstance(prepared.progress, ClarificationProgress):

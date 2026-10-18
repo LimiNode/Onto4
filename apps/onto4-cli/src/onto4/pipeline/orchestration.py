@@ -47,6 +47,7 @@ class PreparedClarificationTransition:
     successor: InterpretationSpace
     turn: ClarificationTurn
     progress: object | None = None
+    metadata: object | None = None
 
 
 @dataclass(frozen=True)

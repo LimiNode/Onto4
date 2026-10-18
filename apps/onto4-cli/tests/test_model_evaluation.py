@@ -328,6 +328,10 @@ def test_model_case_executor_runs_dialogue_with_typed_delta_refinement():
 
     assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
     assert execution.diagnostics["ambiguity_count"] == 0
+    assert execution.diagnostics["refinement_operations"] == {"select_reading": 1}
+    assert execution.diagnostics["refinement_effects"] == {"applied": 1}
+    assert execution.diagnostics["refinement_commits"] == 1
+    assert execution.diagnostics["refinement_proposed"] == 1
 
 
 def test_model_case_executor_isolates_case_context():

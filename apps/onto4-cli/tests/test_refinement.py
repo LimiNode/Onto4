@@ -119,6 +119,36 @@ def test_add_presupposition_assigns_id_and_does_not_accept_model_id():
         )
 
 
+def test_add_presupposition_can_attach_to_host_bound_reading():
+    request = _request()
+    result = apply_refinement_delta(
+        request,
+        RefinementDelta(
+            RefinementOperation.ADD_PRESUPPOSITION,
+            reading_id="reading-0",
+            description="the speaker commits to an identity bearer",
+        ),
+        successor_id="successor",
+    )
+
+    assert result.successor.readings[0].presupposition_ids == (
+        "presupposition-1",
+    )
+
+
+def test_add_presupposition_rejects_forged_reading_attachment():
+    with pytest.raises(RefinementValidationError, match="Unknown or inadmissible reading"):
+        apply_refinement_delta(
+            _request(),
+            RefinementDelta(
+                RefinementOperation.ADD_PRESUPPOSITION,
+                reading_id="model-invented",
+                description="identity bearer",
+            ),
+            successor_id="successor",
+        )
+
+
 def test_stale_assessment_and_stale_target_are_rejected():
     space = _space()
     with pytest.raises(RefinementValidationError, match="assessment snapshot"):

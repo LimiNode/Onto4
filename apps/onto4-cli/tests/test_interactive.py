@@ -146,6 +146,7 @@ def test_typed_delta_dialogue_uses_same_question_and_host_applies_operation():
                 },
                 {
                     "operation": "add_presupposition",
+                    "reading_id": "reading-0",
                     "description": "genes are treated as an identity bearer",
                 },
             )
@@ -171,10 +172,11 @@ def test_typed_delta_dialogue_uses_same_question_and_host_applies_operation():
     assert successor.source_text == initial.source_text
     assert successor.conceptual_depth is initial.conceptual_depth
     assert successor.ambiguities == ()
-    assert successor.readings == (initial.readings[0],)
+    assert successor.readings[0].id == initial.readings[0].id
     assert successor.presuppositions[-1].description == (
         "genes are treated as an identity bearer"
     )
+    assert successor.readings[0].presupposition_ids == ("presupposition-0",)
     assert proposals[0][1].id == "meaning:ambiguity-0"
     assert proposals[0][2] == answer
     assert proposals[0][3]["allowed_reading_ids"] == ("reading-0",)
@@ -295,6 +297,107 @@ def test_typed_delta_batch_failure_does_not_publish_partial_successor():
     assert [item.id for item in initial.ambiguities] == ["ambiguity-0"]
 
 
+def test_typed_delta_model_abstain_is_admitted_as_abstained():
+    initial = _space("initial", ambiguous=True)
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({"operation": "abstain", "reason": "no safe choice"},)
+
+    policy = TypedDeltaClarificationPolicy(
+        FixtureClarificationPolicy(), DeltaProvider()
+    )
+    assessment = start_reasoning_session_per_reading(
+        ClarificationSession(initial),
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=FixtureClarificationPolicy(),
+    ).session.assessment
+    question = FixtureClarificationPolicy().choose(
+        assessment.clarification_context()
+    )
+    progress_policy = ProgressAwareClarificationPolicy(policy)
+
+    successor, _ = progress_policy.successor(
+        interpretation=initial,
+        question=question,
+        answer="I cannot choose between these meanings.",
+    )
+
+    assert successor is initial
+    assert progress_policy.ledger.entries[0].kind is ClarificationProgressKind.Abstained
+    assert progress_policy.ledger.entries[0].refinement_operations == ("abstain",)
+
+
+def test_typed_delta_retain_ambiguity_is_admitted_as_retained():
+    initial = _space("initial", ambiguous=True)
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "retain_ambiguity",
+                "target_id": "ambiguity-0",
+                "reason": "answer leaves both readings open",
+            },)
+
+    policy = ProgressAwareClarificationPolicy(
+        TypedDeltaClarificationPolicy(FixtureClarificationPolicy(), DeltaProvider())
+    )
+    assessment = start_reasoning_session_per_reading(
+        ClarificationSession(initial),
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=FixtureClarificationPolicy(),
+    ).session.assessment
+    question = FixtureClarificationPolicy().choose(
+        assessment.clarification_context()
+    )
+
+    successor, _ = policy.successor(
+        interpretation=initial,
+        question=question,
+        answer="Both meanings remain possible.",
+    )
+
+    assert successor is initial
+    assert policy.ledger.entries[0].kind is ClarificationProgressKind.Retained
+
+
+def test_typed_delta_attached_add_presupposition_is_admitted_as_new_content():
+    initial = _space("initial", ambiguous=True)
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "add_presupposition",
+                "reading_id": "reading-0",
+                "description": "the speaker commits to an identity bearer",
+            },)
+
+    policy = ProgressAwareClarificationPolicy(
+        TypedDeltaClarificationPolicy(FixtureClarificationPolicy(), DeltaProvider())
+    )
+    assessment = start_reasoning_session_per_reading(
+        ClarificationSession(initial),
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=FixtureClarificationPolicy(),
+    ).session.assessment
+    question = FixtureClarificationPolicy().choose(
+        assessment.clarification_context()
+    )
+
+    successor, _ = policy.successor(
+        interpretation=initial,
+        question=question,
+        answer="Genes carry the person's identity.",
+    )
+
+    assert successor.readings[0].presupposition_ids == ("presupposition-0",)
+    assert policy.ledger.entries[0].kind is ClarificationProgressKind.New
+    assert policy.ledger.entries[0].refinement_committed is True
+
+
 def test_typed_delta_none_of_the_above_abstains_without_model_call():
     initial = _space("initial", ambiguous=True)
 
@@ -325,7 +428,7 @@ def test_typed_delta_none_of_the_above_abstains_without_model_call():
     assert turn.successor_interpretation_id == initial.id
 
 
-def test_typed_delta_does_not_expose_readings_for_unrelated_question():
+def test_typed_delta_marks_unrelated_question_unsupported():
     initial = _space("initial", ambiguous=False)
     boundaries = []
 
@@ -346,15 +449,13 @@ def test_typed_delta_does_not_expose_readings_for_unrelated_question():
         "context",
     )
 
-    successor, _ = policy.successor(
-        interpretation=initial,
-        question=question,
-        answer="context-a",
-    )
-
-    assert successor is initial
-    assert boundaries[0]["allowed_reading_ids"] == ()
-    assert "select_reading" not in boundaries[0]["allowed_operations"]
+    with pytest.raises(ValueError, match="does not support clarification kind"):
+        policy.successor(
+            interpretation=initial,
+            question=question,
+            answer="context-a",
+        )
+    assert boundaries == []
 
 
 def test_interactive_dialogue_completes_two_question_fixture_loop():
