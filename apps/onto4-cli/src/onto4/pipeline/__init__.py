@@ -40,6 +40,16 @@ from .evaluation import (
     write_markdown_report,
 )
 from .model_evaluation import ModelCaseExecutor
+from .ab_benchmark import (
+    BenchmarkCell,
+    BenchmarkCondition,
+    DEFAULT_BENCHMARK_CONDITIONS,
+    PairedBenchmarkRun,
+    PairedBenchmarkSummary,
+    corpus_digest_for_loaded,
+    run_paired_benchmark,
+    write_benchmark_report,
+)
 from .refinement import (
     RefinementBatchResult,
     RefinementCommitLedger,
@@ -124,6 +134,14 @@ __all__ = [
     "offline_fixture_executor",
     "write_markdown_report",
     "ModelCaseExecutor",
+    "BenchmarkCell",
+    "BenchmarkCondition",
+    "DEFAULT_BENCHMARK_CONDITIONS",
+    "PairedBenchmarkRun",
+    "PairedBenchmarkSummary",
+    "corpus_digest_for_loaded",
+    "run_paired_benchmark",
+    "write_benchmark_report",
     "RefinementCommitLedger",
     "RefinementBatchResult",
     "RefinementCommitment",

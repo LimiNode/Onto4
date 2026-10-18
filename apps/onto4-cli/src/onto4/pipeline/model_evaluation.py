@@ -281,6 +281,7 @@ class ModelCaseExecutor:
             "ambiguity_count": len(interpretation.ambiguities),
             "pending_clarification": pending,
             "clarification_issued": clarification_issued,
+            "clarification_turns": len(entries),
             "refinement_operations": operation_counts,
             "refinement_effects": effect_counts,
             "refinement_commits": committed,

@@ -327,6 +327,56 @@ operation, while `abstain` preserves the current snapshot. The experiment is
 not part of the default `onto4 ask` path until comparative fixture results
 justify adopting it.
 
+## Controlled architecture A/B benchmark
+
+The `benchmark` command provides a paired experiment for the two independent
+design choices in the model-backed clarification path. It runs the same public
+corpus through four cells:
+
+```text
+             full_snapshot       typed_delta
+context_late      A1                  B1
+context_aware     A2                  B2
+```
+
+`A1` versus `B1` is the refinement comparison. `A1` versus `A2` and `B1`
+versus `B2` are the context-timing comparisons. The pairing is by stable
+`case_id`; a cell is not compared with a different utterance or a different
+corpus version.
+
+The starter corpus is
+`eval/clarification/ab-philosophical-smoke.yaml`. It is deliberately small
+and executable: continuity and substance provide same-utterance controls, and
+the genome and intrinsic-time cases exercise bounded clarification dialogues.
+The hidden expected readings remain in the corpus for the evaluation driver;
+they are not included in model-facing input.
+
+Run it against an OpenAI-compatible endpoint with:
+
+```text
+onto4 benchmark \
+  --corpus eval/clarification/ab-philosophical-smoke.yaml \
+  --endpoint http://127.0.0.1:8080/v1 \
+  --model bonsai \
+  --context profiles/contexts/continuity.yaml \
+  --context profiles/contexts/substance.yaml \
+  --context profiles/contexts/identity_and_genome.yaml \
+  --context profiles/contexts/relational_time.yaml \
+  --artifacts-dir artifacts/ab-smoke \
+  --report artifacts/ab-smoke/report.json
+```
+
+Each cell writes privacy-preserving receipts. The paired report records oracle
+comparisons (when a case declares one), semantic mismatches separately from
+operational failures, clarification turns, provider calls, completion tokens,
+elapsed time and per-pair wins/ties. `--output-cost-per-million` may add an
+output-token-only cost estimate; prompt-token costs are not inferred.
+
+The benchmark does not turn a model response into an Onto4 verdict. `T`, `F`,
+`U` and `C` still come only from the deterministic core, and no semantic
+fidelity claim is made without an oracle comparison. Until a real endpoint is
+run, the repository provides the corpus, runner and tests—not Bonsai results.
+
 ## Interactive evaluation corpus
 
 The reserved corpus at `eval/clarification/corpus.yaml` contains everyday

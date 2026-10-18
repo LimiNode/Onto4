@@ -1,0 +1,53 @@
+version: 2
+name: ab-philosophical-smoke
+visibility:
+  model_input: utterance_only
+context_profiles:
+  continuity: "Process continuity between the childhood and current person-state."
+  substance: "Persistent-substance identity between the childhood and current person-state."
+  identity_and_genome: "Identity and genome relations for two people."
+  relational_time: "Time relations without an observer-independent present."
+scoring:
+  exact_question_text: false
+  require_provenance: true
+  require_context_scoped_oracle: true
+cases:
+  - case_id: same-person-continuity
+    evaluation_class: philosophical_control
+    context: continuity
+    utterance: "Is the person now the same person who was a child?"
+    expected_clarification: none
+    expected_after_answer: {verdict: U}
+
+  - case_id: same-person-substance
+    evaluation_class: philosophical_control
+    context: substance
+    utterance: "Is the person now the same person who was a child?"
+    expected_clarification: none
+    expected_after_answer: {verdict: U}
+
+  - case_id: genome-identity-dialogue
+    evaluation_class: philosophical_dialogue
+    mode: dialogue
+    context: identity_and_genome
+    utterance: "Does sharing a genome make two people one person?"
+    expected_clarification: {kind: Meaning, target: numerical_identity}
+    expected_after_answer: {disposition: dialogue_reassessment_required}
+    dialogue:
+      - {turn_id: genome-0, role: user, text: "Does sharing a genome make two people one person?"}
+      - {turn_id: genome-1, role: assistant, text: "Do you mean numerical identity or a genetic relation?", question_kind: Meaning, target_family: reading, target_ids: [reading-0]}
+      - {turn_id: genome-2, role: user, text: "I mean numerical identity: they are one and the same individual."}
+      - {turn_id: genome-3, role: assistant, text: "The numerical-identity reading is now explicit."}
+
+  - case_id: sequence-time-dialogue
+    evaluation_class: philosophical_dialogue
+    mode: dialogue
+    context: relational_time
+    utterance: "Does the sequence have an intrinsic present?"
+    expected_clarification: {kind: Meaning, target: intrinsic_time}
+    expected_after_answer: {disposition: dialogue_reassessment_required}
+    dialogue:
+      - {turn_id: sequence-0, role: user, text: "Does the sequence have an intrinsic present?"}
+      - {turn_id: sequence-1, role: assistant, text: "Do you mean an observer-independent intrinsic time?", question_kind: Meaning, target_family: reading, target_ids: [reading-0]}
+      - {turn_id: sequence-2, role: user, text: "Yes, I mean an observer-independent intrinsic time."}
+      - {turn_id: sequence-3, role: assistant, text: "The intrinsic-time reading is now explicit."}
