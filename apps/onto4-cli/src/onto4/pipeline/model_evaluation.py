@@ -65,9 +65,10 @@ def _safe_target_family(value: object) -> str | None:
 class _ReplayError(ValueError):
     """A scripted dialogue cannot be safely replayed against this model turn."""
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, reason: str | None = None) -> None:
         super().__init__(code)
         self.code = code
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -97,22 +98,31 @@ class _ReplayPolicy:
             else tuple(filter(None, (self.base.choose(context),)))
         )
         object.__setattr__(self, "_last_questions", tuple(questions))
+        self.telemetry["question_candidate_generated"] = True
+        self.telemetry["question_candidate_count"] = len(questions)
+        self.telemetry["last_stage"] = "question_candidate_generated"
         return questions
 
     def validate_issued(self, question) -> None:
         """Validate the concrete host-issued question without reordering it."""
-
+        self.telemetry["question_selected"] = True
+        self.telemetry["last_stage"] = "question_selected"
         if self.issued_questions >= len(self.expected_intents):
-            raise _ReplayError("script_exhausted")
+            self.telemetry["intent_admitted"] = False
+            raise _ReplayError("script_exhausted", "script_exhausted")
         expected = self.expected_intents[self.issued_questions]
         if expected.kind is None or not expected.target_family or not expected.target_ids:
-            raise _ReplayError("question_intent_unverified")
+            self.telemetry["intent_admitted"] = False
+            raise _ReplayError("question_intent_unverified", "intent_unverified")
         if question.target_family is None:
-            raise _ReplayError("question_intent_unverified")
+            self.telemetry["intent_admitted"] = False
+            raise _ReplayError("question_intent_unverified", "family_unverified")
         if question.kind is not expected.kind:
-            raise _ReplayError("question_intent_mismatch")
+            self.telemetry["intent_admitted"] = False
+            raise _ReplayError("question_intent_mismatch", "kind_mismatch")
         if question.target_family != expected.target_family:
-            raise _ReplayError("question_intent_mismatch")
+            self.telemetry["intent_admitted"] = False
+            raise _ReplayError("question_intent_mismatch", "family_mismatch")
         candidates = tuple(
             candidate
             for candidate in self._last_questions
@@ -120,19 +130,47 @@ class _ReplayPolicy:
             and candidate.target_family == expected.target_family
         )
         if not candidates:
-            raise _ReplayError("question_intent_mismatch")
+            self.telemetry["intent_admitted"] = False
+            raise _ReplayError("question_intent_mismatch", "no_candidate")
         if len(candidates) == 1:
+            self.telemetry["intent_admitted"] = True
+            self.telemetry["last_stage"] = "intent_admitted"
             return
         if tuple(question.target_ids) == expected.target_ids:
+            self.telemetry["intent_admitted"] = True
+            self.telemetry["last_stage"] = "intent_admitted"
             return
-        raise _ReplayError("question_intent_unverified")
+        self.telemetry["intent_admitted"] = False
+        raise _ReplayError(
+            "question_intent_unverified",
+            "target_ambiguous" if not question.target_ids else "target_mismatch",
+        )
 
     def choose(self, context):
         questions = self.questions(context)
         return questions[0] if questions else None
 
     def choose_for_kind(self, context, kind: ClarificationKind):
-        return self.base.choose_for_kind(context, kind)
+        question = self.base.choose_for_kind(context, kind)
+        self.telemetry["question_candidate_generated"] = question is not None
+        self.telemetry["question_candidate_count"] = 0 if question is None else 1
+        self.telemetry["last_stage"] = "question_candidate_generated"
+        if question is not None:
+            self.telemetry["question_selected"] = True
+            self.telemetry["last_stage"] = "question_selected"
+            # Admission is recorded at selection time so a rejected question
+            # still leaves an honest candidate/selection trace. The callback
+            # before answer repeats this check against the same immutable
+            # question and does not issue it a second time.
+            self.validate_issued(question)
+        return question
+
+    def record_question_selected(self, question) -> None:
+        """Record selection/admission before the interactive answer callback."""
+
+        self.telemetry["question_selected"] = True
+        self.telemetry["last_stage"] = "question_selected"
+        self.validate_issued(question)
 
     def successor(self, *, interpretation, question, answer):
         result = self.base.successor(
@@ -159,6 +197,8 @@ class _ReplayPolicy:
 
     def mark_issued(self) -> None:
         object.__setattr__(self, "issued_questions", self.issued_questions + 1)
+        self.telemetry["question_issued"] = True
+        self.telemetry["last_stage"] = "question_issued"
 
 
 class _ContextUnavailable(ValueError):
@@ -676,8 +716,10 @@ class ModelCaseExecutor:
                 stage_timings=timings,
                 stage_outcomes=outcomes,
                 stage_details=details,
-                detail_code=exc.code,
-                diagnostics=with_workflow(),
+                detail_code=exc.reason or exc.code,
+                diagnostics=with_workflow({
+                    "question_intent_failure_reason": exc.reason or exc.code,
+                }),
             )
         except (KeyError, ValueError) as exc:
             calls, timings, outcomes, details = self._metadata()

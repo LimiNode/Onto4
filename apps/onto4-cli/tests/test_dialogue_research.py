@@ -1,12 +1,17 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from onto4.pipeline import (
     BoundedDialogueResearchRun,
     EvaluationConfig,
     EvaluationOutcome,
     run_bounded_dialogue_research,
     run_model_backed_isolated_refinement_pair,
+    run_session_bound_isolated_refinement_pair,
+    validate_dialogue_intent_manifest,
+    DiscoveredQuestionIntent,
     write_dialogue_research_report,
 )
 from onto4.pipeline.clarification_corpus import ClarificationCorpus, ClarificationCorpusCase
@@ -37,7 +42,14 @@ def _dialogue_corpus() -> ClarificationCorpus:
                 mode="dialogue",
                 dialogue=(
                     {"turn_id": "u0", "role": "user", "text": "Claim."},
-                    {"turn_id": "a0", "role": "assistant", "text": "Clarify."},
+                    {
+                        "turn_id": "a0",
+                        "role": "assistant",
+                        "text": "Clarify.",
+                        "question_kind": "Meaning",
+                        "target_family": "criterion",
+                        "target_ids": ["a"],
+                    },
                 ),
             ),
             ClarificationCorpusCase(
@@ -155,5 +167,31 @@ def test_model_backed_isolated_refinement_uses_one_initial_snapshot():
     )
 
     assert result.initial_snapshot_digest
+    assert result.protocol == "provider_isolated_refinement"
     assert [cell.outcome for cell in result.cells] == ["accepted", "accepted"]
     assert all(cell.transition_valid for cell in result.cells)
+
+
+def test_session_bound_isolated_refinement_rejects_arbitrary_question():
+    from onto4.pipeline.orchestration import ClarificationSession, ReasoningSession
+
+    initial = InterpretationSpace(
+        "initial", "Claim.", ConceptualDepth.Philosophical
+    )
+    session = ReasoningSession(ClarificationSession(initial), None)
+    with pytest.raises(ValueError, match="current assessment"):
+        run_session_bound_isolated_refinement_pair(
+            session,
+            "answer",
+            full_snapshot_provider=object(),
+            typed_delta_provider=object(),
+        )
+
+
+def test_intent_manifest_is_checked_without_rewriting_oracle():
+    corpus = _dialogue_corpus()
+    manifest = (
+        DiscoveredQuestionIntent("single", 0, "Ontology", "criterion", ("a",)),
+    )
+    with pytest.raises(ValueError, match="contradict"):
+        validate_dialogue_intent_manifest(corpus, manifest)

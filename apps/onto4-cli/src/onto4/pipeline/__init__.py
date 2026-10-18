@@ -60,9 +60,13 @@ from .ab_benchmark import (
 )
 from .dialogue_research import (
     BoundedDialogueResearchRun,
+    DiscoveredQuestionIntent,
+    discover_host_question_intents,
     DialogueResearchCell,
     run_bounded_dialogue_research,
     run_model_backed_isolated_refinement_pair,
+    run_session_bound_isolated_refinement_pair,
+    validate_dialogue_intent_manifest,
     write_dialogue_research_report,
 )
 from .refinement import (
@@ -166,9 +170,13 @@ __all__ = [
     "write_benchmark_diagnostics",
     "write_benchmark_report",
     "BoundedDialogueResearchRun",
+    "DiscoveredQuestionIntent",
+    "discover_host_question_intents",
     "DialogueResearchCell",
     "run_bounded_dialogue_research",
     "run_model_backed_isolated_refinement_pair",
+    "run_session_bound_isolated_refinement_pair",
+    "validate_dialogue_intent_manifest",
     "write_dialogue_research_report",
     "RefinementCommitLedger",
     "RefinementBatchResult",

@@ -608,7 +608,7 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
             if questions is not None
             else tuple(filter(None, (self.base.choose(context),)))
         )
-        return next(
+        selected = next(
             (
                 question
                 for question in candidates
@@ -617,11 +617,15 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
             ),
             None,
         )
+        record = getattr(self.base, "record_question_selected", None)
+        if selected is not None and record is not None:
+            record(selected)
+        return selected
 
     def choose_for_kind(self, context, kind: ClarificationKind):
         questions = getattr(self.base, "questions", None)
         if questions is not None:
-            return next(
+            selected = next(
                 (
                     question
                     for question in questions(context)
@@ -631,15 +635,23 @@ class ProgressAwareClarificationPolicy(TransitionAwareClarificationPolicy):
                 ),
                 None,
             )
+            record = getattr(self.base, "record_question_selected", None)
+            if selected is not None and record is not None:
+                record(selected)
+            return selected
         question = self.base.choose_for_kind(context, kind)
         if question is None:
             return None
-        return (
+        selected = (
             None
             if _question_key(context.interpretation, question)
             in self.ledger.asked_question_keys
             else question
         )
+        record = getattr(self.base, "record_question_selected", None)
+        if selected is not None and record is not None:
+            record(selected)
+        return selected
 
     def successor(
         self,

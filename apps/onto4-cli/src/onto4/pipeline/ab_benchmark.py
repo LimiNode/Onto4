@@ -168,6 +168,7 @@ class IsolatedRefinementRun:
     answer: str
     initial_snapshot_digest: str
     cells: tuple[IsolatedRefinementCell, ...]
+    protocol: str = "provider_isolated_refinement"
 
 
 def _execution_status(outcome: EvaluationOutcome) -> ExecutionStatus:
