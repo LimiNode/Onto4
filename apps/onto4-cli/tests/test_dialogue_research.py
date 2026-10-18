@@ -11,11 +11,14 @@ from onto4.pipeline import (
     run_model_backed_isolated_refinement_pair,
     run_session_bound_isolated_refinement_pair,
     validate_dialogue_intent_manifest,
+    discover_sequential_host_question_intents,
+    HostQuestionDiscovery,
     DiscoveredQuestionIntent,
     write_dialogue_research_report,
 )
 from onto4.pipeline.clarification_corpus import ClarificationCorpus, ClarificationCorpusCase
 from onto4.pipeline.clarification_corpus import load_clarification_corpus
+from onto4.pipeline.dialogue_research import _dialogue_status
 from onto4.pipeline.evaluation import CaseExecution
 from onto4.reasoning import (
     Ambiguity,
@@ -92,6 +95,11 @@ def test_bounded_dialogue_research_reports_each_required_stage(tmp_path):
                 "answers_consumed": 2,
                 "refinement_accepted": True,
                 "reassessment_performed": True,
+                "required_turns": 2,
+                "admitted_turns": 2,
+                "answered_turns": 2,
+                "accepted_refinements": 2,
+                "completed_reassessments": 2,
                 "clarification_turns": 2,
                 "clarification_turns_known": True,
             },
@@ -191,7 +199,65 @@ def test_session_bound_isolated_refinement_rejects_arbitrary_question():
 def test_intent_manifest_is_checked_without_rewriting_oracle():
     corpus = _dialogue_corpus()
     manifest = (
-        DiscoveredQuestionIntent("single", 0, "Ontology", "criterion", ("a",)),
+        DiscoveredQuestionIntent(
+            "single",
+            0,
+            "Ontology",
+            "criterion",
+            ("a",),
+            corpus_binding=json.dumps(
+                {"name": "bounded-dialogue", "version": 2, "cases": ["single", "control"]},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            snapshot_id="snapshot-0",
+            assessment_id="assessment-0",
+        ),
     )
     with pytest.raises(ValueError, match="contradict"):
         validate_dialogue_intent_manifest(corpus, manifest)
+
+
+def test_sequential_preflight_requires_one_question_per_snapshot():
+    corpus = _dialogue_corpus()
+
+    def discover(case, index, previous):
+        if index:
+            assert previous == "snapshot-0"
+        return HostQuestionDiscovery(
+            questions=(
+                ClarificationQuestion(
+                    f"q-{index}", ClarificationKind.Meaning, "q", ("a",),
+                    target_family="criterion",
+                ),
+            ),
+            snapshot_id=f"snapshot-{index}",
+            previous_snapshot_id=previous,
+            assessment_id=f"assessment-{index}",
+        )
+
+    manifest = discover_sequential_host_question_intents(corpus, discover)
+    assert len(manifest) == 1
+
+
+def test_one_completed_turn_cannot_claim_two_turn_dialogue_complete():
+    assert (
+        _dialogue_status(2, 1, 1, 1, 1, True, True, True, True)
+        == "incomplete"
+    )
+
+
+def test_preflight_rejects_foreign_or_duplicate_provenance():
+    corpus = _dialogue_corpus()
+    binding = json.dumps(
+        {"name": "bounded-dialogue", "version": 2, "cases": ["single", "control"]},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    item = DiscoveredQuestionIntent(
+        "foreign", 0, "Meaning", "criterion", ("a",), binding,
+        "snapshot", None, "assessment",
+    )
+    with pytest.raises(ValueError, match="foreign"):
+        validate_dialogue_intent_manifest(corpus, (item,))
+    assert "criterion" not in item.safe_record().values()

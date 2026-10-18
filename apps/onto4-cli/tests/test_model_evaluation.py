@@ -4,6 +4,7 @@ from pathlib import Path
 from onto4.cli.main import main
 from onto4.core import PredicateCall, PredicateExpr, Term
 from onto4.pipeline import ModelCaseExecutor
+from onto4.pipeline.model_evaluation import _ReplayPolicy
 from onto4.pipeline.clarification_corpus import ClarificationCorpusCase
 from onto4.pipeline.evaluation import EvaluationOutcome
 from onto4.providers import (
@@ -66,6 +67,19 @@ def test_model_case_executor_records_safe_outcome_without_payloads():
     assert execution.outcome is EvaluationOutcome.CLARIFICATION_REQUESTED
     assert execution.semantic_verdict is None
     assert execution.detail_code == "model_backed"
+
+
+def test_replay_telemetry_does_not_call_empty_candidates_generated():
+    telemetry = {}
+
+    class EmptyPolicy:
+        def questions(self, _context):
+            return ()
+
+    policy = _ReplayPolicy(EmptyPolicy(), telemetry=telemetry)
+    assert policy.questions(object()) == ()
+    assert telemetry["question_candidate_generated"] is False
+    assert telemetry["question_candidate_count"] == 0
 
 
 def test_model_case_executor_forwards_requested_conceptual_depth():

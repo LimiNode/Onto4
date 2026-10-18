@@ -435,6 +435,9 @@ semantic success. A corpus must be preflighted against host-owned intents
 (`discover_host_question_intents()` and
 `validate_dialogue_intent_manifest()`); the preflight is a frozen binding and
 does not rewrite the oracle after a scored run. For a model-backed refinement comparison,
+the report also keeps `required_turns`, `admitted_turns`, `answered_turns`,
+`accepted_refinements` and `completed_reassessments`; one completed turn cannot
+be reported as a completed two-turn dialogue.
 `run_model_backed_isolated_refinement_pair()` sends the same immutable initial
 snapshot, question and answer to Full Snapshot and Typed Delta providers; the
 host still owns IDs, transition provenance and all Onto4 assessment semantics.

@@ -98,7 +98,7 @@ class _ReplayPolicy:
             else tuple(filter(None, (self.base.choose(context),)))
         )
         object.__setattr__(self, "_last_questions", tuple(questions))
-        self.telemetry["question_candidate_generated"] = True
+        self.telemetry["question_candidate_generated"] = bool(questions)
         self.telemetry["question_candidate_count"] = len(questions)
         self.telemetry["last_stage"] = "question_candidate_generated"
         return questions
@@ -134,10 +134,12 @@ class _ReplayPolicy:
             raise _ReplayError("question_intent_mismatch", "no_candidate")
         if len(candidates) == 1:
             self.telemetry["intent_admitted"] = True
+            self.telemetry["admitted_turns"] = int(self.telemetry.get("admitted_turns", 0)) + 1
             self.telemetry["last_stage"] = "intent_admitted"
             return
         if tuple(question.target_ids) == expected.target_ids:
             self.telemetry["intent_admitted"] = True
+            self.telemetry["admitted_turns"] = int(self.telemetry.get("admitted_turns", 0)) + 1
             self.telemetry["last_stage"] = "intent_admitted"
             return
         self.telemetry["intent_admitted"] = False
@@ -179,6 +181,9 @@ class _ReplayPolicy:
             answer=answer,
         )
         self.telemetry["refinement_accepted"] = True
+        self.telemetry["accepted_refinements"] = int(
+            self.telemetry.get("accepted_refinements", 0)
+        ) + 1
         self.telemetry["last_stage"] = "refinement_accepted"
         return result
 
@@ -192,6 +197,9 @@ class _ReplayPolicy:
             answer=answer,
         )
         self.telemetry["refinement_accepted"] = True
+        self.telemetry["accepted_refinements"] = int(
+            self.telemetry.get("accepted_refinements", 0)
+        ) + 1
         self.telemetry["last_stage"] = "refinement_accepted"
         return result
 
@@ -492,6 +500,7 @@ class ModelCaseExecutor:
                 expected_intents = scripted_intents or (
                     (_QuestionIntent(expected_kind, None, ()),) if expected_kind else ()
                 )
+                workflow["required_turns"] = len(expected_intents)
                 answer_index = 0
 
                 def validate_question(_, question) -> None:
@@ -527,6 +536,7 @@ class ModelCaseExecutor:
                     workflow.update(
                         {
                             "answers_consumed": int(workflow["answers_consumed"]) + 1,
+                            "answered_turns": int(workflow.get("answered_turns", 0)) + 1,
                             "last_stage": "answer_consumed",
                         }
                     )
@@ -555,6 +565,11 @@ class ModelCaseExecutor:
                         "clarification_turns_known": True,
                         "reassessment_performed": bool(
                             result.progress.entries and result.session.assessment is not None
+                        ),
+                        "completed_reassessments": (
+                            len(result.progress.entries)
+                            if result.session.assessment is not None
+                            else 0
                         ),
                         "last_stage": (
                             "reassessment_completed"
