@@ -128,12 +128,14 @@ def _corpus_binding(corpus: ClarificationCorpus) -> str:
 
 def discover_host_question_intents(
     corpus: ClarificationCorpus,
-    discover: Callable[[object], Sequence[ClarificationQuestion]],
+    discover: Callable[[object], HostQuestionDiscovery],
 ) -> tuple[DiscoveredQuestionIntent, ...]:
     """Run an explicit preflight against host-owned questions.
 
     The callback is the host assessment/policy boundary.  This function only
-    records structural intent; it never rewrites the evaluation oracle.
+    records structural intent; it never rewrites the evaluation oracle.  The
+    callback must return a host snapshot/assessment binding; a bare question
+    list is rejected rather than being treated as a valid preflight.
     """
 
     discovered: list[DiscoveredQuestionIntent] = []
@@ -147,8 +149,9 @@ def discover_host_question_intents(
             assessment_id = discovered_result.assessment_id
             previous_snapshot_id = discovered_result.previous_snapshot_id
         else:
-            questions = tuple(discovered_result)
-            snapshot_id = assessment_id = previous_snapshot_id = None
+            raise ValueError(
+                "Host intent discovery must return HostQuestionDiscovery with provenance."
+            )
         for index, question in enumerate(questions):
             discovered.append(
                 DiscoveredQuestionIntent(

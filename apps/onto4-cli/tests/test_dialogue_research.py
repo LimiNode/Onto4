@@ -12,6 +12,7 @@ from onto4.pipeline import (
     run_session_bound_isolated_refinement_pair,
     validate_dialogue_intent_manifest,
     discover_sequential_host_question_intents,
+    discover_host_question_intents,
     HostQuestionDiscovery,
     DiscoveredQuestionIntent,
     write_dialogue_research_report,
@@ -238,6 +239,11 @@ def test_sequential_preflight_requires_one_question_per_snapshot():
 
     manifest = discover_sequential_host_question_intents(corpus, discover)
     assert len(manifest) == 1
+
+
+def test_initial_preflight_rejects_unbound_question_lists():
+    with pytest.raises(ValueError, match="provenance"):
+        discover_host_question_intents(_dialogue_corpus(), lambda _case: ())
 
 
 def test_one_completed_turn_cannot_claim_two_turn_dialogue_complete():
