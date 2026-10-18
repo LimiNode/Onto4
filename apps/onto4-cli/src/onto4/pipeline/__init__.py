@@ -58,6 +58,13 @@ from .ab_benchmark import (
     write_benchmark_diagnostics,
     write_benchmark_report,
 )
+from .dialogue_research import (
+    BoundedDialogueResearchRun,
+    DialogueResearchCell,
+    run_bounded_dialogue_research,
+    run_model_backed_isolated_refinement_pair,
+    write_dialogue_research_report,
+)
 from .refinement import (
     RefinementBatchResult,
     RefinementCommitLedger,
@@ -158,6 +165,11 @@ __all__ = [
     "rescore_paired_receipts",
     "write_benchmark_diagnostics",
     "write_benchmark_report",
+    "BoundedDialogueResearchRun",
+    "DialogueResearchCell",
+    "run_bounded_dialogue_research",
+    "run_model_backed_isolated_refinement_pair",
+    "write_dialogue_research_report",
     "RefinementCommitLedger",
     "RefinementBatchResult",
     "RefinementCommitment",

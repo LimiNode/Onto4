@@ -408,6 +408,26 @@ fidelity claim is made without an oracle comparison. The command also writes a
 safe per-case diagnostics report; it contains stages, counts, provenance
 codes and failure classes, never prompts, raw model payloads or credentials.
 
+### Bounded multi-turn research
+
+`eval/clarification/bounded-dialogue-v1.yaml` is a dialogue-only research
+corpus for the genome-identity and intrinsic-time cases. Each scenario allows
+two bounded clarification questions. The research helper
+`run_bounded_dialogue_research()` reports the stages independently:
+
+```text
+question issued
+    -> answer consumed
+    -> refinement accepted
+    -> reassessment performed
+```
+
+An incomplete or unknown stage is not promoted to a completed dialogue or a
+semantic success. For a model-backed refinement comparison,
+`run_model_backed_isolated_refinement_pair()` sends the same immutable initial
+snapshot, question and answer to Full Snapshot and Typed Delta providers; the
+host still owns IDs, transition provenance and all Onto4 assessment semantics.
+
 ## Interactive evaluation corpus
 
 The reserved corpus at `eval/clarification/corpus.yaml` contains everyday

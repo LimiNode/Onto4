@@ -1,0 +1,43 @@
+version: 2
+name: bounded-dialogue-v1
+visibility:
+  model_input: contextual
+context_profiles:
+  identity_and_genome: "Identity criteria for genome sharing, numerical identity and distinct persons."
+  relational_time: "Relations between sequence order, observer-independent present and intrinsic time."
+cases:
+  - case_id: genome-identity-bounded
+    evaluation_class: bounded_multiturn_identity
+    mode: dialogue
+    context: identity_and_genome
+    utterance: "Does sharing a genome make two people one person?"
+    expected_clarification:
+      kind: Meaning
+      target_family: sharing_genome
+    expected_after_answer:
+      disposition: dialogue_reassessment_required
+    dialogue:
+      - {turn_id: genome-0, role: user, text: "Does sharing a genome make two people one person?"}
+      - {turn_id: genome-1, role: assistant, text: "What does sharing a genome mean here?", question_kind: Meaning, target_family: sharing_genome, target_ids: [ambiguity-genome]}
+      - {turn_id: genome-2, role: user, text: "I mean numerical identity: they are one and the same individual."}
+      - {turn_id: genome-3, role: assistant, text: "Does a shared genome suffice for numerical identity?", question_kind: Meaning, target_family: numerical_identity, target_ids: [ambiguity-criterion]}
+      - {turn_id: genome-4, role: user, text: "No, two people can have the same genome and remain distinct individuals."}
+      - {turn_id: genome-5, role: assistant, text: "The numerical-identity criterion is now explicit."}
+
+  - case_id: intrinsic-time-bounded
+    evaluation_class: bounded_multiturn_time
+    mode: dialogue
+    context: relational_time
+    utterance: "Does the sequence have an intrinsic present?"
+    expected_clarification:
+      kind: Meaning
+      target_family: intrinsic_present
+    expected_after_answer:
+      disposition: dialogue_reassessment_required
+    dialogue:
+      - {turn_id: time-0, role: user, text: "Does the sequence have an intrinsic present?"}
+      - {turn_id: time-1, role: assistant, text: "What does intrinsic present mean here?", question_kind: Meaning, target_family: intrinsic_present, target_ids: [ambiguity-present]}
+      - {turn_id: time-2, role: user, text: "I mean an observer-independent present in the sequence itself."}
+      - {turn_id: time-3, role: assistant, text: "Should the claim assume observer-independent time rather than ordering only?", question_kind: Ontology, target_family: observer_independence, target_ids: [ambiguity-observer]}
+      - {turn_id: time-4, role: user, text: "Yes, that is the intended assumption."}
+      - {turn_id: time-5, role: assistant, text: "The intrinsic-time commitment is now explicit."}

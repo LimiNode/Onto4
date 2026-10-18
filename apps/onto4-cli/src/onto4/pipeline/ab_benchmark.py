@@ -283,6 +283,7 @@ def _cell(
         else None
     )
     diagnostic_keys = {
+        "detail_code",
         "last_stage",
         "questions_issued",
         "answers_consumed",
@@ -300,6 +301,8 @@ def _cell(
         for key in diagnostic_keys
         if key in receipt.diagnostics
     }
+    if receipt.detail_code is not None:
+        diagnostics["detail_code"] = receipt.detail_code
     return BenchmarkCell(
         condition=condition.name,
         case_id=case.case_id,
