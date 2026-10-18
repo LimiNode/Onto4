@@ -152,6 +152,10 @@ def discover_host_question_intents(
             raise ValueError(
                 "Host intent discovery must return HostQuestionDiscovery with provenance."
             )
+        if len(questions) > 1:
+            raise ValueError(
+                "Initial preflight accepts one question; use sequential preflight for multi-turn cases."
+            )
         for index, question in enumerate(questions):
             discovered.append(
                 DiscoveredQuestionIntent(
