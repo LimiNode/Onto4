@@ -12,6 +12,7 @@ from onto4.providers import (
     InterpretationRequest,
     ProviderTransportError,
 )
+from onto4.providers.diagnostics import ProviderStageEvent
 from onto4.reasoning import (
     Ambiguity,
     ConceptualDepth,
@@ -105,6 +106,30 @@ def test_model_case_executor_classifies_transport_failure():
 
     assert execution.outcome is EvaluationOutcome.TRANSPORT_ERROR
     assert execution.detail_code == "ProviderTransportError"
+
+
+def test_model_case_executor_allowlists_stage_details():
+    executor = _executor()
+    executor._last_events = [
+        ProviderStageEvent("interpretation", "started", 0.0),
+        ProviderStageEvent(
+            "interpretation",
+            "response_received",
+            0.1,
+            "finish_reason=stop, completion_tokens=12",
+        ),
+        ProviderStageEvent(
+            "interpretation",
+            "completed",
+            0.2,
+            "Bearer SECRET and raw model content",
+        ),
+    ]
+
+    details = executor._metadata()[3]
+
+    assert details == {"interpretation": "finish_reason=stop, completion_tokens=12"}
+    assert "SECRET" not in str(details)
 
 
 def test_model_case_executor_runs_dialogue_with_fake_refinement():

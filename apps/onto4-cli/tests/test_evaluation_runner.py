@@ -110,6 +110,49 @@ def test_timeout_result_finishes_before_retry_or_next_case():
     assert run.receipts[0].attempts == 2
 
 
+def test_retry_receipt_preserves_attempt_level_accounting():
+    corpus = load_clarification_corpus(CORPUS)
+    calls = 0
+
+    def executor(case, *, request_timeout_seconds):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return CaseExecution(
+                EvaluationOutcome.REQUEST_TIMEOUT,
+                provider_calls=2,
+                stage_timings={"interpretation": 0.1},
+                stage_outcomes={"interpretation": "failed"},
+                stage_details={"interpretation": "transport"},
+                detail_code="first",
+            )
+        return CaseExecution(
+            EvaluationOutcome.ASSESSMENT_COMPLETED,
+            provider_calls=3,
+            stage_timings={"interpretation": 0.2},
+            stage_outcomes={"interpretation": "completed"},
+            stage_details={"interpretation": "schema_valid"},
+            detail_code="second",
+        )
+
+    run = SequentialEvaluationRunner(
+        executor,
+        config=EvaluationConfig(max_retries=1),
+    ).run(replace(corpus, cases=(corpus.cases[0],)), digest="digest")
+
+    receipt = run.receipts[0]
+    assert receipt.attempts == 2
+    assert receipt.provider_calls == 5
+    assert [item.outcome for item in receipt.attempt_history] == [
+        EvaluationOutcome.REQUEST_TIMEOUT,
+        EvaluationOutcome.ASSESSMENT_COMPLETED,
+    ]
+    assert receipt.provider_stage_seconds == {
+        "attempt#1:interpretation": 0.1,
+        "attempt#2:interpretation": 0.2,
+    }
+
+
 @pytest.mark.parametrize("signal", (KeyboardInterrupt, SystemExit))
 def test_process_control_signals_escape_executor_boundary(signal):
     corpus = load_clarification_corpus(CORPUS)

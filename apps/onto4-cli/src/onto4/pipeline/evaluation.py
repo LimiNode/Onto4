@@ -63,6 +63,20 @@ class CaseExecution:
 
 
 @dataclass(frozen=True)
+class AttemptRecord:
+    """Safe accounting for one sequential case attempt."""
+
+    attempt: int
+    outcome: EvaluationOutcome
+    elapsed_seconds: float
+    provider_calls: int = 0
+    provider_stage_seconds: Mapping[str, float] = field(default_factory=dict)
+    provider_stage_outcomes: Mapping[str, str] = field(default_factory=dict)
+    provider_stage_details: Mapping[str, str] = field(default_factory=dict)
+    detail_code: str | None = None
+
+
+@dataclass(frozen=True)
 class EvaluationConfig:
     request_timeout_seconds: float = 30.0
     case_deadline_seconds: float = 120.0
@@ -123,6 +137,7 @@ class CaseReceipt:
     semantic_verdict: str | None = None
     detail_code: str | None = None
     diagnostics: Mapping[str, object] = field(default_factory=dict)
+    attempt_history: tuple[AttemptRecord, ...] = ()
     complete: bool = True
     resume_allowed: bool = False
 
@@ -414,6 +429,20 @@ def _load_existing_receipts(
             semantic_verdict=item.get("semantic_verdict"),
             detail_code=item.get("detail_code"),
             diagnostics=item.get("diagnostics", {}),
+            attempt_history=tuple(
+                AttemptRecord(
+                    attempt=int(raw_attempt.get("attempt", index)),
+                    outcome=EvaluationOutcome(raw_attempt["outcome"]),
+                    elapsed_seconds=float(raw_attempt.get("elapsed_seconds", 0.0)),
+                    provider_calls=int(raw_attempt.get("provider_calls", 0)),
+                    provider_stage_seconds=raw_attempt.get("provider_stage_seconds", {}),
+                    provider_stage_outcomes=raw_attempt.get("provider_stage_outcomes", {}),
+                    provider_stage_details=raw_attempt.get("provider_stage_details", {}),
+                    detail_code=raw_attempt.get("detail_code"),
+                )
+                for index, raw_attempt in enumerate(item.get("attempt_history", ()), start=1)
+                if isinstance(raw_attempt, Mapping)
+            ),
             complete=bool(item.get("complete", True)),
             resume_allowed=bool(item.get("resume_allowed", False)),
         )
@@ -463,8 +492,10 @@ class SequentialEvaluationRunner:
             started = self.clock()
             execution: CaseExecution | None = None
             attempts = 0
+            attempt_history: list[AttemptRecord] = []
             while attempts <= self.config.max_retries:
                 attempts += 1
+                attempt_started = self.clock()
                 remaining = self.config.case_deadline_seconds - (
                     self.clock() - started
                 )
@@ -473,43 +504,82 @@ class SequentialEvaluationRunner:
                         EvaluationOutcome.CASE_DEADLINE_EXCEEDED,
                         detail_code="case_deadline",
                     )
-                    break
-                execution = _invoke_with_deadline(
-                    self.executor,
-                    case,
-                    timeout_seconds=min(
-                        self.config.request_timeout_seconds,
-                        remaining,
-                    ),
-                )
-                if (
-                    self.clock() - started >= self.config.case_deadline_seconds
-                ):
-                    execution = CaseExecution(
-                        EvaluationOutcome.CASE_DEADLINE_EXCEEDED,
-                        provider_calls=execution.provider_calls,
-                        stage_timings=execution.stage_timings,
-                        stage_outcomes=execution.stage_outcomes,
-                        stage_details=execution.stage_details,
-                        detail_code="case_deadline",
-                        diagnostics=execution.diagnostics,
+                else:
+                    execution = _invoke_with_deadline(
+                        self.executor,
+                        case,
+                        timeout_seconds=min(
+                            self.config.request_timeout_seconds,
+                            remaining,
+                        ),
                     )
+                    if (
+                        self.clock() - started >= self.config.case_deadline_seconds
+                    ):
+                        execution = CaseExecution(
+                            EvaluationOutcome.CASE_DEADLINE_EXCEEDED,
+                            provider_calls=execution.provider_calls,
+                            stage_timings=execution.stage_timings,
+                            stage_outcomes=execution.stage_outcomes,
+                            stage_details=execution.stage_details,
+                            detail_code="case_deadline",
+                            diagnostics=execution.diagnostics,
+                        )
+                attempt_history.append(
+                    AttemptRecord(
+                        attempt=attempts,
+                        outcome=execution.outcome,
+                        elapsed_seconds=max(0.0, self.clock() - attempt_started),
+                        provider_calls=execution.provider_calls,
+                        provider_stage_seconds=dict(execution.stage_timings),
+                        provider_stage_outcomes=dict(execution.stage_outcomes),
+                        provider_stage_details=dict(execution.stage_details),
+                        detail_code=execution.detail_code,
+                    )
+                )
+                if remaining <= 0:
+                    break
                 if not _retryable(execution.outcome) or attempts > self.config.max_retries:
                     break
             assert execution is not None
+            if len(attempt_history) == 1:
+                receipt_stage_seconds = dict(execution.stage_timings)
+                receipt_stage_outcomes = dict(execution.stage_outcomes)
+                receipt_stage_details = dict(execution.stage_details)
+                receipt_provider_calls = execution.provider_calls
+            else:
+                receipt_stage_seconds = {
+                    f"attempt#{record.attempt}:{stage}": elapsed
+                    for record in attempt_history
+                    for stage, elapsed in record.provider_stage_seconds.items()
+                }
+                receipt_stage_outcomes = {
+                    f"attempt#{record.attempt}:{stage}": outcome
+                    for record in attempt_history
+                    for stage, outcome in record.provider_stage_outcomes.items()
+                }
+                receipt_stage_details = {
+                    f"attempt#{record.attempt}:{stage}": detail
+                    for record in attempt_history
+                    for stage, detail in record.provider_stage_details.items()
+                }
+                receipt_provider_calls = sum(
+                    record.provider_calls for record in attempt_history
+                )
             receipt = CaseReceipt(
                 case_id=case.case_id,
                 case_mode=getattr(case, "mode", "single_pass"),
                 outcome=execution.outcome,
                 elapsed_seconds=max(0.0, self.clock() - started),
-                provider_stage_seconds=dict(execution.stage_timings),
-                provider_stage_outcomes=dict(execution.stage_outcomes),
-                provider_stage_details=dict(execution.stage_details),
-                provider_calls=execution.provider_calls,
+                provider_stage_seconds=receipt_stage_seconds,
+                provider_stage_outcomes=receipt_stage_outcomes,
+                provider_stage_details=receipt_stage_details,
+                provider_calls=receipt_provider_calls,
                 attempts=attempts,
                 semantic_verdict=execution.semantic_verdict,
                 detail_code=execution.detail_code,
                 diagnostics=dict(execution.diagnostics),
+                attempt_history=tuple(attempt_history),
                 complete=True,
                 resume_allowed=execution.outcome in {
                     EvaluationOutcome.TRANSPORT_ERROR,

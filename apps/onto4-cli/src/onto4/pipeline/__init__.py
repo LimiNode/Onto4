@@ -25,6 +25,7 @@ from .clarification_corpus import (
     load_clarification_corpus,
 )
 from .evaluation import (
+    AttemptRecord,
     CaseExecution,
     CaseReceipt,
     EvaluationConfig,
@@ -108,6 +109,7 @@ __all__ = [
     "load_clarification_corpus",
     "CaseExecution",
     "CaseReceipt",
+    "AttemptRecord",
     "EvaluationConfig",
     "EvaluationOutcome",
     "EvaluationRun",

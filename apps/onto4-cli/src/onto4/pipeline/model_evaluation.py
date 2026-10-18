@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import Mapping
@@ -22,6 +23,16 @@ from onto4.reasoning import ClarificationKind
 from .clarification_corpus import ClarificationCorpusCase
 from .evaluation import CaseExecution, EvaluationOutcome
 from .interactive import ModelClarificationPolicy, run_interactive_dialogue
+
+
+_SAFE_STAGE_CODES = frozenset({"schema_valid", "transport", "schema", "unexpected"})
+_SAFE_FINISH_REASONS = frozenset(
+    {"stop", "length", "tool_calls", "content_filter", "function_call", "unknown"}
+)
+_FINISH_DETAIL_RE = re.compile(
+    r"^finish_reason=(?P<reason>[A-Za-z0-9_.-]{1,32})"
+    r"(?:, completion_tokens=(?P<tokens>[0-9]{1,9}))?$"
+)
 
 
 class _ReplayError(ValueError):
@@ -141,11 +152,32 @@ class ModelCaseExecutor:
                 )
             outcomes[key] = event.phase
             if event.detail:
-                previous = details.get(key)
-                details[key] = (
-                    event.detail if previous is None else f"{previous}; {event.detail}"
-                )
+                safe_detail = self._safe_stage_detail(event.detail)
+                if safe_detail is not None:
+                    previous = details.get(key)
+                    details[key] = (
+                        safe_detail
+                        if previous is None
+                        else f"{previous}; {safe_detail}"
+                    )
         return calls, timings, outcomes, details
+
+    @staticmethod
+    def _safe_stage_detail(detail: str) -> str | None:
+        if not isinstance(detail, str) or len(detail) > 128:
+            return None
+        if detail in _SAFE_STAGE_CODES:
+            return detail
+        match = _FINISH_DETAIL_RE.fullmatch(detail)
+        if match is None:
+            return None
+        reason = match.group("reason")
+        normalized_reason = reason if reason in _SAFE_FINISH_REASONS else "other"
+        tokens = match.group("tokens")
+        return (
+            f"finish_reason={normalized_reason}"
+            + (f", completion_tokens={tokens}" if tokens is not None else "")
+        )
 
     @staticmethod
     def _diagnostics(
