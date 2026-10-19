@@ -1,7 +1,7 @@
 {
   "record_type": "pr39_target_binding_evidence",
   "source_sha": "d969338ee040e304e4dc1afb0f3aa1a373604967",
-  "model": "F:\\AI\\models\\bonsai2-27b\\Ternary-Bonsai-2-27B-PQ2_0.gguf",
+  "model": "bonsai2-27b-pq2_0",
   "backend": "llama.cpp OpenAI-compatible /v1",
   "sampling": {
     "temperature": 0,
