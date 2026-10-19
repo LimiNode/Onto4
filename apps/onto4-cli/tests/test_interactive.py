@@ -628,15 +628,42 @@ def test_typed_delta_marks_unrelated_question_unsupported():
 
 def test_typed_delta_reports_unsupported_ontology_creation_transition():
     initial = _space("initial", ambiguous=True)
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "refine_ambiguity",
+                "target_id": "ambiguity-0",
+                "text": "intrinsic present",
+                "description": "an observer-independent present",
+            },)
+
     policy = TypedDeltaClarificationPolicy(
         FixtureClarificationPolicy(),
-        object(),
+        DeltaProvider(),
+    )
+    meaning = ClarificationQuestion(
+        "meaning:ambiguity-0",
+        ClarificationKind.Meaning,
+        "What does intrinsic present mean?",
+        ("ambiguity-0",),
+    )
+    successor, _ = policy.successor(
+        interpretation=initial,
+        question=meaning,
+        answer="observer-independent present",
     )
     question = ClarificationQuestion(
-        "ontology:new", ClarificationKind.Ontology, "Which ontology?", ("ambiguity-0",)
+        "ontology:new",
+        ClarificationKind.Ontology,
+        "Which ontology?",
+        ("ambiguity-0",),
     )
     with pytest.raises(ValueError, match="unsupported_transition"):
-        policy.successor(interpretation=initial, question=question, answer="ontology")
+        policy.successor(
+            interpretation=successor,
+            question=question,
+            answer="observer-independent time",
+        )
 
 
 def test_interactive_dialogue_completes_two_question_fixture_loop():
