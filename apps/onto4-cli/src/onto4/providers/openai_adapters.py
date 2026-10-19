@@ -179,6 +179,8 @@ def _parse_description_items(
     value: Any,
     path: str,
     constructor: Any,
+    *,
+    allowed_target_ids: tuple[str, ...] = (),
 ) -> tuple[Any, ...]:
     if not isinstance(value, list):
         raise ProviderSchemaError(f"{path} must be a JSON array.")
@@ -189,12 +191,20 @@ def _parse_description_items(
         required = {"description"}
         if constructor is Ambiguity:
             required.add("term")
+            optional.add("target_id")
         _keys(item, f"{path}[{index}]", required, optional)
         prefix = "ambiguity" if constructor is Ambiguity else "presupposition"
         identifier = f"{prefix}-{index}"
         description = _string(item["description"], f"{path}[{index}].description")
         if constructor is Ambiguity:
-            result.append(constructor(identifier, _string(item.get("term"), f"{path}[{index}].term"), description))
+            target_id = item.get("target_id")
+            if target_id is not None:
+                target_id = _string(target_id, f"{path}[{index}].target_id")
+                if target_id not in allowed_target_ids:
+                    raise ProviderSchemaError(
+                        f"{path}[{index}].target_id is not an allowed host target."
+                    )
+            result.append(constructor(identifier, _string(item.get("term"), f"{path}[{index}].term"), description, target_id))
         else:
             result.append(constructor(identifier, description))
     return tuple(result)
@@ -256,7 +266,7 @@ def _interpretation_identity(space: InterpretationSpace) -> str:
         "source_text": space.source_text,
         "conceptual_depth": space.conceptual_depth.value,
         "ambiguities": [
-            {"term": item.term, "description": item.description}
+            {"term": item.term, "description": item.description, "target_id": item.target_id}
             for item in space.ambiguities
         ],
         "presuppositions": [item.description for item in space.presuppositions],
@@ -298,11 +308,19 @@ def _parse_interpretation(payload: Mapping[str, Any], request: InterpretationReq
         raise ProviderSchemaError(
             "Model conceptual_depth does not match the interpretation request."
         )
+    allowed_target_ids = request.state.get("allowed_semantic_target_ids", ())
+    if not isinstance(allowed_target_ids, (tuple, list)) or not all(
+        isinstance(item, str) and item.strip() for item in allowed_target_ids
+    ):
+        raise ProviderSchemaError("allowed_semantic_target_ids must be a sequence of non-empty strings.")
     space = InterpretationSpace(
         id="",
         source_text=source_text,
         conceptual_depth=depth,
-        ambiguities=_parse_description_items(payload["ambiguities"], "ambiguities", Ambiguity),
+        ambiguities=_parse_description_items(
+            payload["ambiguities"], "ambiguities", Ambiguity,
+            allowed_target_ids=tuple(allowed_target_ids),
+        ),
         presuppositions=_parse_description_items(payload["presuppositions"], "presuppositions", Presupposition),
         ontologies=_parse_ontology_candidates(payload["ontologies"]),
         readings=_parse_readings(
@@ -434,7 +452,12 @@ def _interpretation_projection(interpretation: InterpretationSpace) -> dict[str,
         "source_text": interpretation.source_text,
         "conceptual_depth": interpretation.conceptual_depth.value,
         "ambiguities": [
-            {"id": item.id, "term": item.term, "description": item.description}
+            {
+                "id": item.id,
+                "target_id": item.target_id,
+                "term": item.term,
+                "description": item.description,
+            }
             for item in interpretation.ambiguities
         ],
         "presuppositions": [
@@ -487,6 +510,15 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
             else "Select one supported ConceptualDepth; do not infer an unsupported value."
         )
         context_instruction = ""
+        raw_target_ids = request.state.get("allowed_semantic_target_ids", ())
+        target_instruction = ""
+        if isinstance(raw_target_ids, (tuple, list)) and raw_target_ids:
+            target_instruction = (
+                "For an ambiguity, target_id is optional but, when present, must be "
+                "one of these host-issued references; never invent one: "
+                + json.dumps(tuple(raw_target_ids), ensure_ascii=False)
+                + ". "
+            )
         raw_contexts = request.state.get("context_projections")
         if isinstance(raw_contexts, Mapping) and raw_contexts:
             projections = {
@@ -532,18 +564,19 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                             f"{depth_instruction} conceptual_depth must be exactly one of "
                             "ordinary, reflective, philosophical or ontology_sensitive. "
                             "ambiguities, presuppositions, ontologies and readings must "
-                        "be arrays of JSON objects with content fields only; do not "
-                        "invent authoritative IDs. Readings use label, description and "
-                        "presupposition_indexes, referring to the supplied presupposition "
-                        "array by zero-based position. Use this shape even when arrays "
-                        "are empty: ambiguities:[{term,description}], "
-                        "presuppositions:[{description}], "
-                        "ontologies:[{label,description}], "
-                        "readings:[{label,description,presupposition_indexes}]. "
-                            "Do not use arrays of prose strings. "
-                            "Return JSON only.\n\n"
-                            f"{context_instruction}"
-                            f"source_text: {request.source_text}"
+                            + "be arrays of JSON objects with content fields only; do not "
+                            + "invent authoritative IDs. Readings use label, description and "
+                            + "presupposition_indexes, referring to the supplied presupposition "
+                            + "array by zero-based position. Use this shape even when arrays "
+                            + "are empty: ambiguities:[{term,description}], "
+                            + "presuppositions:[{description}], "
+                            + "ontologies:[{label,description}], "
+                            + "readings:[{label,description,presupposition_indexes}]. "
+                            + target_instruction
+                            + "Do not use arrays of prose strings. "
+                            + "Return JSON only.\n\n"
+                            + f"{context_instruction}"
+                            + f"source_text: {request.source_text}"
                         ),
                     },
                 ),

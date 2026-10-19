@@ -210,11 +210,11 @@ def test_stable_target_binding_ignores_model_wording_but_keeps_goals_distinct():
     )
     first = InterpretationSpace(
         "wording-a", "Claim.", ConceptualDepth.Ordinary,
-        ambiguities=(Ambiguity("ambiguity-a", "model wording one", "meaning"),),
+        ambiguities=(Ambiguity("ambiguity-a", "model wording one", "meaning", "ambiguity-a"),),
     )
     second = InterpretationSpace(
         "wording-b", "Claim.", ConceptualDepth.Ordinary,
-        ambiguities=(Ambiguity("ambiguity-b", "model wording two", "meaning"),),
+        ambiguities=(Ambiguity("ambiguity-b", "model wording two", "meaning", "ambiguity-b"),),
     )
     first_question = same_goal.choose(context_for(first))
     second_question = same_goal.choose(context_for(second))

@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from onto4.cli.main import main
 from onto4.core import PredicateCall, PredicateExpr, Term
 from onto4.pipeline import ModelCaseExecutor
@@ -442,7 +444,7 @@ def _dialogue_case(*, expected_kind="Meaning", turns=None):
 
 def _ambiguous_dialogue_executor(
     *, ambiguity_count=1, ambiguity_ids=None, ambiguity_terms=None,
-    semantic_target_bindings=None,
+    semantic_target_bindings=None, grounded_target_ids=True,
 ):
     context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
     ids = tuple(ambiguity_ids or (f"ambiguity-{index}" for index in range(ambiguity_count)))
@@ -450,7 +452,7 @@ def _ambiguous_dialogue_executor(
     initial = InterpretationSpace(
         "dialogue-space", "What is the mass of integer 7?", ConceptualDepth.Ordinary,
         ambiguities=tuple(
-            Ambiguity(item_id, term, "meaning")
+            Ambiguity(item_id, term, "meaning", item_id if grounded_target_ids else None)
             for item_id, term in zip(ids, terms)
         ),
     )
@@ -504,7 +506,7 @@ def test_dialogue_replay_uses_host_binding_instead_of_model_ambiguity_term():
     )
     execution = _ambiguous_dialogue_executor(
         ambiguity_terms=("free-form model wording",),
-        semantic_target_bindings={"ambiguity-0": "stable-mass"},
+        semantic_target_bindings={(case.case_id, "ambiguity-0"): "stable-mass"},
     )(case, request_timeout_seconds=1.0)
     assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
     assert execution.diagnostics["question_target_family_match"] is True
@@ -559,6 +561,36 @@ def test_dialogue_replay_allows_semantic_target_reindex_when_binding_is_unique()
     assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
     assert execution.diagnostics["question_target_family"] == "opaque"
     assert '"question_target_family": "mass"' not in json.dumps(execution.diagnostics)
+
+
+def test_model_case_executor_rejects_unscoped_semantic_binding_keys():
+    with pytest.raises(ValueError, match="case_id, target_id"):
+        _ambiguous_dialogue_executor(
+            semantic_target_bindings={"ambiguity-0": "stable-mass"},
+        )
+
+
+def test_strict_binding_does_not_ground_same_structural_id_without_host_reference():
+    case = _dialogue_case()
+    executor = _ambiguous_dialogue_executor(
+        grounded_target_ids=False,
+        semantic_target_bindings={(case.case_id, "ambiguity-0"): "stable-mass"},
+    )
+    executor.strict_semantic_target_binding = True
+
+    execution = executor(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_UNVERIFIED
+
+
+def test_strict_binding_with_empty_map_fails_closed_instead_of_using_term():
+    case = _dialogue_case()
+    executor = _ambiguous_dialogue_executor()
+    executor.strict_semantic_target_binding = True
+
+    execution = executor(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_UNVERIFIED
 
 
 def test_target_family_match_uses_independent_corpus_oracle():

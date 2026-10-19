@@ -306,6 +306,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                     delta_adapter if args.refinement_mode == "typed_delta" else None
                 ),
                 semantic_target_bindings=semantic_target_bindings,
+                strict_semantic_target_binding=True,
                 trace_sink=trace,
             )
             interpretation_adapter.trace = executor.provider_trace
@@ -408,6 +409,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                 refinement_mode=condition.refinement_mode,
                 refinement_delta_provider=delta_adapter,
                 semantic_target_bindings=semantic_target_bindings,
+                strict_semantic_target_binding=True,
             )
             # Keep benchmark telemetry at the same boundary as eval-corpus:
             # adapters emit safe stage events into the executor, which owns

@@ -18,6 +18,10 @@ class Ambiguity:
     id: str
     term: str
     description: str
+    # Optional host-issued semantic target reference.  The model may select
+    # one of the references explicitly supplied by the host, but it cannot
+    # make the generated positional ``id`` authoritative.
+    target_id: str | None = None
 
 
 @dataclass(frozen=True)

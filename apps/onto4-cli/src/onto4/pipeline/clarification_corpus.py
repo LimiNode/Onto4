@@ -42,7 +42,7 @@ class ClarificationCorpus:
 
 def host_semantic_target_bindings(
     corpus: ClarificationCorpus,
-) -> dict[str, str]:
+) -> dict[tuple[str, str], str]:
     """Extract explicit host-owned target bindings from scripted dialogue.
 
     The dialogue script is corpus-owned data, while ``Ambiguity.term`` is

@@ -164,9 +164,12 @@ class FixtureClarificationPolicy:
                 raise ValueError("Ambiguity target binding families must be non-empty strings.")
 
     def _ambiguity_target_family(self, ambiguity: object) -> str | None:
-        ambiguity_id = getattr(ambiguity, "id", None)
-        if ambiguity_id in self.ambiguity_target_families:
-            return self.ambiguity_target_families[ambiguity_id]
+        # Only an explicit host-issued reference establishes grounding.  The
+        # adapter's positional ``id`` is structural bookkeeping and must not
+        # be treated as semantic identity.
+        target_id = getattr(ambiguity, "target_id", None)
+        if target_id in self.ambiguity_target_families:
+            return self.ambiguity_target_families[target_id]
         if self.require_ambiguity_target_families:
             return None
         return getattr(ambiguity, "term", None)
@@ -223,6 +226,17 @@ class FixtureClarificationPolicy:
                     "Какую предпосылку следует принять или отвергнуть?",
                 ),
             )
+            grounded_ontology = tuple(
+                ambiguity
+                for ambiguity in interpretation.ambiguities
+                if self._ambiguity_target_family(ambiguity) is not None
+            )
+            grounded_families = tuple(
+                dict.fromkeys(
+                    self._ambiguity_target_family(ambiguity)
+                    for ambiguity in grounded_ontology
+                )
+            )
             questions = tuple(
                 ClarificationQuestion(
                     id=(
@@ -231,8 +245,16 @@ class FixtureClarificationPolicy:
                     ),
                     kind=kind,
                     text=text,
-                    target_ids=landscape.unresolved_candidate_ids,
-                    target_family="candidate",
+                    target_ids=tuple(
+                        getattr(item, "target_id")
+                        for item in grounded_ontology
+                        if getattr(item, "target_id", None)
+                    ) or landscape.unresolved_candidate_ids,
+                    target_family=(
+                        grounded_families[0]
+                        if len(grounded_families) == 1
+                        else (None if self.require_ambiguity_target_families else "candidate")
+                    ),
                 )
                 for code, kind, text in question_specs
                 if code in diagnostic_codes

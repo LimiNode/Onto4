@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from time import monotonic
-from typing import Mapping
+from typing import Mapping, TypeAlias
 
 from onto4.core import AssessmentContext
 from .ask import ask_per_reading
@@ -49,6 +49,8 @@ _FINISH_DETAIL_RE = re.compile(
     r"^finish_reason=(?P<reason>[A-Za-z0-9_.-]{1,32})"
     r"(?:, completion_tokens=(?P<tokens>[0-9]{1,9}))?$"
 )
+
+SemanticTargetBindingKey: TypeAlias = tuple[str, str]
 
 
 def _safe_target_family(value: object) -> str | None:
@@ -252,10 +254,15 @@ class ModelCaseExecutor:
     interpretation_context_mode: str = "context_late"
     refinement_mode: str = "full_snapshot"
     refinement_delta_provider: RefinementDeltaProvider | None = None
-    # Host-owned semantic identity, keyed by the stable ambiguity target id.
-    # This is deliberately not inferred from model-produced ``Ambiguity.term``
-    # or from the scripted question wording.
-    semantic_target_bindings: Mapping[object, str] = field(default_factory=dict)
+    # Evaluation-only oracle bindings, scoped by case and host target id.  They
+    # are deliberately not inferred from model-produced ``Ambiguity.term`` or
+    # from the scripted question wording.
+    semantic_target_bindings: Mapping[SemanticTargetBindingKey, str] = field(default_factory=dict)
+    strict_semantic_target_binding: bool = False
+    # Public host-issued references supplied independently of the corpus
+    # oracle.  Never derive these from ``semantic_target_bindings``: that map
+    # is evaluation data and must not leak into a model prompt.
+    host_target_ids: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     trace_sink: ProviderTrace | None = None
     _last_events: list[ProviderStageEvent] = field(default_factory=list, init=False)
 
@@ -269,28 +276,30 @@ class ModelCaseExecutor:
         if self.refinement_mode == "typed_delta" and self.refinement_delta_provider is None:
             raise ValueError("typed_delta mode requires a refinement_delta_provider.")
         for target_key, target_family in self.semantic_target_bindings.items():
-            if isinstance(target_key, tuple):
-                if (
-                    len(target_key) != 2
-                    or not all(isinstance(item, str) and item.strip() for item in target_key)
-                ):
-                    raise ValueError("Scoped semantic target binding keys are invalid.")
-            elif not isinstance(target_key, str) or not target_key.strip():
-                raise ValueError("Semantic target binding ids must be non-empty strings.")
+            if (
+                not isinstance(target_key, tuple)
+                or len(target_key) != 2
+                or not all(isinstance(item, str) and item.strip() for item in target_key)
+            ):
+                raise ValueError("Semantic target binding keys must be (case_id, target_id) tuples.")
             if not isinstance(target_family, str) or not target_family.strip():
                 raise ValueError("Semantic target binding families must be non-empty strings.")
+        for case_id, target_ids in self.host_target_ids.items():
+            if not isinstance(case_id, str) or not case_id.strip():
+                raise ValueError("host_target_ids case ids must be non-empty strings.")
+            if not isinstance(target_ids, tuple) or not all(
+                isinstance(item, str) and item.strip() for item in target_ids
+            ):
+                raise ValueError("host_target_ids values must be tuples of non-empty strings.")
 
     def _target_bindings_for_case(
         self, case: ClarificationCorpusCase
     ) -> dict[str, str]:
         bindings: dict[str, str] = {}
         for target_key, target_family in self.semantic_target_bindings.items():
-            if isinstance(target_key, tuple):
-                case_id, target_id = target_key
-                if case_id != case.case_id:
-                    continue
-            else:
-                target_id = target_key
+            case_id, target_id = target_key
+            if case_id != case.case_id:
+                continue
             previous = bindings.setdefault(target_id, target_family)
             if previous != target_family:
                 raise ValueError(
@@ -425,6 +434,11 @@ class ModelCaseExecutor:
         }
         if case.model_input == "contextual" and case.context is not None:
             state["context_id"] = case.context
+        if self.strict_semantic_target_binding:
+            # This is an explicit host contract.  The model may reference a
+            # supplied target, but an adapter-generated positional id is never
+            # silently remapped to an evaluation/corpus id.
+            state["allowed_semantic_target_ids"] = self.host_target_ids.get(case.case_id, ())
         if (
             self.interpretation_context_mode == "context_aware"
             and case.model_input == "contextual"
@@ -610,7 +624,7 @@ class ModelCaseExecutor:
                 policy = _ReplayPolicy(
                     self._refinement_policy(
                         ambiguity_target_families=case_target_bindings,
-                        require_ambiguity_target_families=bool(case_target_bindings),
+                        require_ambiguity_target_families=self.strict_semantic_target_binding,
                     ),
                     expected_intents=expected_intents,
                     telemetry=workflow,

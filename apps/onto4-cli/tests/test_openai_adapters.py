@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +13,7 @@ from onto4.providers import (
     OpenAICompatibleRefinementDeltaProvider,
     ProviderSchemaError,
 )
+from onto4.pipeline import host_semantic_target_bindings, load_clarification_corpus
 from onto4.reasoning import (
     Ambiguity,
     ClarificationKind,
@@ -226,6 +228,59 @@ def test_interpretation_adapter_assigns_ids_and_ignores_model_identity_claims():
     assert result.presuppositions[0].id == "presupposition-0"
     assert result.readings[0].id == "reading-0"
     assert result.readings[0].presupposition_ids == ("presupposition-0",)
+
+
+def test_interpretation_adapter_requires_explicit_host_target_reference():
+    payload = interpretation_payload()
+    payload["ambiguities"][0]["target_id"] = "host-target"
+    provider = OpenAICompatibleInterpretationProvider(FakeClient(payload))
+
+    result = provider.interpret(
+        InterpretationRequest(
+            "The door is closed.",
+            state={"allowed_semantic_target_ids": ("host-target",)},
+        )
+    )
+
+    assert result.ambiguities[0].id == "ambiguity-0"
+    assert result.ambiguities[0].target_id == "host-target"
+
+
+def test_interpretation_adapter_rejects_unbound_target_reference():
+    payload = interpretation_payload()
+    payload["ambiguities"][0]["target_id"] = "not-host-issued"
+
+    with pytest.raises(ProviderSchemaError, match="allowed host target"):
+        OpenAICompatibleInterpretationProvider(FakeClient(payload)).interpret(
+            InterpretationRequest(
+                "The door is closed.",
+                state={"allowed_semantic_target_ids": ("host-target",)},
+            )
+        )
+
+
+def test_bounded_corpus_ids_do_not_match_adapter_positional_ids():
+    corpus = load_clarification_corpus(
+        Path(__file__).parents[1] / "eval/clarification/bounded-dialogue-v1.yaml"
+    )
+    corpus_ids = {
+        target_id
+        for case_id, target_id in host_semantic_target_bindings(corpus)
+    }
+    provider = OpenAICompatibleInterpretationProvider(FakeClient({
+        **interpretation_payload(),
+        "ambiguities": [
+            {"term": "first", "description": "first distinction"},
+            {"term": "second", "description": "second distinction"},
+        ],
+    }))
+
+    interpretation = provider.interpret(
+        InterpretationRequest("The door is closed.")
+    )
+
+    assert {item.id for item in interpretation.ambiguities}.isdisjoint(corpus_ids)
+    assert all(item.target_id is None for item in interpretation.ambiguities)
 
 
 def test_interpretation_adapter_rejects_invalid_presupposition_index():
