@@ -229,16 +229,19 @@ def _workflow_status(
                 checks.append(None)
             else:
                 records = diagnostics.get("question_records")
-                records_valid = (
-                    isinstance(records, list)
-                    and len(records) >= required_turns
-                    and all(
+                records_valid: bool | None
+                if not isinstance(records, list):
+                    records_valid = None
+                else:
+                    records_valid = len(records) >= required_turns and all(
                         isinstance(record, Mapping)
                         and record.get("question_script_target_family_match") is True
                         for record in records[:required_turns]
                     )
-                )
                 checks.append(
+                    None
+                    if records_valid is None
+                    else (
                     receipt.outcome in {
                         EvaluationOutcome.ASSESSMENT_COMPLETED,
                         EvaluationOutcome.NEED_EVIDENCE,
@@ -248,6 +251,7 @@ def _workflow_status(
                     and bool(required[-2])
                     and bool(required[-1])
                     and records_valid
+                    )
                 )
         else:
             checks.append(None)
@@ -257,22 +261,26 @@ def _workflow_status(
         expected_kind = expected_clarification.get("kind")
         records = receipt.diagnostics.get("question_records")
         first_record = records[0] if isinstance(records, list) and records else None
-        observed_kind = (
-            first_record.get("question_kind")
-            if isinstance(first_record, Mapping)
-            else receipt.diagnostics.get("question_kind")
-        )
+        if case.mode == "dialogue" and first_record is None:
+            observed_kind = None
+            observed_match = None
+        else:
+            observed_kind = (
+                first_record.get("question_kind")
+                if isinstance(first_record, Mapping)
+                else receipt.diagnostics.get("question_kind")
+            )
+            observed_match = (
+                first_record.get("question_target_family_match")
+                if isinstance(first_record, Mapping)
+                else receipt.diagnostics.get("question_target_family_match")
+            )
         if isinstance(expected_kind, str):
             checks.append(
                 observed_kind == expected_kind if observed_kind is not None else None
             )
         expected_target_family = expected_clarification.get("target_family")
         if isinstance(expected_target_family, str):
-            observed_match = (
-                first_record.get("question_target_family_match")
-                if isinstance(first_record, Mapping)
-                else receipt.diagnostics.get("question_target_family_match")
-            )
             checks.append(observed_match if isinstance(observed_match, bool) else None)
 
     if not checks:
