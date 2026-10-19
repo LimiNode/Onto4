@@ -1,0 +1,20 @@
+version: 1
+name: bounded-dialogue-public-targets-v1
+cases:
+  - case_id: genome-identity-bounded
+    targets:
+      - id: ambiguity-genome
+        kind: Meaning
+        description: The meaning of sharing a genome in the user's claim.
+      - id: ambiguity-criterion
+        kind: Meaning
+        description: The criterion by which genome sharing would establish numerical identity.
+
+  - case_id: intrinsic-time-bounded
+    targets:
+      - id: ambiguity-present
+        kind: Meaning
+        description: The meaning of an intrinsic present in the sequence.
+      - id: ambiguity-observer
+        kind: Ontology
+        description: Whether the claim assumes observer-independent time rather than sequence order alone.

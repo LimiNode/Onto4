@@ -1,4 +1,6 @@
 import json
+import gc
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +14,7 @@ from onto4.providers import (
     OpenAICompatibleRefinementDeltaProvider,
     ProviderSchemaError,
 )
+from onto4.pipeline import host_semantic_target_bindings, load_clarification_corpus
 from onto4.reasoning import (
     Ambiguity,
     ClarificationKind,
@@ -226,6 +229,150 @@ def test_interpretation_adapter_assigns_ids_and_ignores_model_identity_claims():
     assert result.presuppositions[0].id == "presupposition-0"
     assert result.readings[0].id == "reading-0"
     assert result.readings[0].presupposition_ids == ("presupposition-0",)
+
+
+def test_interpretation_adapter_requires_explicit_host_target_reference():
+    payload = interpretation_payload()
+    payload["ambiguities"][0]["target_id"] = "host-target"
+    provider = OpenAICompatibleInterpretationProvider(FakeClient(payload))
+
+    result = provider.interpret(
+        InterpretationRequest(
+            "The door is closed.",
+            state={"semantic_target_catalog": {
+                "host-target": {"kind": "Meaning", "description": "door state"}
+            }},
+        )
+    )
+
+    assert result.ambiguities[0].id == "ambiguity-0"
+    assert result.ambiguities[0].target_id == "host-target"
+
+
+def test_interpretation_adapter_rejects_target_reference_with_wrong_kind():
+    payload = interpretation_payload()
+    payload["ambiguities"][0]["target_id"] = "ontology-target"
+    with pytest.raises(ProviderSchemaError, match="wrong target kind"):
+        OpenAICompatibleInterpretationProvider(FakeClient(payload)).interpret(
+            InterpretationRequest(
+                "The door is closed.",
+                state={"semantic_target_catalog": {
+                    "ontology-target": {
+                        "kind": "Ontology",
+                        "description": "an ontological frame",
+                    }
+                }},
+            )
+        )
+
+
+def test_target_catalog_isolated_for_identical_snapshot_ids():
+    client = FakeClient(interpretation_payload())
+    provider = OpenAICompatibleInterpretationProvider(client)
+    first_catalog = {"first": {"kind": "Meaning", "description": "first"}}
+    second_catalog = {"second": {"kind": "Meaning", "description": "second"}}
+    first = provider.interpret(
+        InterpretationRequest("The door is closed.", state={"semantic_target_catalog": first_catalog})
+    )
+    second = provider.interpret(
+        InterpretationRequest("The door is closed.", state={"semantic_target_catalog": second_catalog})
+    )
+    question = ClarificationQuestion(
+        "meaning:closed", ClarificationKind.Meaning, "What does closed mean?", ("ambiguity-0",)
+    )
+    provider.refine(first, question, "first answer")
+    assert '"first"' in client.messages[1]["content"]
+    provider.refine(second, question, "second answer")
+    assert '"second"' in client.messages[1]["content"]
+
+
+def test_target_catalog_bindings_do_not_retain_dead_snapshots():
+    client = FakeClient(interpretation_payload())
+    provider = OpenAICompatibleInterpretationProvider(client)
+    catalog = {"target": {"kind": "Meaning", "description": "target"}}
+    snapshot = provider.interpret(
+        InterpretationRequest("The door is closed.", state={"semantic_target_catalog": catalog})
+    )
+    assert len(provider._target_catalogs) == 1
+    del snapshot
+    gc.collect()
+    # A subsequent lookup prunes dead weak references.
+    provider._catalog_for(InterpretationSpace("other", "The door is closed.", ConceptualDepth.Ordinary))
+    assert provider._target_catalogs == []
+
+
+def test_interpretation_adapter_rejects_unbound_target_reference():
+    payload = interpretation_payload()
+    payload["ambiguities"][0]["target_id"] = "not-host-issued"
+
+    with pytest.raises(ProviderSchemaError, match="allowed host target"):
+        OpenAICompatibleInterpretationProvider(FakeClient(payload)).interpret(
+            InterpretationRequest(
+                "The door is closed.",
+                state={"semantic_target_catalog": {
+                    "host-target": {"kind": "Meaning", "description": "door state"}
+                }},
+            )
+        )
+
+
+def test_refinement_preserves_catalog_and_rejects_target_expansion():
+    client = FakeClient(interpretation_payload())
+    provider = OpenAICompatibleInterpretationProvider(client)
+    catalog = {
+        "host-target": {"kind": "Meaning", "description": "door state"}
+    }
+    initial = provider.interpret(
+        InterpretationRequest(
+            "The door is closed.",
+            state={"semantic_target_catalog": catalog},
+        )
+    )
+    client.payload = {
+        **interpretation_payload(),
+        "ambiguities": [{
+            "term": "closed",
+            "description": "position or lock",
+            "target_id": "expanded-by-model",
+        }],
+    }
+    question = ClarificationQuestion(
+        "meaning:host-target",
+        ClarificationKind.Meaning,
+        "What does closed mean?",
+        ("host-target",),
+        structural_target_ids=("ambiguity-0",),
+    )
+
+    with pytest.raises(ProviderSchemaError, match="allowed host target"):
+        provider.refine(initial, question, "not open")
+
+    assert "host-target" in client.messages[1]["content"]
+    assert "expanded-by-model" not in client.messages[1]["content"]
+
+
+def test_bounded_corpus_ids_do_not_match_adapter_positional_ids():
+    corpus = load_clarification_corpus(
+        Path(__file__).parents[1] / "eval/clarification/bounded-dialogue-v1.yaml"
+    )
+    corpus_ids = {
+        target_id
+        for case_id, target_id in host_semantic_target_bindings(corpus)
+    }
+    provider = OpenAICompatibleInterpretationProvider(FakeClient({
+        **interpretation_payload(),
+        "ambiguities": [
+            {"term": "first", "description": "first distinction"},
+            {"term": "second", "description": "second distinction"},
+        ],
+    }))
+
+    interpretation = provider.interpret(
+        InterpretationRequest("The door is closed.")
+    )
+
+    assert {item.id for item in interpretation.ambiguities}.isdisjoint(corpus_ids)
+    assert all(item.target_id is None for item in interpretation.ambiguities)
 
 
 def test_interpretation_adapter_rejects_invalid_presupposition_index():

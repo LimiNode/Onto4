@@ -21,10 +21,13 @@ from onto4.pipeline.interactive import _classify_progress
 from onto4.providers import FormalizationRequest, InterpretationRequest
 from onto4.reasoning import (
     Ambiguity,
+    AssessmentLandscape,
+    ClarificationContext,
     ClarificationKind,
     ClarificationQuestion,
     ClarificationTurn,
     ConceptualDepth,
+    CrossCandidateStatus,
     FixtureClarificationPolicy,
     FormalizationCandidate,
     InterpretationSpace,
@@ -185,6 +188,51 @@ def test_interactive_dialogue_executes_two_host_transitions_without_duplicate_hi
         "successor-one", "successor-two"
     ]
     assert len(refinement.calls) == 2
+
+
+def test_stable_target_binding_ignores_model_wording_but_keeps_goals_distinct():
+    def context_for(space):
+        return ClarificationContext(
+            interpretation=space,
+            candidates=(),
+            assessments=(),
+            landscape=AssessmentLandscape(
+                (), CrossCandidateStatus.FormalizationUnresolved
+            ),
+        )
+
+    same_goal = FixtureClarificationPolicy(
+        semantic_target_families={
+            "ambiguity-a": "identity-criterion",
+            "ambiguity-b": "identity-criterion",
+        },
+        require_semantic_target_families=True,
+    )
+    first = InterpretationSpace(
+        "wording-a", "Claim.", ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-a", "model wording one", "meaning", "ambiguity-a"),),
+    )
+    second = InterpretationSpace(
+        "wording-b", "Claim.", ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-b", "model wording two", "meaning", "ambiguity-b"),),
+    )
+    first_question = same_goal.choose(context_for(first))
+    second_question = same_goal.choose(context_for(second))
+    assert first_question is not None and second_question is not None
+    assert first_question.target_family == second_question.target_family == (
+        "identity-criterion"
+    )
+
+    different_goal = FixtureClarificationPolicy(
+        semantic_target_families={
+            "ambiguity-a": "identity-criterion",
+            "ambiguity-b": "intrinsic-time",
+        },
+        require_semantic_target_families=True,
+    )
+    different_question = different_goal.choose(context_for(second))
+    assert different_question is not None
+    assert different_question.target_family != first_question.target_family
 
 
 def test_typed_delta_dialogue_uses_same_question_and_host_applies_operation():
@@ -576,6 +624,46 @@ def test_typed_delta_marks_unrelated_question_unsupported():
             answer="context-a",
         )
     assert boundaries == []
+
+
+def test_typed_delta_reports_unsupported_ontology_creation_transition():
+    initial = _space("initial", ambiguous=True)
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "refine_ambiguity",
+                "target_id": "ambiguity-0",
+                "text": "intrinsic present",
+                "description": "an observer-independent present",
+            },)
+
+    policy = TypedDeltaClarificationPolicy(
+        FixtureClarificationPolicy(),
+        DeltaProvider(),
+    )
+    meaning = ClarificationQuestion(
+        "meaning:ambiguity-0",
+        ClarificationKind.Meaning,
+        "What does intrinsic present mean?",
+        ("ambiguity-0",),
+    )
+    successor, _ = policy.successor(
+        interpretation=initial,
+        question=meaning,
+        answer="observer-independent present",
+    )
+    question = ClarificationQuestion(
+        "ontology:new",
+        ClarificationKind.Ontology,
+        "Which ontology?",
+        ("ambiguity-0",),
+    )
+    with pytest.raises(ValueError, match="unsupported_transition"):
+        policy.successor(
+            interpretation=successor,
+            question=question,
+            answer="observer-independent time",
+        )
 
 
 def test_interactive_dialogue_completes_two_question_fixture_loop():

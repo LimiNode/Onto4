@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
+import hashlib
 from dataclasses import dataclass, field
 from time import monotonic
-from typing import Mapping
+from typing import Mapping, TypeAlias
 
 from onto4.core import AssessmentContext
 from .ask import ask_per_reading
@@ -50,6 +51,8 @@ _FINISH_DETAIL_RE = re.compile(
     r"(?:, completion_tokens=(?P<tokens>[0-9]{1,9}))?$"
 )
 
+SemanticTargetBindingKey: TypeAlias = tuple[str, str]
+
 
 def _safe_target_family(value: object) -> str | None:
     """Publish only structural target classes, never user/model terms."""
@@ -60,6 +63,12 @@ def _safe_target_family(value: object) -> str | None:
     if normalized in {"candidate", "context", "reading", "ambiguity", "ontology"}:
         return normalized
     return "opaque"
+
+
+def _target_family_digest(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 class _ReplayError(ValueError):
@@ -84,9 +93,11 @@ class _ReplayPolicy:
 
     base: TransitionAwareClarificationPolicy
     expected_intents: tuple[_QuestionIntent, ...] = ()
+    typed_delta_capability_guard: bool = False
     issued_questions: int = 0
     telemetry: dict[str, object] = field(default_factory=dict, compare=False)
     _last_questions: tuple = field(default=(), init=False, compare=False)
+    _last_context: object | None = field(default=None, init=False, compare=False)
     _admitted_tokens: tuple[tuple[object, ...], ...] = field(
         default=(), init=False, compare=False
     )
@@ -125,15 +136,58 @@ class _ReplayPolicy:
             else tuple(filter(None, (self.base.choose(context),)))
         )
         object.__setattr__(self, "_last_questions", tuple(questions))
+        object.__setattr__(self, "_last_context", context)
         self.telemetry["question_candidate_generated"] = bool(questions)
         self.telemetry["question_candidate_count"] = len(questions)
         self.telemetry["last_stage"] = "question_candidate_generated"
         return questions
 
+    def _check_typed_delta_capability(self, context, question) -> None:
+        """Raise only when the snapshot lacks the required ontology target.
+
+        A wrong question kind is an intent mismatch when the host snapshot
+        already contains the target.  It is an unsupported transition only
+        when typed delta has no admissible ontology target to refine.
+        """
+
+        if not self.typed_delta_capability_guard:
+            return
+        if self.issued_questions >= len(self.expected_intents):
+            return
+        expected = self.expected_intents[self.issued_questions]
+        if (
+            expected.kind is not ClarificationKind.Ontology
+            or question.kind is ClarificationKind.Ontology
+            or not expected.target_ids
+        ):
+            return
+        interpretation = getattr(context, "interpretation", None)
+        available_ontology_targets = {
+            candidate.target_id
+            for candidate in getattr(interpretation, "ontologies", ())
+            if candidate.target_id is not None
+        }
+        if not set(expected.target_ids) <= available_ontology_targets:
+            raise RefinementUnsupportedError(
+                "unsupported_transition: typed delta cannot create the "
+                "ontology candidate required by the next scripted turn.",
+                code="unsupported_transition",
+            )
+
     def validate_issued(self, question) -> None:
         """Validate the concrete host-issued question without reordering it."""
         self.telemetry["question_selected"] = True
         self.telemetry["last_stage"] = "question_selected"
+        # Preserve the safe identity of even a rejected selection.  In
+        # particular, a script-exhausted turn must tell diagnostics which
+        # question was selected; otherwise the final question identity is
+        # lost before the answer callback is reached.
+        self.telemetry["question_id"] = question.id
+        self.telemetry["question_kind"] = question.kind.value
+        self.telemetry["question_target_ids"] = tuple(question.target_ids)
+        self.telemetry["question_target_family"] = _safe_target_family(
+            question.target_family
+        )
         if self.issued_questions >= len(self.expected_intents):
             self.telemetry["intent_admitted"] = False
             raise _ReplayError("script_exhausted", "script_exhausted")
@@ -159,9 +213,6 @@ class _ReplayPolicy:
         if not candidates:
             self.telemetry["intent_admitted"] = False
             raise _ReplayError("question_intent_mismatch", "no_candidate")
-        if len(candidates) == 1:
-            self._record_admission(question)
-            return
         if tuple(question.target_ids) == expected.target_ids:
             self._record_admission(question)
             return
@@ -181,6 +232,7 @@ class _ReplayPolicy:
         self.telemetry["question_candidate_count"] = 0 if question is None else 1
         self.telemetry["last_stage"] = "question_candidate_generated"
         if question is not None:
+            self._check_typed_delta_capability(context, question)
             self.telemetry["question_selected"] = True
             self.telemetry["last_stage"] = "question_selected"
             # Admission is recorded at selection time so a rejected question
@@ -195,6 +247,7 @@ class _ReplayPolicy:
 
         self.telemetry["question_selected"] = True
         self.telemetry["last_stage"] = "question_selected"
+        self._check_typed_delta_capability(self._last_context, question)
         self.validate_issued(question)
 
     def successor(self, *, interpretation, question, answer):
@@ -252,6 +305,17 @@ class ModelCaseExecutor:
     interpretation_context_mode: str = "context_late"
     refinement_mode: str = "full_snapshot"
     refinement_delta_provider: RefinementDeltaProvider | None = None
+    # Evaluation-only oracle bindings, scoped by case and host target id.  They
+    # are deliberately not inferred from model-produced ``Ambiguity.term`` or
+    # from the scripted question wording.
+    semantic_target_bindings: Mapping[SemanticTargetBindingKey, str] = field(default_factory=dict)
+    strict_semantic_target_binding: bool = False
+    # Public host-issued references supplied independently of the corpus
+    # oracle.  Never derive these from ``semantic_target_bindings``: that map
+    # is evaluation data and must not leak into a model prompt.
+    host_target_catalog: Mapping[str, Mapping[str, Mapping[str, str]]] = field(
+        default_factory=dict
+    )
     trace_sink: ProviderTrace | None = None
     _last_events: list[ProviderStageEvent] = field(default_factory=list, init=False)
 
@@ -264,9 +328,55 @@ class ModelCaseExecutor:
             raise ValueError("refinement_mode must be full_snapshot or typed_delta.")
         if self.refinement_mode == "typed_delta" and self.refinement_delta_provider is None:
             raise ValueError("typed_delta mode requires a refinement_delta_provider.")
+        for target_key, target_family in self.semantic_target_bindings.items():
+            if (
+                not isinstance(target_key, tuple)
+                or len(target_key) != 2
+                or not all(isinstance(item, str) and item.strip() for item in target_key)
+            ):
+                raise ValueError("Semantic target binding keys must be (case_id, target_id) tuples.")
+            if not isinstance(target_family, str) or not target_family.strip():
+                raise ValueError("Semantic target binding families must be non-empty strings.")
+        for case_id, targets in self.host_target_catalog.items():
+            if not isinstance(case_id, str) or not case_id.strip():
+                raise ValueError("host_target_catalog case ids must be non-empty strings.")
+            if not isinstance(targets, Mapping):
+                raise ValueError("host_target_catalog case values must be mappings.")
+            for target_id, target in targets.items():
+                if not isinstance(target_id, str) or not target_id.strip():
+                    raise ValueError("Public semantic target ids must be non-empty strings.")
+                if not isinstance(target, Mapping) or target.get("kind") not in {
+                    "Meaning", "Ontology"
+                } or not isinstance(target.get("description"), str):
+                    raise ValueError("Public semantic target definitions are invalid.")
 
-    def _refinement_policy(self) -> TransitionAwareClarificationPolicy:
-        base = FixtureClarificationPolicy()
+    def _target_bindings_for_case(
+        self, case: ClarificationCorpusCase
+    ) -> dict[str, str]:
+        bindings: dict[str, str] = {}
+        for target_key, target_family in self.semantic_target_bindings.items():
+            case_id, target_id = target_key
+            if case_id != case.case_id:
+                continue
+            previous = bindings.setdefault(target_id, target_family)
+            if previous != target_family:
+                raise ValueError(
+                    f"Target id {target_id!r} has contradictory semantic families."
+                )
+        return bindings
+
+    def _refinement_policy(
+        self,
+        *,
+        semantic_target_families: Mapping[str, str] | None = None,
+        require_semantic_target_families: bool = False,
+        semantic_target_kinds: Mapping[str, ClarificationKind] | None = None,
+    ) -> TransitionAwareClarificationPolicy:
+        base = FixtureClarificationPolicy(
+            semantic_target_families=semantic_target_families or {},
+            require_semantic_target_families=require_semantic_target_families,
+            semantic_target_kinds=semantic_target_kinds or {},
+        )
         if self.refinement_mode == "typed_delta":
             assert self.refinement_delta_provider is not None
             return TypedDeltaClarificationPolicy(base, self.refinement_delta_provider)
@@ -384,6 +494,13 @@ class ModelCaseExecutor:
         }
         if case.model_input == "contextual" and case.context is not None:
             state["context_id"] = case.context
+        if self.strict_semantic_target_binding:
+            # This is an explicit host contract.  The model may reference a
+            # supplied target, but an adapter-generated positional id is never
+            # silently remapped to an evaluation/corpus id.
+            state["semantic_target_catalog"] = dict(
+                self.host_target_catalog.get(case.case_id, {})
+            )
         if (
             self.interpretation_context_mode == "context_aware"
             and case.model_input == "contextual"
@@ -503,6 +620,7 @@ class ModelCaseExecutor:
             "reassessment_performed": False,
             "clarification_turns": None,
             "clarification_turns_known": False,
+            "question_records": [],
         }
 
         def with_workflow(diagnostics: Mapping[str, object] | None = None) -> dict[str, object]:
@@ -523,12 +641,44 @@ class ModelCaseExecutor:
                 expected_intents = scripted_intents or (
                     (_QuestionIntent(expected_kind, None, ()),) if expected_kind else ()
                 )
+                case_target_bindings = self._target_bindings_for_case(case)
+                case_catalog = self.host_target_catalog.get(case.case_id, {})
+                case_target_kinds = {
+                    target_id: ClarificationKind(target["kind"])
+                    for target_id, target in case_catalog.items()
+                }
                 workflow["required_turns"] = len(expected_intents)
                 answer_index = 0
 
                 def validate_question(_, question) -> None:
-                    policy.validate_issued(question)
+                    if policy.issued_questions >= len(expected_intents):
+                        policy.validate_issued(question)
+                        return
                     expected_intent = expected_intents[policy.issued_questions]
+                    policy.validate_issued(question)
+                    expected_clarification = case.expected_clarification
+                    corpus_match = None
+                    if isinstance(expected_clarification, Mapping):
+                        expected_family = expected_clarification.get("target_family")
+                        if isinstance(expected_family, str) and expected_family.strip():
+                            corpus_match = question.target_family == expected_family
+                    record = {
+                        "turn_index": policy.issued_questions,
+                        "question_id": question.id,
+                        "question_kind": question.kind.value,
+                        "question_target_family": _safe_target_family(question.target_family),
+                        "question_target_family_digest": _target_family_digest(
+                            question.target_family
+                        ),
+                        "question_script_target_family_match": (
+                            question.target_family == expected_intent.target_family
+                        ),
+                        "question_target_family_match": corpus_match,
+                        "question_target_ids": tuple(question.target_ids),
+                    }
+                    records = workflow.setdefault("question_records", [])
+                    assert isinstance(records, list)
+                    records.append(record)
                     telemetry = {
                         "questions_issued": int(workflow["questions_issued"]) + 1,
                         "question_id": question.id,
@@ -540,13 +690,8 @@ class ModelCaseExecutor:
                         "question_target_ids": tuple(question.target_ids),
                         "last_stage": "question_issued",
                     }
-                    expected_clarification = case.expected_clarification
-                    if isinstance(expected_clarification, Mapping):
-                        expected_family = expected_clarification.get("target_family")
-                        if isinstance(expected_family, str) and expected_family.strip():
-                            telemetry["question_target_family_match"] = (
-                                question.target_family == expected_family
-                            )
+                    if corpus_match is not None:
+                        telemetry["question_target_family_match"] = corpus_match
                     workflow.update(telemetry)
 
                 def input_fn(_: str) -> str:
@@ -566,8 +711,13 @@ class ModelCaseExecutor:
                     return answer
 
                 policy = _ReplayPolicy(
-                    self._refinement_policy(),
+                    self._refinement_policy(
+                        semantic_target_families=case_target_bindings,
+                        require_semantic_target_families=self.strict_semantic_target_binding,
+                        semantic_target_kinds=case_target_kinds,
+                    ),
                     expected_intents=expected_intents,
+                    typed_delta_capability_guard=self.refinement_mode == "typed_delta",
                     telemetry=workflow,
                 )
                 result = run_interactive_dialogue(
@@ -738,8 +888,15 @@ class ModelCaseExecutor:
                 stage_timings=timings,
                 stage_outcomes=outcomes,
                 stage_details=details,
-                detail_code="typed_delta_unsupported",
-                diagnostics=with_workflow(),
+                detail_code=(
+                    "unsupported_transition"
+                    if getattr(exc, "code", None) == "unsupported_transition"
+                    else "typed_delta_unsupported"
+                ),
+                diagnostics=with_workflow({
+                    "unsupported_transition": getattr(exc, "code", None)
+                    == "unsupported_transition",
+                }),
             )
         except _ReplayError as exc:
             calls, timings, outcomes, details = self._metadata()

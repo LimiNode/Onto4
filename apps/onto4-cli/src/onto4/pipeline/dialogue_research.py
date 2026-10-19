@@ -369,10 +369,21 @@ def _dialogue_status(
     reassessment_performed: bool | None,
     execution_status: str | None = None,
     outcome: str | None = None,
+    benchmark_workflow_status: str | None = None,
 ) -> str:
     if execution_status is not None and execution_status != "successful":
         return "incomplete"
-    if outcome is not None and outcome != "assessment_completed":
+    if benchmark_workflow_status == "incorrect":
+        return "incomplete"
+    if benchmark_workflow_status == "unverified":
+        return "unverified"
+    if benchmark_workflow_status == "not_comparable":
+        return "unverified"
+    if outcome is not None and outcome not in {
+        "assessment_completed",
+        "need_evidence",
+        "cannot_proceed",
+    }:
         return "incomplete"
     if required_turns is not None:
         counts = (
@@ -446,6 +457,7 @@ def _cell_from_benchmark(cell) -> DialogueResearchCell:
             reassessment_performed,
             cell.execution_status,
             cell.outcome,
+            cell.workflow_status,
         ),
         semantic_status=cell.semantic_status,
         semantic_verdict=cell.semantic_verdict,

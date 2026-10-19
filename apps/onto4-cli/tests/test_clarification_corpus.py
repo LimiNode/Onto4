@@ -16,8 +16,11 @@ from onto4.pipeline import (
     ClarificationSession,
     answer_reasoning_clarification,
     build_clarification_request,
+    host_semantic_target_bindings,
     issue_reasoning_clarification,
     load_clarification_corpus,
+    load_semantic_target_catalog,
+    semantic_target_catalog_digest,
     reassess_reasoning_session_per_reading,
     start_reasoning_session_per_reading,
 )
@@ -41,6 +44,7 @@ from onto4.reasoning import (
 ROOT = Path(__file__).parents[1]
 CORPUS = ROOT / "eval/clarification/corpus.yaml"
 EPISTEMIC_CORPUS = ROOT / "eval/clarification/epistemic-ontology-v1.yaml"
+BOUNDED_TARGETS = ROOT / "eval/clarification/bounded-dialogue-targets-v1.yaml"
 
 
 def test_clarification_corpus_loads_and_hides_oracle_fields_from_public_input():
@@ -128,6 +132,31 @@ cases:
     }
 
 
+def test_public_semantic_target_catalog_is_versioned_and_oracle_free():
+    version, targets = load_semantic_target_catalog(BOUNDED_TARGETS)
+
+    assert version == 1
+    assert targets["intrinsic-time-bounded"]["ambiguity-observer"] == {
+        "kind": "Ontology",
+        "description": (
+            "Whether the claim assumes observer-independent time rather than "
+            "sequence order alone."
+        ),
+    }
+    serialized = yaml.safe_dump(targets)
+    assert "target_family" not in serialized
+    assert "expected_clarification" not in serialized
+
+
+def test_public_semantic_target_catalog_digest_is_stable(tmp_path):
+    path = tmp_path / "targets.yaml"
+    path.write_text("target_catalog:\n  version: 1\n  cases: []\n", encoding="utf-8")
+    first = semantic_target_catalog_digest(path)
+    assert first == semantic_target_catalog_digest(path)
+    path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    assert semantic_target_catalog_digest(path) != first
+
+
 def test_corpus_rejects_contradictory_target_family_oracle(tmp_path):
     corpus_path = tmp_path / "contradictory-target-family.yaml"
     corpus_path.write_text(
@@ -151,6 +180,63 @@ cases:
 
     with pytest.raises(ValueError, match="contradictory.*target_family"):
         load_clarification_corpus(corpus_path)
+
+
+def test_host_semantic_target_bindings_are_explicit_and_stable(tmp_path):
+    corpus_path = tmp_path / "stable-targets.yaml"
+    corpus_path.write_text(
+        """
+version: 2
+name: stable-targets
+cases:
+  - case_id: one
+    utterance: claim
+    mode: dialogue
+    expected_after_answer: {}
+    dialogue:
+      - {turn_id: initial, role: user, text: claim}
+      - {turn_id: question, role: assistant, text: wording, question_kind: Meaning, target_family: identity_goal, target_ids: [ambiguity-a]}
+      - {turn_id: answer, role: user, text: answer}
+  - case_id: two
+    utterance: claim two
+    mode: dialogue
+    expected_after_answer: {}
+    dialogue:
+      - {turn_id: initial, role: user, text: claim two}
+      - {turn_id: question, role: assistant, text: different wording, question_kind: Meaning, target_family: identity_goal, target_ids: [ambiguity-b]}
+      - {turn_id: answer, role: user, text: answer}
+""",
+        encoding="utf-8",
+    )
+    corpus = load_clarification_corpus(corpus_path)
+    assert host_semantic_target_bindings(corpus) == {
+        ("one", "ambiguity-a"): "identity_goal",
+        ("two", "ambiguity-b"): "identity_goal",
+    }
+
+
+def test_host_semantic_target_bindings_reject_conflicting_target_ids(tmp_path):
+    corpus_path = tmp_path / "conflicting-targets.yaml"
+    corpus_path.write_text(
+        """
+version: 2
+name: conflicting-targets
+cases:
+  - case_id: one
+    utterance: claim
+    mode: dialogue
+    expected_after_answer: {}
+    dialogue:
+      - {turn_id: initial, role: user, text: claim}
+      - {turn_id: question, role: assistant, text: wording, question_kind: Meaning, target_family: identity_goal, target_ids: [same-target]}
+      - {turn_id: answer, role: user, text: answer}
+      - {turn_id: question-two, role: assistant, text: wording two, question_kind: Meaning, target_family: time_goal, target_ids: [same-target]}
+""",
+        encoding="utf-8",
+    )
+    corpus = load_clarification_corpus(corpus_path)
+    with pytest.raises(ValueError, match="contradictory semantic families"):
+        host_semantic_target_bindings(corpus)
 
 
 @pytest.mark.parametrize("invalid_visibility", ("other", [], {}))

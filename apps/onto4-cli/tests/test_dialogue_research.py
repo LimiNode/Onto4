@@ -20,6 +20,7 @@ from onto4.pipeline import (
 from onto4.pipeline.clarification_corpus import ClarificationCorpus, ClarificationCorpusCase
 from onto4.pipeline.clarification_corpus import load_clarification_corpus
 from onto4.pipeline.dialogue_research import _corpus_binding, _dialogue_status
+from onto4.pipeline.ab_benchmark import _target_family_digest
 from onto4.pipeline.evaluation import CaseExecution
 from onto4.reasoning import (
     Ambiguity,
@@ -103,16 +104,25 @@ def test_bounded_dialogue_research_reports_each_required_stage(tmp_path):
             EvaluationOutcome.ASSESSMENT_COMPLETED,
             semantic_verdict="T",
             diagnostics={
-                "questions_issued": 2,
-                "answers_consumed": 2,
+                    "questions_issued": 1,
+                    "answers_consumed": 1,
                 "refinement_accepted": True,
                 "reassessment_performed": True,
-                "required_turns": 2,
-                "admitted_turns": 2,
-                "answered_turns": 2,
-                "accepted_refinements": 2,
-                "completed_reassessments": 2,
-                "clarification_turns": 2,
+                    "required_turns": 1,
+                    "admitted_turns": 1,
+                    "answered_turns": 1,
+                    "accepted_refinements": 1,
+                        "completed_reassessments": 1,
+                    "question_records": [
+                        {
+                            "turn_index": 0,
+                            "question_kind": "Meaning",
+                            "question_target_ids": ["a"],
+                            "question_script_target_family_match": True,
+                            "question_target_family_digest": _target_family_digest("criterion"),
+                        },
+                    ],
+                "clarification_turns": 1,
                 "clarification_turns_known": True,
             },
         )
@@ -127,6 +137,11 @@ def test_bounded_dialogue_research_reports_each_required_stage(tmp_path):
     assert isinstance(run, BoundedDialogueResearchRun)
     assert {cell.case_id for cell in run.cells} == {"single"}
     assert all(cell.dialogue_status == "complete" for cell in run.cells)
+    assert all(
+        paired.workflow_status == "correct"
+        for paired in run.paired_run.cells
+        if paired.case_id == "single"
+    )
     assert all(cell.question_issued and cell.answer_consumed for cell in run.cells)
     assert all(
         run.stage_counts[condition]["reassessment_performed"]["true"] == 1
@@ -139,6 +154,13 @@ def test_bounded_dialogue_research_reports_each_required_stage(tmp_path):
     assert payload["metadata"]["stage_contract"][-1] == "reassessment_performed"
     assert payload["metadata"]["structural_preflight_validated"] is False
     assert payload["metadata"]["run_bound_preflight_verified"] is False
+
+
+def test_dialogue_status_matches_benchmark_completion_for_epistemic_outcomes():
+    common = (1, 1, 1, 1, 1, True, True, True, True)
+    assert _dialogue_status(*common, "successful", "need_evidence", "correct") == "complete"
+    assert _dialogue_status(*common, "successful", "cannot_proceed", "correct") == "complete"
+    assert _dialogue_status(*common, "successful", "need_evidence", "incorrect") == "incomplete"
 
 
 def test_structural_preflight_is_not_reported_as_run_bound_execution(tmp_path):

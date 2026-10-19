@@ -183,7 +183,9 @@ class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
         interpretation: InterpretationSpace,
         question: ClarificationQuestion,
     ) -> RefinementRequest:
-        targets = frozenset(question.target_ids)
+        targets = frozenset(
+            question.structural_target_ids or question.target_ids
+        )
         reading_ids = frozenset(item.id for item in interpretation.readings)
         ambiguity_ids = frozenset(
             item.id for item in interpretation.ambiguities if item.id in targets
@@ -287,6 +289,12 @@ class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
             if request.allowed_ontology_ids:
                 allowed_operations.append(
                     RefinementOperation.QUALIFY_ONTOLOGY_CANDIDATE.value
+                )
+            if question.kind is ClarificationKind.Ontology and not request.allowed_ontology_ids:
+                raise RefinementUnsupportedError(
+                    "unsupported_transition: typed delta cannot create a new "
+                    "ontology candidate from this clarification target.",
+                    code="unsupported_transition",
                 )
             meaningful = set(allowed_operations) - {RefinementOperation.ABSTAIN.value}
             if not meaningful:
@@ -448,11 +456,12 @@ def _question_key(
     question: ClarificationQuestion,
 ) -> str:
     items = _snapshot_items(interpretation)
+    structural_targets = question.structural_target_ids or question.target_ids
     target_signatures = tuple(
         _semantic_signature(items[target_id], references=items)
         if target_id in items
         else f"external:{target_id}"
-        for target_id in question.target_ids
+        for target_id in structural_targets
     )
     return repr((question.kind.value, target_signatures))
 
@@ -499,8 +508,9 @@ def _classify_progress(
     elif successor == previous:
         kind = ClarificationProgressKind.NoEffect
     else:
+        structural_targets = question.structural_target_ids or question.target_ids
         known_targets = tuple(
-            target_id for target_id in question.target_ids if target_id in before
+            target_id for target_id in structural_targets if target_id in before
         )
         if not known_targets:
             kind = ClarificationProgressKind.Unverified
