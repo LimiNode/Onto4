@@ -196,8 +196,8 @@ def run_case(
                     "turn": index,
                     "question_kind": question.kind.value,
                     "question_target_ids": list(question.target_ids),
-                    "parser_valid": True,
-                    "host_admission": True,
+                    "provider_successor_valid": True,
+                    "host_workflow_admission": "not_evaluated",
                     "transition_provenance_valid": True,
                     "target_preserved": bool(observed),
                     "successor_target_ids": _snapshot_ids(successor),
@@ -210,8 +210,8 @@ def run_case(
                     "turn": index,
                     "question_kind": question.kind.value,
                     "question_target_ids": list(question.target_ids),
-                    "parser_valid": False,
-                    "host_admission": False,
+                    "provider_successor_valid": False,
+                    "host_workflow_admission": "not_evaluated",
                     "transition_provenance_valid": False,
                     "target_preserved": None,
                     "error_code": type(exc).__name__,
@@ -221,9 +221,12 @@ def run_case(
     return {
         "case_id": spec.case_id,
         "catalog_binding": "snapshot_bound_provider_registry",
+        "question_source": "synthetic_fixture; not selected by a live clarification policy",
         "synthetic_initial": _snapshot_ids(initial),
         "turns": turns,
-        "accepted_turns": sum(item["host_admission"] for item in turns),
+        "provider_successor_valid_turns": sum(
+            item["provider_successor_valid"] for item in turns
+        ),
     }
 
 
@@ -247,6 +250,7 @@ def main() -> None:
         "record_type": "pr39_target_binding_experiment",
         "run_id": args.run_id,
         "protocol": "host_bound_two_turn_full_snapshot",
+        "host_workflow_admission": "not_evaluated",
         "model": args.model,
         "sampling": {
             "temperature": 0,

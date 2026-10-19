@@ -19,8 +19,8 @@ Prompt version: `pr39-target-binding-v1`  \
 Sampling: temperature `0`, thinking disabled, maximum output `4096` tokens  \
 Context digests: not applicable to the host-bound fixture protocol  \
 Semantic oracle: none; target preservation only  \
-Run identifiers: `pr39-bonsai-20261019-target-binding-full-snapshot-1536`,
-`pr39-bonsai-20261019-target-binding-e2e-4096-corrected`,
+Historical run identifier: `pr39-bonsai-20261019-target-binding-full-snapshot-1536`  \
+Matched run identifiers: `pr39-bonsai-20261019-target-binding-e2e-4096-corrected`,
 `pr39-bonsai-20261019-target-binding-two-turn-4096-corrected-v2`
 
 ## Protocol
@@ -41,7 +41,7 @@ provenance checks; the experiment only observed the returned target IDs.
 
 ## Results
 
-### E2E baseline
+### Historical 1536-token baseline
 
 The ordinary bounded-dialogue run used the public corpus and target catalog at
 1536 output tokens. Both cases produced schema-valid refinements, but both
@@ -49,22 +49,34 @@ ended as `question_intent_unverified` with `family_unverified`. The selected
 questions carried structural IDs such as `ambiguity-0`, while the successor
 snapshots did not provide the corresponding public semantic target binding.
 No case reached reassessment and no semantic-comparable observation was
-created.
+created. This run is retained as a historical baseline only.
+
+### Matched 4096-token E2E run
+
+The ordinary bounded-dialogue runner was then executed at the same 4096-token
+budget as the isolated protocol. Both cases again ended as
+`question_intent_unverified` with `family_unverified`; no case reached
+reassessment and no semantic-comparable observation was created. This is the
+budget-matched E2E comparison used below.
 
 ### Host-bound isolated two-turn run
 
-| case | transitions | accepted | Meaning ID preserved after turn 1 | preserved after turn 2 | Ontology ID preserved after turn 1 | preserved after turn 2 |
-| --- | ---: | ---: | --- | --- | --- | --- |
-| genome identity | 2 | 1 | no (retargeted) | not reached | n/a | n/a |
-| intrinsic time | 2 | 2 | yes | yes | yes | yes |
+| case | transitions | provider-valid | target preserved after turn 1 | target preserved after turn 2 | host workflow admission |
+| --- | ---: | ---: | --- | --- | --- |
+| genome identity | 2 | 1 | no (retargeted) | not reached | not evaluated |
+| intrinsic time | 2 | 2 | yes | yes | not evaluated |
 
-The intrinsic-time case had two schema-valid, host-admitted transitions and
-preserved both public IDs. In the genome case, the first transition parsed and
-passed host admission but changed the ambiguity binding from
+The intrinsic-time case had two schema-valid provider successors with valid
+transition provenance and preserved both public IDs. In the genome case, the
+first provider successor parsed and passed transition provenance but changed
+the ambiguity binding from
 `ambiguity-genome` to `ambiguity-criterion`; the second transition then failed
-schema validation. These are synthetic preservation observations because the
-initial snapshots were host-bound; they are not evidence that the frozen corpus
-produced those bindings.
+schema validation. The questions were synthetic fixtures, not selections made
+by a live `FixtureClarificationPolicy`, `_ReplayPolicy`, progress-aware policy
+or reassessment loop. Consequently `host_workflow_admission` is explicitly
+`not_evaluated` for every isolated turn. These are synthetic preservation
+observations because the initial snapshots were host-bound; they are not
+evidence that the frozen corpus produced those bindings.
 
 This result is conditional: the model was given a host-bound initial snapshot,
 the public catalog was present in the refinement prompt, and the run did not
@@ -76,8 +88,15 @@ end-to-end grounding or semantic correctness.
 An exploratory isolated call at 1536 tokens terminated with
 `finish_reason=length` before a successor JSON object was available. It is
 classified as execution/schema failure, not as semantic target loss. The
-successful two-turn result therefore uses 4096 tokens and must not be compared
-as a latency or quality win against the 1536 E2E baseline.
+matched comparison uses 4096 tokens for both ordinary E2E and isolated
+protocol. The 1536 E2E result remains a historical baseline and is not mixed
+into the matched metrics. No latency or quality winner is claimed.
+
+The published JSON is a curated redacted summary. Its `source_receipts` section
+records SHA-256 digests for the local E2E report, E2E receipts and isolated
+runner output. Prompts, raw model payloads, credentials and local filesystem
+paths were removed; the summary retains only safe stage outcomes, target IDs
+and provenance flags.
 
 ## Conclusion
 
@@ -89,8 +108,9 @@ Bonsai pilot:
    call that a verified target-family match.
 2. Given a host-bound initial snapshot and sufficient output budget, Bonsai can
    preserve the supplied semantic IDs across two Full Snapshot transitions for
-   the intrinsic-time fixture.
-3. The same protocol can pass parsing and host admission while changing a
+   the intrinsic-time fixture. This is provider-level evidence only; host
+   workflow admission was not evaluated.
+3. The same protocol can pass parsing and transition provenance while changing a
    valid target to the wrong valid target, as in genome turn 1. A valid public
    ID is therefore not by itself evidence of correct target provenance.
 
