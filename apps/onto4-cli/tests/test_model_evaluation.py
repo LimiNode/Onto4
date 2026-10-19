@@ -11,7 +11,7 @@ from onto4.pipeline import (
     load_clarification_corpus,
     load_semantic_target_catalog,
 )
-from onto4.pipeline.model_evaluation import _ReplayPolicy
+from onto4.pipeline.model_evaluation import _ReplayError, _ReplayPolicy
 from onto4.pipeline.clarification_corpus import ClarificationCorpusCase
 from onto4.pipeline.evaluation import EvaluationOutcome
 from onto4.providers import (
@@ -116,6 +116,29 @@ def test_replay_admission_is_counted_once_for_selection_and_validation():
     policy.record_question_selected(question)
     policy.validate_issued(question)
     assert telemetry["admitted_turns"] == 1
+
+
+def test_replay_script_exhaustion_preserves_rejected_question_identity():
+    question = ClarificationQuestion(
+        "meaning:extra",
+        ClarificationKind.Meaning,
+        "Clarify one more distinction",
+        ("ambiguity-extra",),
+        target_family="extra",
+    )
+    telemetry = {}
+    policy = _ReplayPolicy(
+        type("Base", (), {"questions": lambda self, _context: (question,)})(),
+        expected_intents=(),
+        telemetry=telemetry,
+    )
+
+    with pytest.raises(_ReplayError, match="script_exhausted"):
+        policy.validate_issued(question)
+
+    assert telemetry["question_id"] == "meaning:extra"
+    assert telemetry["question_kind"] == "Meaning"
+    assert telemetry["question_target_ids"] == ("ambiguity-extra",)
 
 
 def test_model_case_executor_forwards_requested_conceptual_depth():
@@ -382,6 +405,81 @@ def test_model_case_executor_runs_dialogue_with_typed_delta_refinement():
     assert execution.diagnostics["refinement_effects"] == {"applied": 1}
     assert execution.diagnostics["refinement_commits"] == 1
     assert execution.diagnostics["refinement_proposed"] == 1
+
+
+def test_typed_delta_rejects_ambiguity_id_as_reading_target_and_keeps_provenance_failure():
+    context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
+    initial = InterpretationSpace(
+        "dialogue-space-invalid-delta",
+        "What is the mass of integer 7?",
+        ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-0", "mass", "physical or abstract"),),
+        readings=(SemanticReading("reading-0", "physical", "physical mass"),),
+    )
+
+    class InterpretationProvider:
+        def interpret(self, request):
+            return initial
+
+        def refine(self, *args, **kwargs):
+            raise AssertionError("full snapshot refinement must not run")
+
+    class Formalizer:
+        def formalize(self, request):
+            return (
+                FormalizationCandidate(
+                    "candidate:dialogue-space-invalid-delta",
+                    "mass",
+                    "has-mass",
+                    request.context_id,
+                    PredicateExpr(PredicateCall("has_mass", (Term("integer_7"),))),
+                    reading_id=request.reading.id,
+                ),
+            )
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **boundary):
+            return ({
+                "operation": "select_reading",
+                # This is an ambiguity structural ID, not a reading ID.
+                "target_id": "ambiguity-0",
+                "resolved_ambiguity_ids": ["ambiguity-0"],
+            },)
+
+    executor = ModelCaseExecutor(
+        InterpretationProvider(),
+        Formalizer(),
+        {"physical_objects": context},
+        refinement_mode="typed_delta",
+        refinement_delta_provider=DeltaProvider(),
+    )
+    case = ClarificationCorpusCase(
+        **{
+            **_case(mode="dialogue").__dict__,
+            "dialogue": (
+                {
+                    "turn_id": "initial",
+                    "role": "user",
+                    "text": "What is the mass of integer 7?",
+                },
+                {
+                    "turn_id": "question",
+                    "role": "assistant",
+                    "text": "Clarify mass.",
+                    "question_kind": "Meaning",
+                    "target_family": "mass",
+                    "target_ids": ["ambiguity-0"],
+                },
+                {"turn_id": "answer", "role": "user", "text": "physical mass"},
+            ),
+        }
+    )
+
+    execution = executor(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.PROVENANCE_INVALID
+    assert execution.detail_code == "RefinementValidationError"
+    assert execution.diagnostics["refinement_accepted"] is False
 
 
 def test_model_case_executor_isolates_case_context():

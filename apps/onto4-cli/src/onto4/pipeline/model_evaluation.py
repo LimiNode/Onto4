@@ -178,6 +178,16 @@ class _ReplayPolicy:
         """Validate the concrete host-issued question without reordering it."""
         self.telemetry["question_selected"] = True
         self.telemetry["last_stage"] = "question_selected"
+        # Preserve the safe identity of even a rejected selection.  In
+        # particular, a script-exhausted turn must tell diagnostics which
+        # question was selected; otherwise the final question identity is
+        # lost before the answer callback is reached.
+        self.telemetry["question_id"] = question.id
+        self.telemetry["question_kind"] = question.kind.value
+        self.telemetry["question_target_ids"] = tuple(question.target_ids)
+        self.telemetry["question_target_family"] = _safe_target_family(
+            question.target_family
+        )
         if self.issued_questions >= len(self.expected_intents):
             self.telemetry["intent_admitted"] = False
             raise _ReplayError("script_exhausted", "script_exhausted")
