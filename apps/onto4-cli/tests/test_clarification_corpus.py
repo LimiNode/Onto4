@@ -16,6 +16,7 @@ from onto4.pipeline import (
     ClarificationSession,
     answer_reasoning_clarification,
     build_clarification_request,
+    host_semantic_target_bindings,
     issue_reasoning_clarification,
     load_clarification_corpus,
     reassess_reasoning_session_per_reading,
@@ -151,6 +152,63 @@ cases:
 
     with pytest.raises(ValueError, match="contradictory.*target_family"):
         load_clarification_corpus(corpus_path)
+
+
+def test_host_semantic_target_bindings_are_explicit_and_stable(tmp_path):
+    corpus_path = tmp_path / "stable-targets.yaml"
+    corpus_path.write_text(
+        """
+version: 2
+name: stable-targets
+cases:
+  - case_id: one
+    utterance: claim
+    mode: dialogue
+    expected_after_answer: {}
+    dialogue:
+      - {turn_id: initial, role: user, text: claim}
+      - {turn_id: question, role: assistant, text: wording, question_kind: Meaning, target_family: identity_goal, target_ids: [ambiguity-a]}
+      - {turn_id: answer, role: user, text: answer}
+  - case_id: two
+    utterance: claim two
+    mode: dialogue
+    expected_after_answer: {}
+    dialogue:
+      - {turn_id: initial, role: user, text: claim two}
+      - {turn_id: question, role: assistant, text: different wording, question_kind: Meaning, target_family: identity_goal, target_ids: [ambiguity-b]}
+      - {turn_id: answer, role: user, text: answer}
+""",
+        encoding="utf-8",
+    )
+    corpus = load_clarification_corpus(corpus_path)
+    assert host_semantic_target_bindings(corpus) == {
+        ("one", "ambiguity-a"): "identity_goal",
+        ("two", "ambiguity-b"): "identity_goal",
+    }
+
+
+def test_host_semantic_target_bindings_reject_conflicting_target_ids(tmp_path):
+    corpus_path = tmp_path / "conflicting-targets.yaml"
+    corpus_path.write_text(
+        """
+version: 2
+name: conflicting-targets
+cases:
+  - case_id: one
+    utterance: claim
+    mode: dialogue
+    expected_after_answer: {}
+    dialogue:
+      - {turn_id: initial, role: user, text: claim}
+      - {turn_id: question, role: assistant, text: wording, question_kind: Meaning, target_family: identity_goal, target_ids: [same-target]}
+      - {turn_id: answer, role: user, text: answer}
+      - {turn_id: question-two, role: assistant, text: wording two, question_kind: Meaning, target_family: time_goal, target_ids: [same-target]}
+""",
+        encoding="utf-8",
+    )
+    corpus = load_clarification_corpus(corpus_path)
+    with pytest.raises(ValueError, match="contradictory semantic families"):
+        host_semantic_target_bindings(corpus)
 
 
 @pytest.mark.parametrize("invalid_visibility", ("other", [], {}))

@@ -25,6 +25,7 @@ from onto4.pipeline import (
     ask_per_reading,
     corpus_digest,
     load_clarification_corpus,
+    host_semantic_target_bindings,
     offline_fixture_executor,
     run_interactive_dialogue,
     TypedDeltaClarificationPolicy,
@@ -252,6 +253,7 @@ def _run_ask(args: argparse.Namespace) -> int:
 def _run_eval_corpus(args: argparse.Namespace) -> int:
     try:
         corpus = load_clarification_corpus(args.corpus)
+        semantic_target_bindings = host_semantic_target_bindings(corpus)
         digest = corpus_digest(args.corpus)
         if args.mode == "offline" and args.refinement_mode == "typed_delta":
             raise ValueError(
@@ -303,6 +305,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                 refinement_delta_provider=(
                     delta_adapter if args.refinement_mode == "typed_delta" else None
                 ),
+                semantic_target_bindings=semantic_target_bindings,
                 trace_sink=trace,
             )
             interpretation_adapter.trace = executor.provider_trace
@@ -364,6 +367,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
 def _run_benchmark(args: argparse.Namespace) -> int:
     try:
         corpus = load_clarification_corpus(args.corpus)
+        semantic_target_bindings = host_semantic_target_bindings(corpus)
         if not args.context:
             raise ValueError("A controlled benchmark requires at least one --context.")
         auth = EndpointAuthKind(args.auth)
@@ -403,6 +407,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                 interpretation_context_mode=condition.interpretation_context_mode,
                 refinement_mode=condition.refinement_mode,
                 refinement_delta_provider=delta_adapter,
+                semantic_target_bindings=semantic_target_bindings,
             )
             # Keep benchmark telemetry at the same boundary as eval-corpus:
             # adapters emit safe stage events into the executor, which owns

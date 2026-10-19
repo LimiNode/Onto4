@@ -40,6 +40,43 @@ class ClarificationCorpus:
     context_profiles: Mapping[str, str] = field(default_factory=dict)
 
 
+def host_semantic_target_bindings(
+    corpus: ClarificationCorpus,
+) -> dict[str, str]:
+    """Extract explicit host-owned target bindings from scripted dialogue.
+
+    The dialogue script is corpus-owned data, while ``Ambiguity.term`` is
+    model-produced wording.  A target id may be reused only when the corpus
+    assigns it the same semantic family every time; contradictory assignments
+    are rejected before a provider is called.
+    """
+
+    bindings: dict[tuple[str, str], str] = {}
+    for case in corpus.cases:
+        for turn in case.dialogue:
+            if turn.get("role") != "assistant" or "target_family" not in turn:
+                continue
+            family = turn.get("target_family")
+            target_ids = turn.get("target_ids", ())
+            if not isinstance(family, str) or not family.strip():
+                raise ValueError("Scripted target_family must be a non-empty string.")
+            if not isinstance(target_ids, (list, tuple)) or not target_ids:
+                raise ValueError(
+                    "A scripted target_family requires at least one target_id."
+                )
+            for target_id in target_ids:
+                if not isinstance(target_id, str) or not target_id.strip():
+                    raise ValueError("Scripted target_ids must be non-empty strings.")
+                key = (case.case_id, target_id)
+                previous = bindings.setdefault(key, family)
+                if previous != family:
+                    raise ValueError(
+                        f"Target id {target_id!r} in case {case.case_id!r} has "
+                        "contradictory semantic families."
+                    )
+    return bindings
+
+
 def _mapping(value: Any, path: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{path} must be a mapping.")
@@ -234,4 +271,9 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
     )
 
 
-__all__ = ["ClarificationCorpus", "ClarificationCorpusCase", "load_clarification_corpus"]
+__all__ = [
+    "ClarificationCorpus",
+    "ClarificationCorpusCase",
+    "host_semantic_target_bindings",
+    "load_clarification_corpus",
+]

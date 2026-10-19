@@ -25,6 +25,7 @@ from .interactive import (
 from .clarification_corpus import (
     ClarificationCorpus,
     ClarificationCorpusCase,
+    host_semantic_target_bindings,
     load_clarification_corpus,
 )
 from .evaluation import (
@@ -125,6 +126,7 @@ __all__ = [
     "ClarificationDecisionResult",
     "ClarificationCorpus",
     "ClarificationCorpusCase",
+    "host_semantic_target_bindings",
     "ClarificationQuestionDecision",
     "ClarificationSession",
     "ClarificationSessionResult",

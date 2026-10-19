@@ -252,6 +252,10 @@ class ModelCaseExecutor:
     interpretation_context_mode: str = "context_late"
     refinement_mode: str = "full_snapshot"
     refinement_delta_provider: RefinementDeltaProvider | None = None
+    # Host-owned semantic identity, keyed by the stable ambiguity target id.
+    # This is deliberately not inferred from model-produced ``Ambiguity.term``
+    # or from the scripted question wording.
+    semantic_target_bindings: Mapping[object, str] = field(default_factory=dict)
     trace_sink: ProviderTrace | None = None
     _last_events: list[ProviderStageEvent] = field(default_factory=list, init=False)
 
@@ -264,9 +268,46 @@ class ModelCaseExecutor:
             raise ValueError("refinement_mode must be full_snapshot or typed_delta.")
         if self.refinement_mode == "typed_delta" and self.refinement_delta_provider is None:
             raise ValueError("typed_delta mode requires a refinement_delta_provider.")
+        for target_key, target_family in self.semantic_target_bindings.items():
+            if isinstance(target_key, tuple):
+                if (
+                    len(target_key) != 2
+                    or not all(isinstance(item, str) and item.strip() for item in target_key)
+                ):
+                    raise ValueError("Scoped semantic target binding keys are invalid.")
+            elif not isinstance(target_key, str) or not target_key.strip():
+                raise ValueError("Semantic target binding ids must be non-empty strings.")
+            if not isinstance(target_family, str) or not target_family.strip():
+                raise ValueError("Semantic target binding families must be non-empty strings.")
 
-    def _refinement_policy(self) -> TransitionAwareClarificationPolicy:
-        base = FixtureClarificationPolicy()
+    def _target_bindings_for_case(
+        self, case: ClarificationCorpusCase
+    ) -> dict[str, str]:
+        bindings: dict[str, str] = {}
+        for target_key, target_family in self.semantic_target_bindings.items():
+            if isinstance(target_key, tuple):
+                case_id, target_id = target_key
+                if case_id != case.case_id:
+                    continue
+            else:
+                target_id = target_key
+            previous = bindings.setdefault(target_id, target_family)
+            if previous != target_family:
+                raise ValueError(
+                    f"Target id {target_id!r} has contradictory semantic families."
+                )
+        return bindings
+
+    def _refinement_policy(
+        self,
+        *,
+        ambiguity_target_families: Mapping[str, str] | None = None,
+        require_ambiguity_target_families: bool = False,
+    ) -> TransitionAwareClarificationPolicy:
+        base = FixtureClarificationPolicy(
+            ambiguity_target_families=ambiguity_target_families or {},
+            require_ambiguity_target_families=require_ambiguity_target_families,
+        )
         if self.refinement_mode == "typed_delta":
             assert self.refinement_delta_provider is not None
             return TypedDeltaClarificationPolicy(base, self.refinement_delta_provider)
@@ -523,6 +564,7 @@ class ModelCaseExecutor:
                 expected_intents = scripted_intents or (
                     (_QuestionIntent(expected_kind, None, ()),) if expected_kind else ()
                 )
+                case_target_bindings = self._target_bindings_for_case(case)
                 workflow["required_turns"] = len(expected_intents)
                 answer_index = 0
 
@@ -566,7 +608,10 @@ class ModelCaseExecutor:
                     return answer
 
                 policy = _ReplayPolicy(
-                    self._refinement_policy(),
+                    self._refinement_policy(
+                        ambiguity_target_families=case_target_bindings,
+                        require_ambiguity_target_families=bool(case_target_bindings),
+                    ),
                     expected_intents=expected_intents,
                     telemetry=workflow,
                 )

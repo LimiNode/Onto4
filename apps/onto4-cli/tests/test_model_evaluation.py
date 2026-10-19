@@ -440,14 +440,18 @@ def _dialogue_case(*, expected_kind="Meaning", turns=None):
     )
 
 
-def _ambiguous_dialogue_executor(*, ambiguity_count=1, ambiguity_ids=None):
+def _ambiguous_dialogue_executor(
+    *, ambiguity_count=1, ambiguity_ids=None, ambiguity_terms=None,
+    semantic_target_bindings=None,
+):
     context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
     ids = tuple(ambiguity_ids or (f"ambiguity-{index}" for index in range(ambiguity_count)))
+    terms = tuple(ambiguity_terms or ("mass", "identity")[:ambiguity_count])
     initial = InterpretationSpace(
         "dialogue-space", "What is the mass of integer 7?", ConceptualDepth.Ordinary,
         ambiguities=tuple(
             Ambiguity(item_id, term, "meaning")
-            for item_id, term in zip(ids, ("mass", "identity")[:ambiguity_count])
+            for item_id, term in zip(ids, terms)
         ),
     )
     successor = InterpretationSpace(
@@ -469,6 +473,7 @@ def _ambiguous_dialogue_executor(*, ambiguity_count=1, ambiguity_ids=None):
         Provider(),
         FixtureFormalizationProvider({"dialogue-space": (candidate,), "dialogue-successor": (candidate,)}),
         {"physical_objects": context},
+        semantic_target_bindings=semantic_target_bindings or {},
     )
 
 
@@ -478,6 +483,31 @@ def test_dialogue_replay_rejects_wrong_question_intent():
     )
 
     assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
+
+
+def test_dialogue_replay_uses_host_binding_instead_of_model_ambiguity_term():
+    case = _dialogue_case()
+    case = ClarificationCorpusCase(
+        **{
+            **case.__dict__,
+            "expected_clarification": {"kind": "Meaning", "target_family": "stable-mass"},
+            "dialogue": (
+                {"turn_id": "initial", "role": "user", "text": case.utterance},
+                {
+                    "turn_id": "question", "role": "assistant", "text": "Clarify",
+                    "question_kind": "Meaning", "target_family": "stable-mass",
+                    "target_ids": ["ambiguity-0"],
+                },
+                {"turn_id": "answer", "role": "user", "text": "physical mass"},
+            ),
+        }
+    )
+    execution = _ambiguous_dialogue_executor(
+        ambiguity_terms=("free-form model wording",),
+        semantic_target_bindings={"ambiguity-0": "stable-mass"},
+    )(case, request_timeout_seconds=1.0)
+    assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
+    assert execution.diagnostics["question_target_family_match"] is True
 
 
 def test_dialogue_replay_rejects_wrong_target_family():

@@ -150,6 +150,26 @@ class FixtureClarificationPolicy:
     transitions: Mapping[tuple[str, str, str], InterpretationSpace] = field(
         default_factory=dict
     )
+    # Host-owned identity for model-produced ambiguity records.  When present,
+    # this takes precedence over ``Ambiguity.term``, which is free-form text
+    # and therefore not a stable semantic target identity.
+    ambiguity_target_families: Mapping[str, str] = field(default_factory=dict)
+    require_ambiguity_target_families: bool = False
+
+    def __post_init__(self) -> None:
+        for ambiguity_id, target_family in self.ambiguity_target_families.items():
+            if not isinstance(ambiguity_id, str) or not ambiguity_id.strip():
+                raise ValueError("Ambiguity target binding ids must be non-empty strings.")
+            if not isinstance(target_family, str) or not target_family.strip():
+                raise ValueError("Ambiguity target binding families must be non-empty strings.")
+
+    def _ambiguity_target_family(self, ambiguity: object) -> str | None:
+        ambiguity_id = getattr(ambiguity, "id", None)
+        if ambiguity_id in self.ambiguity_target_families:
+            return self.ambiguity_target_families[ambiguity_id]
+        if self.require_ambiguity_target_families:
+            return None
+        return getattr(ambiguity, "term", None)
 
     def questions(
         self, context: ClarificationContext
@@ -164,7 +184,7 @@ class FixtureClarificationPolicy:
                     kind=ClarificationKind.Meaning,
                     text=f"Что именно означает «{ambiguity.term}» в этом вопросе?",
                     target_ids=(ambiguity.id,),
-                    target_family=ambiguity.term,
+                    target_family=self._ambiguity_target_family(ambiguity),
                 )
                 for ambiguity in interpretation.ambiguities
             )

@@ -21,10 +21,13 @@ from onto4.pipeline.interactive import _classify_progress
 from onto4.providers import FormalizationRequest, InterpretationRequest
 from onto4.reasoning import (
     Ambiguity,
+    AssessmentLandscape,
+    ClarificationContext,
     ClarificationKind,
     ClarificationQuestion,
     ClarificationTurn,
     ConceptualDepth,
+    CrossCandidateStatus,
     FixtureClarificationPolicy,
     FormalizationCandidate,
     InterpretationSpace,
@@ -185,6 +188,51 @@ def test_interactive_dialogue_executes_two_host_transitions_without_duplicate_hi
         "successor-one", "successor-two"
     ]
     assert len(refinement.calls) == 2
+
+
+def test_stable_target_binding_ignores_model_wording_but_keeps_goals_distinct():
+    def context_for(space):
+        return ClarificationContext(
+            interpretation=space,
+            candidates=(),
+            assessments=(),
+            landscape=AssessmentLandscape(
+                (), CrossCandidateStatus.FormalizationUnresolved
+            ),
+        )
+
+    same_goal = FixtureClarificationPolicy(
+        ambiguity_target_families={
+            "ambiguity-a": "identity-criterion",
+            "ambiguity-b": "identity-criterion",
+        },
+        require_ambiguity_target_families=True,
+    )
+    first = InterpretationSpace(
+        "wording-a", "Claim.", ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-a", "model wording one", "meaning"),),
+    )
+    second = InterpretationSpace(
+        "wording-b", "Claim.", ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-b", "model wording two", "meaning"),),
+    )
+    first_question = same_goal.choose(context_for(first))
+    second_question = same_goal.choose(context_for(second))
+    assert first_question is not None and second_question is not None
+    assert first_question.target_family == second_question.target_family == (
+        "identity-criterion"
+    )
+
+    different_goal = FixtureClarificationPolicy(
+        ambiguity_target_families={
+            "ambiguity-a": "identity-criterion",
+            "ambiguity-b": "intrinsic-time",
+        },
+        require_ambiguity_target_families=True,
+    )
+    different_question = different_goal.choose(context_for(second))
+    assert different_question is not None
+    assert different_question.target_family != first_question.target_family
 
 
 def test_typed_delta_dialogue_uses_same_question_and_host_applies_operation():
