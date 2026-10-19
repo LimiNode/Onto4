@@ -125,7 +125,7 @@ def test_interactive_dialogue_uses_successor_and_reassessment():
     assert result.progress.entries[0].kind is ClarificationProgressKind.StructuralResolution
 
 
-def test_interactive_dialogue_executes_two_turn_host_chain_without_double_admission():
+def test_interactive_dialogue_executes_two_host_transitions_without_duplicate_history():
     initial = InterpretationSpace(
         id="initial-two-turn",
         source_text="Claim.",

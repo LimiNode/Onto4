@@ -160,6 +160,29 @@ def _corpus_binding(corpus: ClarificationCorpus) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _manifest_digest(manifest: Sequence[DiscoveredQuestionIntent]) -> str:
+    """Digest a validated manifest without publishing its target identities."""
+
+    payload = [
+        {
+            "case_id": item.case_id,
+            "turn_index": item.turn_index,
+            "kind": item.kind,
+            "target_family": item.target_family,
+            "target_ids": item.target_ids,
+            "corpus_binding": item.corpus_binding,
+            "snapshot_id": item.snapshot_id,
+            "previous_snapshot_id": item.previous_snapshot_id,
+            "assessment_id": item.assessment_id,
+        }
+        for item in manifest
+    ]
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def discover_host_question_intents(
     corpus: ClarificationCorpus,
     discover: Callable[[object], HostQuestionDiscovery],
@@ -455,6 +478,10 @@ def run_bounded_dialogue_research(
         raise ValueError("Bounded dialogue research requires at least one dialogue case.")
     if intent_manifest is not None:
         validate_dialogue_intent_manifest(corpus, intent_manifest)
+    structural_preflight_validated = intent_manifest is not None
+    preflight_manifest_digest = (
+        _manifest_digest(intent_manifest) if intent_manifest is not None else None
+    )
     dialogue_corpus = ClarificationCorpus(
         version=corpus.version,
         name=corpus.name,
@@ -473,6 +500,12 @@ def run_bounded_dialogue_research(
             **dict(metadata or {}),
             "benchmark_type": "bounded_multiturn_dialogue",
             "dialogue_case_ids": [case.case_id for case in dialogue_cases],
+            "structural_preflight_validated": structural_preflight_validated,
+            "preflight_manifest_digest": preflight_manifest_digest,
+            # No receipt-level snapshot/assessment binding exists yet.  Keep
+            # this explicit rather than allowing structural validation to be
+            # read as proof about the concrete E2E execution.
+            "run_bound_preflight_verified": False,
         },
         **kwargs,
     )

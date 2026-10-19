@@ -137,6 +137,53 @@ def test_bounded_dialogue_research_reports_each_required_stage(tmp_path):
     payload = json.loads(report.read_text(encoding="utf-8"))
     assert payload["record_type"] == "bounded_dialogue_research"
     assert payload["metadata"]["stage_contract"][-1] == "reassessment_performed"
+    assert payload["metadata"]["structural_preflight_validated"] is False
+    assert payload["metadata"]["run_bound_preflight_verified"] is False
+
+
+def test_structural_preflight_is_not_reported_as_run_bound_execution(tmp_path):
+    corpus = _dialogue_corpus()
+    manifest = (
+        DiscoveredQuestionIntent(
+            "single",
+            0,
+            "Meaning",
+            "criterion",
+            ("a",),
+            corpus_binding=_corpus_binding(corpus),
+            snapshot_id="preflight-snapshot-x",
+            assessment_id="preflight-assessment-x",
+        ),
+    )
+
+    def executor_factory(_condition):
+        return lambda case, *, request_timeout_seconds: CaseExecution(
+            EvaluationOutcome.ASSESSMENT_COMPLETED,
+            diagnostics={
+                "required_turns": 1,
+                "admitted_turns": 1,
+                "answered_turns": 1,
+                "accepted_refinements": 1,
+                "completed_reassessments": 1,
+                "questions_issued": 1,
+                "answers_consumed": 1,
+                "refinement_accepted": True,
+                "reassessment_performed": True,
+                "clarification_turns": 1,
+                "clarification_turns_known": True,
+            },
+        )
+
+    run = run_bounded_dialogue_research(
+        corpus,
+        executor_factory=executor_factory,
+        config=EvaluationConfig(),
+        receipt_dir=tmp_path,
+        intent_manifest=manifest,
+    )
+    assert run.metadata["structural_preflight_validated"] is True
+    assert run.metadata["preflight_manifest_digest"]
+    assert run.metadata["run_bound_preflight_verified"] is False
 
 
 def test_model_backed_isolated_refinement_uses_one_initial_snapshot():
