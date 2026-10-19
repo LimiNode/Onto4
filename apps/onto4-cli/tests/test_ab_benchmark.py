@@ -293,6 +293,7 @@ def test_multiturn_workflow_rejects_tampered_order_kind_targets_and_counts():
         [records[0], {**records[1], "question_kind": "Reference"}],
         [records[0], {**records[1], "question_target_ids": ["wrong"]}],
         [records[0], {**records[1], "question_target_family_digest": _target_family_digest("wrong") }],
+        [records[0], {**records[1], "question_target_family_digest": "not-a-sha256"}],
         [records[1], records[0]],
     ):
         diagnostics = {**base, "question_records": tampered}
@@ -303,7 +304,12 @@ def test_multiturn_workflow_rejects_tampered_order_kind_targets_and_counts():
             elapsed_seconds=0.0,
             diagnostics=diagnostics,
         )
-        assert _workflow_status(case, receipt) is BenchmarkStatus.INCORRECT
+        expected_status = (
+            BenchmarkStatus.UNVERIFIED
+            if tampered[1].get("question_target_family_digest") == "not-a-sha256"
+            else BenchmarkStatus.INCORRECT
+        )
+        assert _workflow_status(case, receipt) is expected_status
 
     missing_index = {
         **base,

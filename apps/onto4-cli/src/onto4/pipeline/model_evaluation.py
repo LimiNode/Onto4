@@ -97,6 +97,7 @@ class _ReplayPolicy:
     issued_questions: int = 0
     telemetry: dict[str, object] = field(default_factory=dict, compare=False)
     _last_questions: tuple = field(default=(), init=False, compare=False)
+    _last_context: object | None = field(default=None, init=False, compare=False)
     _admitted_tokens: tuple[tuple[object, ...], ...] = field(
         default=(), init=False, compare=False
     )
@@ -135,10 +136,43 @@ class _ReplayPolicy:
             else tuple(filter(None, (self.base.choose(context),)))
         )
         object.__setattr__(self, "_last_questions", tuple(questions))
+        object.__setattr__(self, "_last_context", context)
         self.telemetry["question_candidate_generated"] = bool(questions)
         self.telemetry["question_candidate_count"] = len(questions)
         self.telemetry["last_stage"] = "question_candidate_generated"
         return questions
+
+    def _check_typed_delta_capability(self, context, question) -> None:
+        """Raise only when the snapshot lacks the required ontology target.
+
+        A wrong question kind is an intent mismatch when the host snapshot
+        already contains the target.  It is an unsupported transition only
+        when typed delta has no admissible ontology target to refine.
+        """
+
+        if not self.typed_delta_capability_guard:
+            return
+        if self.issued_questions >= len(self.expected_intents):
+            return
+        expected = self.expected_intents[self.issued_questions]
+        if (
+            expected.kind is not ClarificationKind.Ontology
+            or question.kind is ClarificationKind.Ontology
+            or not expected.target_ids
+        ):
+            return
+        interpretation = getattr(context, "interpretation", None)
+        available_ontology_targets = {
+            candidate.target_id
+            for candidate in getattr(interpretation, "ontologies", ())
+            if candidate.target_id is not None
+        }
+        if not set(expected.target_ids) <= available_ontology_targets:
+            raise RefinementUnsupportedError(
+                "unsupported_transition: typed delta cannot create the "
+                "ontology candidate required by the next scripted turn.",
+                code="unsupported_transition",
+            )
 
     def validate_issued(self, question) -> None:
         """Validate the concrete host-issued question without reordering it."""
@@ -154,16 +188,6 @@ class _ReplayPolicy:
         if question.target_family is None:
             self.telemetry["intent_admitted"] = False
             raise _ReplayError("question_intent_unverified", "family_unverified")
-        if (
-            self.typed_delta_capability_guard
-            and expected.kind is ClarificationKind.Ontology
-            and question.kind is not ClarificationKind.Ontology
-        ):
-            raise RefinementUnsupportedError(
-                "unsupported_transition: typed delta cannot create the ontology "
-                "candidate required by the next scripted turn.",
-                code="unsupported_transition",
-            )
         if question.kind is not expected.kind:
             self.telemetry["intent_admitted"] = False
             raise _ReplayError("question_intent_mismatch", "kind_mismatch")
@@ -198,6 +222,7 @@ class _ReplayPolicy:
         self.telemetry["question_candidate_count"] = 0 if question is None else 1
         self.telemetry["last_stage"] = "question_candidate_generated"
         if question is not None:
+            self._check_typed_delta_capability(context, question)
             self.telemetry["question_selected"] = True
             self.telemetry["last_stage"] = "question_selected"
             # Admission is recorded at selection time so a rejected question
@@ -212,6 +237,7 @@ class _ReplayPolicy:
 
         self.telemetry["question_selected"] = True
         self.telemetry["last_stage"] = "question_selected"
+        self._check_typed_delta_capability(self._last_context, question)
         self.validate_issued(question)
 
     def successor(self, *, interpretation, question, answer):
@@ -619,16 +645,6 @@ class ModelCaseExecutor:
                         policy.validate_issued(question)
                         return
                     expected_intent = expected_intents[policy.issued_questions]
-                    if (
-                        self.refinement_mode == "typed_delta"
-                        and expected_intent.kind is ClarificationKind.Ontology
-                        and question.kind is not ClarificationKind.Ontology
-                    ):
-                        raise RefinementUnsupportedError(
-                            "unsupported_transition: typed delta cannot create the "
-                            "ontology candidate required by the next scripted turn.",
-                            code="unsupported_transition",
-                        )
                     policy.validate_issued(question)
                     expected_clarification = case.expected_clarification
                     corpus_match = None

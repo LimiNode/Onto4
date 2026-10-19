@@ -154,7 +154,11 @@ def _scripted_question_records_status(
             return False
         if actual_kind != expected_kind:
             return False
-        if family_digest is None or not isinstance(family_digest, str):
+        if (
+            family_digest is None
+            or not isinstance(family_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", family_digest) is None
+        ):
             return None
         if family_digest != _target_family_digest(expected_family):
             return False
