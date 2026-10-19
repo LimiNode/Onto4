@@ -124,13 +124,17 @@ def _scripted_question_records_status(
         return None
     if len(records) > len(expected):
         return False
-    if len(records) < len(expected):
-        return None
-    for index, (expected_kind, expected_family, expected_ids) in enumerate(expected):
+    comparable_count = min(len(records), len(expected))
+    for index, (expected_kind, expected_family, expected_ids) in enumerate(
+        expected[:comparable_count]
+    ):
         record = records[index]
         if not isinstance(record, Mapping):
             return None
-        if record.get("turn_index") != index:
+        turn_index = record.get("turn_index")
+        if turn_index is None or isinstance(turn_index, bool) or not isinstance(turn_index, int):
+            return None
+        if turn_index != index:
             return False
         actual_kind = record.get("question_kind")
         actual_ids = record.get("question_target_ids")
@@ -138,18 +142,26 @@ def _scripted_question_records_status(
             return None
         family_match = record.get("question_script_target_family_match")
         family_digest = record.get("question_target_family_digest")
-        if actual_kind is None or actual_ids is None or family_match is None:
+        if not isinstance(actual_kind, str) or not actual_kind.strip():
+            return None
+        if not isinstance(actual_ids, (list, tuple)):
+            return None
+        if any(not isinstance(item, str) or not item for item in actual_ids):
+            return None
+        if family_match is None or not isinstance(family_match, bool):
             return None
         if family_match is not True:
             return False
         if actual_kind != expected_kind:
             return False
-        if family_digest is None:
+        if family_digest is None or not isinstance(family_digest, str):
             return None
         if family_digest != _target_family_digest(expected_family):
             return False
         if tuple(actual_ids) != expected_ids:
             return False
+    if len(records) < len(expected):
+        return None
     return True
 
 

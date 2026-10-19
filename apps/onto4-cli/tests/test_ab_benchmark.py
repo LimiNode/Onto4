@@ -305,6 +305,19 @@ def test_multiturn_workflow_rejects_tampered_order_kind_targets_and_counts():
         )
         assert _workflow_status(case, receipt) is BenchmarkStatus.INCORRECT
 
+    missing_index = {
+        **base,
+        "question_records": [{**records[0], "turn_index": None}, records[1]],
+    }
+    receipt = CaseReceipt(
+        case_id=case.case_id,
+        case_mode=case.mode,
+        outcome=EvaluationOutcome.NEED_EVIDENCE,
+        elapsed_seconds=0.0,
+        diagnostics=missing_index,
+    )
+    assert _workflow_status(case, receipt) is BenchmarkStatus.UNVERIFIED
+
     reduced = {**base, "required_turns": 1, "question_records": records}
     receipt = CaseReceipt(
         case_id=case.case_id,

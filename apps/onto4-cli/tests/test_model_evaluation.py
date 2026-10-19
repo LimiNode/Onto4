@@ -879,3 +879,63 @@ def test_adapter_backed_two_turn_binding_preserves_public_catalog_and_oracle_bou
     assert "target_family" not in all_prompts
     assert "expected_clarification" not in all_prompts
     assert "observer_independence" not in all_prompts
+
+
+def test_typed_delta_intrinsic_time_classifies_missing_ontology_creation_capability():
+    corpus = load_clarification_corpus(
+        ROOT / "eval/clarification/bounded-dialogue-v1.yaml"
+    )
+    case = next(item for item in corpus.cases if item.case_id == "intrinsic-time-bounded")
+    _, target_catalog = load_semantic_target_catalog(
+        ROOT / "eval/clarification/bounded-dialogue-targets-v1.yaml"
+    )
+
+    class Client:
+        def complete(self, messages, **kwargs):
+            return {"choices": [{"message": {"content": json.dumps({
+                "source_text": case.utterance,
+                "conceptual_depth": "ordinary",
+                "ambiguities": [{
+                    "term": "intrinsic present",
+                    "description": "the phrase has more than one temporal reading",
+                    "target_id": "ambiguity-present",
+                }],
+                "presuppositions": [],
+                "ontologies": [],
+                "readings": [],
+            })}}]}
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "refine_ambiguity",
+                "target_id": "ambiguity-0",
+                "text": "intrinsic present",
+                "description": "an observer-independent present",
+            },)
+
+    class Formalizer:
+        def formalize(self, request):
+            return (
+                FormalizationCandidate(
+                    "time-order", "time order", "time-order", "relational_time",
+                    PredicateExpr(PredicateCall("earlier_than", (Term("past_t"), Term("now")))),
+                ),
+            )
+
+    executor = ModelCaseExecutor(
+        OpenAICompatibleInterpretationProvider(Client()),
+        Formalizer(),
+        {"relational_time": load_context(ROOT / "profiles/contexts/relational_time.yaml")},
+        refinement_mode="typed_delta",
+        refinement_delta_provider=DeltaProvider(),
+        semantic_target_bindings=host_semantic_target_bindings(corpus),
+        strict_semantic_target_binding=True,
+        host_target_catalog=target_catalog,
+    )
+    execution = executor(case, request_timeout_seconds=2.0)
+
+    assert execution.outcome is EvaluationOutcome.UNSUPPORTED_DIALOGUE_STEP
+    assert execution.detail_code == "unsupported_transition"
+    assert execution.diagnostics["unsupported_transition"] is True
+    assert execution.diagnostics["questions_issued"] == 1

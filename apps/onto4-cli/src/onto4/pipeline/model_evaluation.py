@@ -93,6 +93,7 @@ class _ReplayPolicy:
 
     base: TransitionAwareClarificationPolicy
     expected_intents: tuple[_QuestionIntent, ...] = ()
+    typed_delta_capability_guard: bool = False
     issued_questions: int = 0
     telemetry: dict[str, object] = field(default_factory=dict, compare=False)
     _last_questions: tuple = field(default=(), init=False, compare=False)
@@ -153,6 +154,16 @@ class _ReplayPolicy:
         if question.target_family is None:
             self.telemetry["intent_admitted"] = False
             raise _ReplayError("question_intent_unverified", "family_unverified")
+        if (
+            self.typed_delta_capability_guard
+            and expected.kind is ClarificationKind.Ontology
+            and question.kind is not ClarificationKind.Ontology
+        ):
+            raise RefinementUnsupportedError(
+                "unsupported_transition: typed delta cannot create the ontology "
+                "candidate required by the next scripted turn.",
+                code="unsupported_transition",
+            )
         if question.kind is not expected.kind:
             self.telemetry["intent_admitted"] = False
             raise _ReplayError("question_intent_mismatch", "kind_mismatch")
@@ -604,8 +615,21 @@ class ModelCaseExecutor:
                 answer_index = 0
 
                 def validate_question(_, question) -> None:
-                    policy.validate_issued(question)
+                    if policy.issued_questions >= len(expected_intents):
+                        policy.validate_issued(question)
+                        return
                     expected_intent = expected_intents[policy.issued_questions]
+                    if (
+                        self.refinement_mode == "typed_delta"
+                        and expected_intent.kind is ClarificationKind.Ontology
+                        and question.kind is not ClarificationKind.Ontology
+                    ):
+                        raise RefinementUnsupportedError(
+                            "unsupported_transition: typed delta cannot create the "
+                            "ontology candidate required by the next scripted turn.",
+                            code="unsupported_transition",
+                        )
+                    policy.validate_issued(question)
                     expected_clarification = case.expected_clarification
                     corpus_match = None
                     if isinstance(expected_clarification, Mapping):
@@ -667,6 +691,7 @@ class ModelCaseExecutor:
                         semantic_target_kinds=case_target_kinds,
                     ),
                     expected_intents=expected_intents,
+                    typed_delta_capability_guard=self.refinement_mode == "typed_delta",
                     telemetry=workflow,
                 )
                 result = run_interactive_dialogue(
