@@ -40,6 +40,64 @@ class ClarificationCorpus:
     context_profiles: Mapping[str, str] = field(default_factory=dict)
 
 
+def load_semantic_target_catalog(
+    path: str | Path,
+) -> tuple[int, dict[str, dict[str, dict[str, str]]]]:
+    """Load public host targets without reading clarification oracle fields."""
+
+    source = Path(path)
+    try:
+        data = yaml.safe_load(source.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"Unable to load semantic target catalog {source}.") from exc
+    root = _mapping(data, "target_catalog")
+    version = root.get("version")
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise ValueError("target_catalog.version must be a positive integer.")
+    raw_cases = root.get("cases")
+    if not isinstance(raw_cases, list):
+        raise ValueError("target_catalog.cases must be an array.")
+    result: dict[str, dict[str, dict[str, str]]] = {}
+    for case_index, raw_case in enumerate(raw_cases):
+        case = _mapping(raw_case, f"target_catalog.cases[{case_index}]")
+        case_id = case.get("case_id")
+        targets = case.get("targets")
+        if not isinstance(case_id, str) or not case_id.strip():
+            raise ValueError("Target catalog case_id must be a non-empty string.")
+        if case_id in result:
+            raise ValueError(f"Duplicate target catalog case_id: {case_id!r}.")
+        if not isinstance(targets, list):
+            raise ValueError(f"Target catalog targets for {case_id!r} must be an array.")
+        case_targets: dict[str, dict[str, str]] = {}
+        for target_index, raw_target in enumerate(targets):
+            target = _mapping(
+                raw_target,
+                f"target_catalog.cases[{case_index}].targets[{target_index}]",
+            )
+            unknown = set(target) - {"id", "kind", "description"}
+            if unknown:
+                raise ValueError(f"Unknown public target fields: {sorted(unknown)!r}.")
+            target_id = target.get("id")
+            kind = target.get("kind")
+            description = target.get("description")
+            if not isinstance(target_id, str) or not target_id.strip():
+                raise ValueError("Public target id must be a non-empty string.")
+            if kind not in {"Meaning", "Ontology"}:
+                raise ValueError("Public target kind must be Meaning or Ontology.")
+            if not isinstance(description, str) or not description.strip():
+                raise ValueError("Public target description must be non-empty.")
+            if target_id in case_targets:
+                raise ValueError(
+                    f"Duplicate public target id {target_id!r} in case {case_id!r}."
+                )
+            case_targets[target_id] = {
+                "kind": kind,
+                "description": description,
+            }
+        result[case_id] = case_targets
+    return version, result
+
+
 def host_semantic_target_bindings(
     corpus: ClarificationCorpus,
 ) -> dict[tuple[str, str], str]:
@@ -275,5 +333,6 @@ __all__ = [
     "ClarificationCorpus",
     "ClarificationCorpusCase",
     "host_semantic_target_bindings",
+    "load_semantic_target_catalog",
     "load_clarification_corpus",
 ]

@@ -26,6 +26,7 @@ from onto4.pipeline import (
     corpus_digest,
     load_clarification_corpus,
     host_semantic_target_bindings,
+    load_semantic_target_catalog,
     offline_fixture_executor,
     run_interactive_dialogue,
     TypedDeltaClarificationPolicy,
@@ -254,6 +255,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
     try:
         corpus = load_clarification_corpus(args.corpus)
         semantic_target_bindings = host_semantic_target_bindings(corpus)
+        target_catalog = {}
         digest = corpus_digest(args.corpus)
         if args.mode == "offline" and args.refinement_mode == "typed_delta":
             raise ValueError(
@@ -269,6 +271,9 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                 raise ValueError("Model-backed evaluation requires --endpoint and --model.")
             if not args.context:
                 raise ValueError("Model-backed evaluation requires at least one --context.")
+            if args.target_catalog is None:
+                raise ValueError("Model-backed evaluation requires --target-catalog.")
+            _, target_catalog = load_semantic_target_catalog(args.target_catalog)
             auth = EndpointAuthKind(args.auth)
             token = os.environ.get(args.token_env) if auth is EndpointAuthKind.Bearer else None
             profile = ProviderProfile(
@@ -307,6 +312,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                 ),
                 semantic_target_bindings=semantic_target_bindings,
                 strict_semantic_target_binding=True,
+                host_target_catalog=target_catalog,
                 trace_sink=trace,
             )
             interpretation_adapter.trace = executor.provider_trace
@@ -369,6 +375,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     try:
         corpus = load_clarification_corpus(args.corpus)
         semantic_target_bindings = host_semantic_target_bindings(corpus)
+        _, target_catalog = load_semantic_target_catalog(args.target_catalog)
         if not args.context:
             raise ValueError("A controlled benchmark requires at least one --context.")
         auth = EndpointAuthKind(args.auth)
@@ -410,6 +417,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                 refinement_delta_provider=delta_adapter,
                 semantic_target_bindings=semantic_target_bindings,
                 strict_semantic_target_binding=True,
+                host_target_catalog=target_catalog,
             )
             # Keep benchmark telemetry at the same boundary as eval-corpus:
             # adapters emit safe stage events into the executor, which owns
@@ -574,6 +582,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the clarification corpus sequentially and write safe receipts.",
     )
     corpus_parser.add_argument("--corpus", required=True, type=Path)
+    corpus_parser.add_argument(
+        "--target-catalog",
+        type=Path,
+        help="Versioned public semantic target catalog required by model-backed mode.",
+    )
     corpus_parser.add_argument("--receipt", required=True, type=Path)
     corpus_parser.add_argument("--report", required=True, type=Path)
     corpus_parser.add_argument("--timeout", type=float, default=30.0)
@@ -628,6 +641,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the controlled model-backed A/B benchmark (A1/A2/B1/B2).",
     )
     benchmark_parser.add_argument("--corpus", required=True, type=Path)
+    benchmark_parser.add_argument("--target-catalog", required=True, type=Path)
     benchmark_parser.add_argument("--report", required=True, type=Path)
     benchmark_parser.add_argument("--artifacts-dir", required=True, type=Path)
     benchmark_parser.add_argument("--endpoint", required=True)

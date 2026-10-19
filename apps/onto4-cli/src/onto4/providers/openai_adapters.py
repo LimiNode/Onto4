@@ -88,6 +88,33 @@ def _index_tuple(value: Any, path: str, *, upper_bound: int) -> tuple[int, ...]:
     return tuple(indexes)
 
 
+def _semantic_target_catalog(state: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    raw = state.get("semantic_target_catalog", {})
+    if not isinstance(raw, Mapping):
+        raise ProviderSchemaError("semantic_target_catalog must be a mapping.")
+    catalog: dict[str, dict[str, str]] = {}
+    for target_id, definition in raw.items():
+        if not isinstance(target_id, str) or not target_id.strip():
+            raise ProviderSchemaError("Semantic target ids must be non-empty strings.")
+        if not isinstance(definition, Mapping):
+            raise ProviderSchemaError("Semantic target definitions must be mappings.")
+        if set(definition) != {"kind", "description"}:
+            raise ProviderSchemaError(
+                "Semantic targets require exactly kind and description."
+            )
+        kind = _string(definition.get("kind"), f"semantic_target_catalog[{target_id}].kind")
+        if kind not in {"Meaning", "Ontology"}:
+            raise ProviderSchemaError("Semantic target kind must be Meaning or Ontology.")
+        catalog[target_id] = {
+            "kind": kind,
+            "description": _string(
+                definition.get("description"),
+                f"semantic_target_catalog[{target_id}].description",
+            ),
+        }
+    return catalog
+
+
 def _response_json(
     client: OpenAICompatibleClient,
     messages: Sequence[Mapping[str, str]],
@@ -210,18 +237,35 @@ def _parse_description_items(
     return tuple(result)
 
 
-def _parse_ontology_candidates(value: Any) -> tuple[OntologyCandidate, ...]:
+def _parse_ontology_candidates(
+    value: Any,
+    *,
+    allowed_target_ids: tuple[str, ...] = (),
+) -> tuple[OntologyCandidate, ...]:
     if not isinstance(value, list):
         raise ProviderSchemaError("ontologies must be a JSON array.")
     result = []
     for index, raw in enumerate(value):
         item = _object(raw, f"ontologies[{index}]")
-        _keys(item, f"ontologies[{index}]", {"label", "description"}, {"id"})
+        _keys(
+            item,
+            f"ontologies[{index}]",
+            {"label", "description"},
+            {"id", "target_id"},
+        )
+        target_id = item.get("target_id")
+        if target_id is not None:
+            target_id = _string(target_id, f"ontologies[{index}].target_id")
+            if target_id not in allowed_target_ids:
+                raise ProviderSchemaError(
+                    f"ontologies[{index}].target_id is not an allowed host target."
+                )
         result.append(
             OntologyCandidate(
                 f"ontology-{index}",
                 _string(item["label"], f"ontologies[{index}].label"),
                 _string(item["description"], f"ontologies[{index}].description"),
+                target_id,
             )
         )
     return tuple(result)
@@ -271,7 +315,11 @@ def _interpretation_identity(space: InterpretationSpace) -> str:
         ],
         "presuppositions": [item.description for item in space.presuppositions],
         "ontologies": [
-            {"label": item.label, "description": item.description}
+            {
+                "label": item.label,
+                "description": item.description,
+                "target_id": item.target_id,
+            }
             for item in space.ontologies
         ],
         "readings": [
@@ -308,21 +356,19 @@ def _parse_interpretation(payload: Mapping[str, Any], request: InterpretationReq
         raise ProviderSchemaError(
             "Model conceptual_depth does not match the interpretation request."
         )
-    allowed_target_ids = request.state.get("allowed_semantic_target_ids", ())
-    if not isinstance(allowed_target_ids, (tuple, list)) or not all(
-        isinstance(item, str) and item.strip() for item in allowed_target_ids
-    ):
-        raise ProviderSchemaError("allowed_semantic_target_ids must be a sequence of non-empty strings.")
+    target_catalog = _semantic_target_catalog(request.state)
     space = InterpretationSpace(
         id="",
         source_text=source_text,
         conceptual_depth=depth,
         ambiguities=_parse_description_items(
             payload["ambiguities"], "ambiguities", Ambiguity,
-            allowed_target_ids=tuple(allowed_target_ids),
+            allowed_target_ids=tuple(target_catalog),
         ),
         presuppositions=_parse_description_items(payload["presuppositions"], "presuppositions", Presupposition),
-        ontologies=_parse_ontology_candidates(payload["ontologies"]),
+        ontologies=_parse_ontology_candidates(
+            payload["ontologies"], allowed_target_ids=tuple(target_catalog)
+        ),
         readings=_parse_readings(
             payload["readings"],
             presupposition_ids=tuple(
@@ -465,7 +511,12 @@ def _interpretation_projection(interpretation: InterpretationSpace) -> dict[str,
             for item in interpretation.presuppositions
         ],
         "ontologies": [
-            {"id": item.id, "label": item.label, "description": item.description}
+            {
+                "id": item.id,
+                "target_id": item.target_id,
+                "label": item.label,
+                "description": item.description,
+            }
             for item in interpretation.ontologies
         ],
         "readings": [
@@ -497,6 +548,22 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
         self.client = client
         self.trace = trace
         self.prompt_variant = prompt_variant
+        self._target_catalogs: dict[str, dict[str, dict[str, str]]] = {}
+
+    def _remember_target_catalog(
+        self,
+        interpretation: InterpretationSpace,
+        catalog: Mapping[str, Mapping[str, str]],
+    ) -> None:
+        normalized = {
+            target_id: dict(definition)
+            for target_id, definition in catalog.items()
+        }
+        previous = self._target_catalogs.setdefault(interpretation.id, normalized)
+        if previous != normalized:
+            raise ProviderSchemaError(
+                "Interpretation snapshot has conflicting semantic target catalogs."
+            )
 
     def interpret(self, request: InterpretationRequest) -> InterpretationSpace:
         requested_depth = (
@@ -510,13 +577,15 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
             else "Select one supported ConceptualDepth; do not infer an unsupported value."
         )
         context_instruction = ""
-        raw_target_ids = request.state.get("allowed_semantic_target_ids", ())
+        target_catalog = _semantic_target_catalog(request.state)
         target_instruction = ""
-        if isinstance(raw_target_ids, (tuple, list)) and raw_target_ids:
+        if target_catalog:
             target_instruction = (
-                "For an ambiguity, target_id is optional but, when present, must be "
-                "one of these host-issued references; never invent one: "
-                + json.dumps(tuple(raw_target_ids), ensure_ascii=False)
+                "For an ambiguity or ontology candidate, target_id is optional but, "
+                "when present, must be "
+                "one of these host-issued public targets; choose it only when the "
+                "ambiguity has the described role and never invent one: "
+                + json.dumps(target_catalog, ensure_ascii=False, sort_keys=True)
                 + ". "
             )
         raw_contexts = request.state.get("context_projections")
@@ -583,7 +652,9 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                 trace=self.trace,
                 stage="interpretation",
             )
-            return _parse_interpretation(payload, request)
+            result = _parse_interpretation(payload, request)
+            self._remember_target_catalog(result, target_catalog)
+            return result
 
         return _traced_stage("interpretation", self.trace, operation)
 
@@ -600,6 +671,7 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
         conceptual depth are fixed by the host and validated by the parser.
         """
 
+        target_catalog = self._target_catalogs.get(interpretation.id, {})
         current_json = json.dumps(
             _interpretation_projection(interpretation),
             ensure_ascii=False,
@@ -622,7 +694,10 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                             "source_text, conceptual_depth, ambiguities, presuppositions, "
                             "ontologies and readings. Preserve source_text and conceptual_depth "
                             "from the current snapshot. Do not return an Onto4 verdict, IDs or "
-                            "transition history; the host assigns identity and provenance. "
+                            "transition history or authoritative id fields; the host assigns "
+                            "identity and provenance. An ambiguity or ontology candidate may "
+                            "retain or select only a target_id from the supplied public "
+                            "semantic target catalog. "
                             "Use ambiguity objects with term and description, presupposition "
                             "objects with description, ontology objects with label and "
                             "description, and reading objects with label, description and "
@@ -633,6 +708,7 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                             "says that none of the options fit, preserve unresolved alternatives "
                             "instead of inventing a commitment. Return JSON only.\n\n"
                             f"current_interpretation: {current_json}\n"
+                            f"semantic_target_catalog: {json.dumps(target_catalog, ensure_ascii=False, sort_keys=True)}\n"
                             f"question: {json.dumps({'id': question.id, 'kind': question.kind.value, 'text': question.text, 'choices': list(question.choices)}, ensure_ascii=False, sort_keys=True)}\n"
                             f"user_answer: {answer}\n\n"
                             "The answer is the user's semantic clarification, not a request "
@@ -646,13 +722,16 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                 trace=self.trace,
                 stage="refinement",
             )
-            return _parse_interpretation(
+            result = _parse_interpretation(
                 payload,
                 InterpretationRequest(
                     interpretation.source_text,
                     conceptual_depth=interpretation.conceptual_depth,
+                    state={"semantic_target_catalog": target_catalog},
                 ),
             )
+            self._remember_target_catalog(result, target_catalog)
+            return result
 
         return _traced_stage("refinement", self.trace, operation)
 

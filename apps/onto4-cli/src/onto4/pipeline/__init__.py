@@ -27,6 +27,7 @@ from .clarification_corpus import (
     ClarificationCorpusCase,
     host_semantic_target_bindings,
     load_clarification_corpus,
+    load_semantic_target_catalog,
 )
 from .evaluation import (
     AttemptRecord,
@@ -146,6 +147,7 @@ __all__ = [
     "formalize_per_reading_and_context",
     "material_ambiguity",
     "load_clarification_corpus",
+    "load_semantic_target_catalog",
     "CaseExecution",
     "CaseReceipt",
     "AttemptRecord",

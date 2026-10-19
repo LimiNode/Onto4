@@ -161,9 +161,6 @@ class _ReplayPolicy:
         if not candidates:
             self.telemetry["intent_admitted"] = False
             raise _ReplayError("question_intent_mismatch", "no_candidate")
-        if len(candidates) == 1:
-            self._record_admission(question)
-            return
         if tuple(question.target_ids) == expected.target_ids:
             self._record_admission(question)
             return
@@ -262,7 +259,9 @@ class ModelCaseExecutor:
     # Public host-issued references supplied independently of the corpus
     # oracle.  Never derive these from ``semantic_target_bindings``: that map
     # is evaluation data and must not leak into a model prompt.
-    host_target_ids: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    host_target_catalog: Mapping[str, Mapping[str, Mapping[str, str]]] = field(
+        default_factory=dict
+    )
     trace_sink: ProviderTrace | None = None
     _last_events: list[ProviderStageEvent] = field(default_factory=list, init=False)
 
@@ -284,13 +283,18 @@ class ModelCaseExecutor:
                 raise ValueError("Semantic target binding keys must be (case_id, target_id) tuples.")
             if not isinstance(target_family, str) or not target_family.strip():
                 raise ValueError("Semantic target binding families must be non-empty strings.")
-        for case_id, target_ids in self.host_target_ids.items():
+        for case_id, targets in self.host_target_catalog.items():
             if not isinstance(case_id, str) or not case_id.strip():
-                raise ValueError("host_target_ids case ids must be non-empty strings.")
-            if not isinstance(target_ids, tuple) or not all(
-                isinstance(item, str) and item.strip() for item in target_ids
-            ):
-                raise ValueError("host_target_ids values must be tuples of non-empty strings.")
+                raise ValueError("host_target_catalog case ids must be non-empty strings.")
+            if not isinstance(targets, Mapping):
+                raise ValueError("host_target_catalog case values must be mappings.")
+            for target_id, target in targets.items():
+                if not isinstance(target_id, str) or not target_id.strip():
+                    raise ValueError("Public semantic target ids must be non-empty strings.")
+                if not isinstance(target, Mapping) or target.get("kind") not in {
+                    "Meaning", "Ontology"
+                } or not isinstance(target.get("description"), str):
+                    raise ValueError("Public semantic target definitions are invalid.")
 
     def _target_bindings_for_case(
         self, case: ClarificationCorpusCase
@@ -310,12 +314,14 @@ class ModelCaseExecutor:
     def _refinement_policy(
         self,
         *,
-        ambiguity_target_families: Mapping[str, str] | None = None,
-        require_ambiguity_target_families: bool = False,
+        semantic_target_families: Mapping[str, str] | None = None,
+        require_semantic_target_families: bool = False,
+        semantic_target_kinds: Mapping[str, ClarificationKind] | None = None,
     ) -> TransitionAwareClarificationPolicy:
         base = FixtureClarificationPolicy(
-            ambiguity_target_families=ambiguity_target_families or {},
-            require_ambiguity_target_families=require_ambiguity_target_families,
+            semantic_target_families=semantic_target_families or {},
+            require_semantic_target_families=require_semantic_target_families,
+            semantic_target_kinds=semantic_target_kinds or {},
         )
         if self.refinement_mode == "typed_delta":
             assert self.refinement_delta_provider is not None
@@ -438,7 +444,9 @@ class ModelCaseExecutor:
             # This is an explicit host contract.  The model may reference a
             # supplied target, but an adapter-generated positional id is never
             # silently remapped to an evaluation/corpus id.
-            state["allowed_semantic_target_ids"] = self.host_target_ids.get(case.case_id, ())
+            state["semantic_target_catalog"] = dict(
+                self.host_target_catalog.get(case.case_id, {})
+            )
         if (
             self.interpretation_context_mode == "context_aware"
             and case.model_input == "contextual"
@@ -579,6 +587,11 @@ class ModelCaseExecutor:
                     (_QuestionIntent(expected_kind, None, ()),) if expected_kind else ()
                 )
                 case_target_bindings = self._target_bindings_for_case(case)
+                case_catalog = self.host_target_catalog.get(case.case_id, {})
+                case_target_kinds = {
+                    target_id: ClarificationKind(target["kind"])
+                    for target_id, target in case_catalog.items()
+                }
                 workflow["required_turns"] = len(expected_intents)
                 answer_index = 0
 
@@ -623,8 +636,9 @@ class ModelCaseExecutor:
 
                 policy = _ReplayPolicy(
                     self._refinement_policy(
-                        ambiguity_target_families=case_target_bindings,
-                        require_ambiguity_target_families=self.strict_semantic_target_binding,
+                        semantic_target_families=case_target_bindings,
+                        require_semantic_target_families=self.strict_semantic_target_binding,
+                        semantic_target_kinds=case_target_kinds,
                     ),
                     expected_intents=expected_intents,
                     telemetry=workflow,

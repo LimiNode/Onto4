@@ -5,7 +5,12 @@ import pytest
 
 from onto4.cli.main import main
 from onto4.core import PredicateCall, PredicateExpr, Term
-from onto4.pipeline import ModelCaseExecutor
+from onto4.pipeline import (
+    ModelCaseExecutor,
+    host_semantic_target_bindings,
+    load_clarification_corpus,
+    load_semantic_target_catalog,
+)
 from onto4.pipeline.model_evaluation import _ReplayPolicy
 from onto4.pipeline.clarification_corpus import ClarificationCorpusCase
 from onto4.pipeline.evaluation import EvaluationOutcome
@@ -13,6 +18,7 @@ from onto4.providers import (
     FixtureFormalizationProvider,
     FixtureInterpretationProvider,
     InterpretationRequest,
+    OpenAICompatibleInterpretationProvider,
     ProviderTransportError,
 )
 from onto4.providers.diagnostics import ProviderStageEvent
@@ -553,14 +559,12 @@ def test_dialogue_replay_does_not_reorder_host_questions_for_script():
     assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
 
 
-def test_dialogue_replay_allows_semantic_target_reindex_when_binding_is_unique():
+def test_dialogue_replay_rejects_wrong_semantic_target_even_when_family_is_unique():
     execution = _ambiguous_dialogue_executor(ambiguity_ids=("runtime-mass",))(
         _dialogue_case(), request_timeout_seconds=1.0
     )
 
-    assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
-    assert execution.diagnostics["question_target_family"] == "opaque"
-    assert '"question_target_family": "mass"' not in json.dumps(execution.diagnostics)
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_UNVERIFIED
 
 
 def test_model_case_executor_rejects_unscoped_semantic_binding_keys():
@@ -721,10 +725,19 @@ cases:
     )
     receipt = tmp_path / "receipts.jsonl"
     report = tmp_path / "report.md"
+    target_catalog = tmp_path / "targets.yaml"
+    target_catalog.write_text(
+        "version: 1\nname: public\ncases:\n  - case_id: safe-case\n"
+        "    targets:\n      - id: public-mass\n        kind: Meaning\n"
+        "        description: Public mass distinction.\n",
+        encoding="utf-8",
+    )
+    prompts = []
 
     class FakeClient:
         def complete(self, messages, **kwargs):
             prompt = messages[1]["content"]
+            prompts.append(prompt)
             if "Formalize the supplied interpretation" in prompt:
                 payload = {
                     "candidates": [{
@@ -752,6 +765,7 @@ cases:
         "eval-corpus",
         "--mode", "model-backed",
         "--corpus", str(corpus),
+        "--target-catalog", str(target_catalog),
         "--receipt", str(receipt),
         "--report", str(report),
         "--endpoint", "http://provider.test/v1",
@@ -766,3 +780,102 @@ cases:
     assert "What is the mass" not in safe_receipt
     assert "fake-model" not in safe_receipt.splitlines()[1]
     assert "ONTO4_API_TOKEN" not in safe_receipt
+    assert "public-mass" in prompts[0]
+
+
+def test_adapter_backed_two_turn_binding_preserves_public_catalog_and_oracle_boundary():
+    corpus = load_clarification_corpus(
+        ROOT / "eval/clarification/bounded-dialogue-v1.yaml"
+    )
+    case = next(item for item in corpus.cases if item.case_id == "intrinsic-time-bounded")
+    _, target_catalog = load_semantic_target_catalog(
+        ROOT / "eval/clarification/bounded-dialogue-targets-v1.yaml"
+    )
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+            self.prompts = []
+
+        def complete(self, messages, **kwargs):
+            self.prompts.append(messages[1]["content"])
+            payloads = (
+                {
+                    "source_text": case.utterance,
+                    "conceptual_depth": "ordinary",
+                    "ambiguities": [{
+                        "term": "intrinsic present",
+                        "description": "the phrase has more than one temporal reading",
+                        "target_id": "ambiguity-present",
+                    }],
+                    "presuppositions": [],
+                    "ontologies": [],
+                    "readings": [],
+                },
+                {
+                    "source_text": case.utterance,
+                    "conceptual_depth": "ordinary",
+                    "ambiguities": [],
+                    "presuppositions": [],
+                    "ontologies": [{
+                        "label": "observer-independent time",
+                        "description": "the sequence has a present independently of observation",
+                        "target_id": "ambiguity-observer",
+                    }],
+                    "readings": [],
+                },
+                {
+                    "source_text": case.utterance,
+                    "conceptual_depth": "ordinary",
+                    "ambiguities": [],
+                    "presuppositions": [],
+                    "ontologies": [],
+                    "readings": [],
+                },
+            )
+            payload = payloads[self.calls]
+            self.calls += 1
+            return {"choices": [{"message": {"content": json.dumps(payload)}}]}
+
+    class Formalizer:
+        def formalize(self, request):
+            return (
+                FormalizationCandidate(
+                    "time-order",
+                    "time order",
+                    "time-order",
+                    "relational_time",
+                    PredicateExpr(
+                        PredicateCall(
+                            "earlier_than",
+                            (Term("past_t"), Term("now")),
+                        )
+                    ),
+                ),
+            )
+
+    client = Client()
+    adapter = OpenAICompatibleInterpretationProvider(client)
+    executor = ModelCaseExecutor(
+        adapter,
+        Formalizer(),
+        {"relational_time": load_context(ROOT / "profiles/contexts/relational_time.yaml")},
+        semantic_target_bindings=host_semantic_target_bindings(corpus),
+        strict_semantic_target_binding=True,
+        host_target_catalog=target_catalog,
+    )
+
+    execution = executor(case, request_timeout_seconds=2.0)
+
+    assert execution.outcome is EvaluationOutcome.NEED_EVIDENCE
+    assert execution.diagnostics["questions_issued"] == 2
+    assert execution.diagnostics["answers_consumed"] == 2
+    assert execution.diagnostics["reassessment_performed"] is True
+    assert client.calls == 3
+    assert "ambiguity-present" in client.prompts[0]
+    assert "ambiguity-observer" in client.prompts[1]
+    assert "ambiguity-observer" in client.prompts[2]
+    all_prompts = "\n".join(client.prompts)
+    assert "target_family" not in all_prompts
+    assert "expected_clarification" not in all_prompts
+    assert "observer_independence" not in all_prompts

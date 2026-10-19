@@ -202,11 +202,11 @@ def test_stable_target_binding_ignores_model_wording_but_keeps_goals_distinct():
         )
 
     same_goal = FixtureClarificationPolicy(
-        ambiguity_target_families={
+        semantic_target_families={
             "ambiguity-a": "identity-criterion",
             "ambiguity-b": "identity-criterion",
         },
-        require_ambiguity_target_families=True,
+        require_semantic_target_families=True,
     )
     first = InterpretationSpace(
         "wording-a", "Claim.", ConceptualDepth.Ordinary,
@@ -224,11 +224,11 @@ def test_stable_target_binding_ignores_model_wording_but_keeps_goals_distinct():
     )
 
     different_goal = FixtureClarificationPolicy(
-        ambiguity_target_families={
+        semantic_target_families={
             "ambiguity-a": "identity-criterion",
             "ambiguity-b": "intrinsic-time",
         },
-        require_ambiguity_target_families=True,
+        require_semantic_target_families=True,
     )
     different_question = different_goal.choose(context_for(second))
     assert different_question is not None

@@ -71,6 +71,8 @@ def _clarification_refinement_choices(
     landscape = context.landscape
     if interpretation.ambiguities:
         return ("NeedMeaningClarification",)
+    if any(item.target_id is not None for item in interpretation.ontologies):
+        return ("NeedOntologyClarification",)
     if landscape.status is CrossCandidateStatus.FormalizationConflict:
         if has_discriminating_reading_provenance(context.assessments):
             return ("NeedMeaningClarification",)

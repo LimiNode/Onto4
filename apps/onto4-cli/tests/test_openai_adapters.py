@@ -238,7 +238,9 @@ def test_interpretation_adapter_requires_explicit_host_target_reference():
     result = provider.interpret(
         InterpretationRequest(
             "The door is closed.",
-            state={"allowed_semantic_target_ids": ("host-target",)},
+            state={"semantic_target_catalog": {
+                "host-target": {"kind": "Meaning", "description": "door state"}
+            }},
         )
     )
 
@@ -254,9 +256,46 @@ def test_interpretation_adapter_rejects_unbound_target_reference():
         OpenAICompatibleInterpretationProvider(FakeClient(payload)).interpret(
             InterpretationRequest(
                 "The door is closed.",
-                state={"allowed_semantic_target_ids": ("host-target",)},
+                state={"semantic_target_catalog": {
+                    "host-target": {"kind": "Meaning", "description": "door state"}
+                }},
             )
         )
+
+
+def test_refinement_preserves_catalog_and_rejects_target_expansion():
+    client = FakeClient(interpretation_payload())
+    provider = OpenAICompatibleInterpretationProvider(client)
+    catalog = {
+        "host-target": {"kind": "Meaning", "description": "door state"}
+    }
+    initial = provider.interpret(
+        InterpretationRequest(
+            "The door is closed.",
+            state={"semantic_target_catalog": catalog},
+        )
+    )
+    client.payload = {
+        **interpretation_payload(),
+        "ambiguities": [{
+            "term": "closed",
+            "description": "position or lock",
+            "target_id": "expanded-by-model",
+        }],
+    }
+    question = ClarificationQuestion(
+        "meaning:host-target",
+        ClarificationKind.Meaning,
+        "What does closed mean?",
+        ("host-target",),
+        structural_target_ids=("ambiguity-0",),
+    )
+
+    with pytest.raises(ProviderSchemaError, match="allowed host target"):
+        provider.refine(initial, question, "not open")
+
+    assert "host-target" in client.messages[1]["content"]
+    assert "expanded-by-model" not in client.messages[1]["content"]
 
 
 def test_bounded_corpus_ids_do_not_match_adapter_positional_ids():

@@ -35,6 +35,7 @@ class OntologyCandidate:
     id: str
     label: str
     description: str
+    target_id: str | None = None
 
 
 @dataclass(frozen=True)

@@ -19,6 +19,7 @@ from onto4.pipeline import (
     host_semantic_target_bindings,
     issue_reasoning_clarification,
     load_clarification_corpus,
+    load_semantic_target_catalog,
     reassess_reasoning_session_per_reading,
     start_reasoning_session_per_reading,
 )
@@ -42,6 +43,7 @@ from onto4.reasoning import (
 ROOT = Path(__file__).parents[1]
 CORPUS = ROOT / "eval/clarification/corpus.yaml"
 EPISTEMIC_CORPUS = ROOT / "eval/clarification/epistemic-ontology-v1.yaml"
+BOUNDED_TARGETS = ROOT / "eval/clarification/bounded-dialogue-targets-v1.yaml"
 
 
 def test_clarification_corpus_loads_and_hides_oracle_fields_from_public_input():
@@ -127,6 +129,22 @@ cases:
         "utterance": "claim",
         "context": "supplied-context",
     }
+
+
+def test_public_semantic_target_catalog_is_versioned_and_oracle_free():
+    version, targets = load_semantic_target_catalog(BOUNDED_TARGETS)
+
+    assert version == 1
+    assert targets["intrinsic-time-bounded"]["ambiguity-observer"] == {
+        "kind": "Ontology",
+        "description": (
+            "Whether the claim assumes observer-independent time rather than "
+            "sequence order alone."
+        ),
+    }
+    serialized = yaml.safe_dump(targets)
+    assert "target_family" not in serialized
+    assert "expected_clarification" not in serialized
 
 
 def test_corpus_rejects_contradictory_target_family_oracle(tmp_path):
