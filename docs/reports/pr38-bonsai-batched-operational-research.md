@@ -9,7 +9,7 @@ final T/F/U/C oracle, and the pilot produced zero semantic-comparable
 observations.
 
 Baseline source: `e1057cca1c3e89809056c9082a2f8fd17ffe4732`  
-Final source after the corrective pass: `3e64f5d3dd4bec59808aa53b3b812ed5cba532d5`  
+Final source after the corrective pass: `3b52e46fbccd8921e29aaf2d0f8de8281bb3f27e`  
 Corpus: `bounded-dialogue-v1`, digest `ca77ec9fab468f267483918892c2a24799fab3242ceb0281857a917dbb826fb3`  
 Target catalog: version `1`, digest `3fa40f87fcaa5766b1ee8ffad03f148892349cc5479dc08f77d46568223bc233`
 
@@ -126,8 +126,8 @@ Before the change, the baseline had 454 tests. After the change:
 - `compileall`: pass;
 - `git diff --check`: pass.
 
-The exact-head CI rerun for `3e64f5d3dd4bec59808aa53b3b812ed5cba532d5` is the
-remaining publication gate.
+Exact-head CI run `39298460528` passed on Python 3.10 and 3.12 for the final
+source commit.
 
 ## Interpretation and remaining blockers
 
