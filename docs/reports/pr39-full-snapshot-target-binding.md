@@ -20,20 +20,22 @@ Sampling: temperature `0`, thinking disabled, maximum output `4096` tokens  \
 Context digests: not applicable to the host-bound fixture protocol  \
 Semantic oracle: none; target preservation only  \
 Run identifiers: `pr39-bonsai-20261019-target-binding-full-snapshot-1536`,
-`pr39-bonsai-20261019-target-binding-isolated-4096`,
-`pr39-bonsai-20261019-target-binding-two-turn-4096`
+`pr39-bonsai-20261019-target-binding-e2e-4096-corrected`,
+`pr39-bonsai-20261019-target-binding-two-turn-4096-corrected-v2`
 
 ## Protocol
 
 The controlled initial `InterpretationSpace` contained one ambiguity, one
-ontology candidate and one reading. The ambiguity and ontology candidate were
-bound to public catalog entries before the provider call:
+ontology candidate and one reading. The host-bound public catalog and the
+two questions matched the frozen corpus exactly:
 
-- genome case: `ambiguity-genome` and `ambiguity-observer`;
-- intrinsic-time case: `ambiguity-present` and `ambiguity-observer`.
+| case | turn 1 | turn 2 |
+| --- | --- | --- |
+| genome identity | Meaning → `ambiguity-genome` | Meaning → `ambiguity-criterion` |
+| intrinsic time | Meaning → `ambiguity-present` | Ontology → `ambiguity-observer` |
 
-The host issued one Meaning question, accepted the successor snapshot, then
-issued one Ontology question against that successor. Full Snapshot was called
+The host issued the first question, accepted the successor snapshot, then
+issued the second question against that successor. Full Snapshot was called
 independently for each transition. The host retained the existing strict
 provenance checks; the experiment only observed the returned target IDs.
 
@@ -53,12 +55,16 @@ created.
 
 | case | transitions | accepted | Meaning ID preserved after turn 1 | preserved after turn 2 | Ontology ID preserved after turn 1 | preserved after turn 2 |
 | --- | ---: | ---: | --- | --- | --- | --- |
-| genome identity | 2 | 2 | yes | yes | yes | yes |
+| genome identity | 2 | 1 | no (retargeted) | not reached | n/a | n/a |
 | intrinsic time | 2 | 2 | yes | yes | yes | yes |
 
-All four Full Snapshot transitions were schema-valid and accepted. Structural
-IDs remained stable in this fixture, and the public semantic IDs were retained
-in every successor returned by the model.
+The intrinsic-time case had two schema-valid, host-admitted transitions and
+preserved both public IDs. In the genome case, the first transition parsed and
+passed host admission but changed the ambiguity binding from
+`ambiguity-genome` to `ambiguity-criterion`; the second transition then failed
+schema validation. These are synthetic preservation observations because the
+initial snapshots were host-bound; they are not evidence that the frozen corpus
+produced those bindings.
 
 This result is conditional: the model was given a host-bound initial snapshot,
 the public catalog was present in the refinement prompt, and the run did not
@@ -75,18 +81,26 @@ as a latency or quality win against the 1536 E2E baseline.
 
 ## Conclusion
 
-The experiment separates two failure modes that were conflated in the Bonsai
-pilot:
+The matched experiment separates three failure modes that were conflated in the
+Bonsai pilot:
 
 1. In the ordinary E2E path, the model may produce a structurally valid
    successor without a public semantic binding; the host correctly refuses to
    call that a verified target-family match.
 2. Given a host-bound initial snapshot and sufficient output budget, Bonsai can
-   preserve the supplied semantic IDs across two Full Snapshot transitions.
+   preserve the supplied semantic IDs across two Full Snapshot transitions for
+   the intrinsic-time fixture.
+3. The same protocol can pass parsing and host admission while changing a
+   valid target to the wrong valid target, as in genome turn 1. A valid public
+   ID is therefore not by itself evidence of correct target provenance.
 
 No production behavior is changed by this report. In particular, Onto4 must
 not automatically copy a missing successor `target_id` from a prior snapshot.
 The next experiment should test whether an explicit host-issued target-binding
 operation can be admitted without turning structural position into semantic
 identity. Until that protocol is specified and independently evaluated, the
-E2E target-binding failure remains unresolved.
+E2E target-binding failure remains unresolved. The redacted machine-readable
+evidence is in
+`docs/reports/pr39-full-snapshot-target-binding-evidence.json`; the executable
+fixture runner is
+`apps/onto4-cli/research/pr39_target_binding_runner.py`.

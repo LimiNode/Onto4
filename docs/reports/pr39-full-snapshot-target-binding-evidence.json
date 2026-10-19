@@ -1,0 +1,91 @@
+{
+  "record_type": "pr39_target_binding_evidence",
+  "source_sha": "d969338ee040e304e4dc1afb0f3aa1a373604967",
+  "model": "F:\\AI\\models\\bonsai2-27b\\Ternary-Bonsai-2-27B-PQ2_0.gguf",
+  "backend": "llama.cpp OpenAI-compatible /v1",
+  "sampling": {
+    "temperature": 0,
+    "thinking_enabled": false,
+    "max_output_tokens": 4096
+  },
+  "prompt_version": "pr39-target-binding-v1",
+  "model_artifact_digest": null,
+  "prompt_hash": null,
+  "semantic_oracle": null,
+  "e2e": {
+    "run_id": "pr39-bonsai-20261019-target-binding-e2e-4096-corrected",
+    "corpus": "bounded-dialogue-v1",
+    "target_catalog": "bounded-dialogue-targets-v1",
+    "cases": 2,
+    "outcomes": {
+      "question_intent_unverified": 2,
+      "reassessment_performed": 0,
+      "semantic_comparable": 0
+    },
+    "detail_code": "family_unverified"
+  },
+  "isolated": {
+    "run_id": "pr39-bonsai-20261019-target-binding-two-turn-4096-corrected-v2",
+    "protocol": "host_bound_two_turn_full_snapshot",
+    "catalog_binding": "snapshot_bound_provider_registry",
+    "semantic_oracle": null,
+    "cases": [
+      {
+        "case_id": "genome-identity-bounded",
+        "initial": {
+          "ambiguity_target_ids": ["ambiguity-genome"],
+          "ontology_target_ids": []
+        },
+        "turns": [
+          {
+            "turn": 1,
+            "kind": "Meaning",
+            "question_target_ids": ["ambiguity-genome"],
+            "parser_valid": true,
+            "host_admission": true,
+            "transition_provenance_valid": true,
+            "successor_ambiguity_target_ids": ["ambiguity-criterion"],
+            "target_preserved": false
+          },
+          {
+            "turn": 2,
+            "kind": "Meaning",
+            "question_target_ids": ["ambiguity-criterion"],
+            "parser_valid": false,
+            "host_admission": false,
+            "transition_provenance_valid": false,
+            "error_code": "ProviderSchemaError"
+          }
+        ]
+      },
+      {
+        "case_id": "intrinsic-time-bounded",
+        "initial": {
+          "ambiguity_target_ids": ["ambiguity-present"],
+          "ontology_target_ids": ["ambiguity-observer"]
+        },
+        "turns": [
+          {
+            "turn": 1,
+            "kind": "Meaning",
+            "question_target_ids": ["ambiguity-present"],
+            "parser_valid": true,
+            "host_admission": true,
+            "transition_provenance_valid": true,
+            "target_preserved": true
+          },
+          {
+            "turn": 2,
+            "kind": "Ontology",
+            "question_target_ids": ["ambiguity-observer"],
+            "parser_valid": true,
+            "host_admission": true,
+            "transition_provenance_valid": true,
+            "target_preserved": true
+          }
+        ]
+      }
+    ]
+  },
+  "privacy": "redacted IDs and stage outcomes only; no prompts, raw model payloads or credentials"
+}
