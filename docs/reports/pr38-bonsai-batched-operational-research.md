@@ -9,7 +9,7 @@ final T/F/U/C oracle, and the pilot produced zero semantic-comparable
 observations.
 
 Baseline source: `e1057cca1c3e89809056c9082a2f8fd17ffe4732`  
-Final source after the corrective pass: `9334205468e10f19b9686a9246a3e2f95a9f1df2`<br>
+Final source after the corrective pass: `9334205468e10f19b9686a9246a3e2f95a9f1df2`\
 Corpus: `bounded-dialogue-v1`, digest `ca77ec9fab468f267483918892c2a24799fab3242ceb0281857a917dbb826fb3`  
 Target catalog: version `1`, digest `3fa40f87fcaa5766b1ee8ffad03f148892349cc5479dc08f77d46568223bc233`
 
