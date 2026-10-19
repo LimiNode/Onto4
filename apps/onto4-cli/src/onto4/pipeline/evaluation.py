@@ -99,6 +99,8 @@ class EvaluationConfig:
     context_profile_digests: Mapping[str, str] = field(default_factory=dict)
     interpretation_context_mode: str = "context_late"
     refinement_mode: str = "full_snapshot"
+    target_catalog_version: int | None = None
+    target_catalog_digest: str | None = None
 
     def __post_init__(self) -> None:
         if self.request_timeout_seconds <= 0:

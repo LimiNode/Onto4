@@ -228,11 +228,26 @@ def _workflow_status(
             elif type(required_turns) is not int or required_turns < 1:
                 checks.append(None)
             else:
+                records = diagnostics.get("question_records")
+                records_valid = (
+                    isinstance(records, list)
+                    and len(records) >= required_turns
+                    and all(
+                        isinstance(record, Mapping)
+                        and record.get("question_script_target_family_match") is True
+                        for record in records[:required_turns]
+                    )
+                )
                 checks.append(
-                    receipt.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
+                    receipt.outcome in {
+                        EvaluationOutcome.ASSESSMENT_COMPLETED,
+                        EvaluationOutcome.NEED_EVIDENCE,
+                        EvaluationOutcome.CANNOT_PROCEED,
+                    }
                     and all(int(value) >= required_turns for value in counters)
                     and bool(required[-2])
                     and bool(required[-1])
+                    and records_valid
                 )
         else:
             checks.append(None)
@@ -240,14 +255,24 @@ def _workflow_status(
     expected_clarification = case.expected_clarification
     if isinstance(expected_clarification, Mapping):
         expected_kind = expected_clarification.get("kind")
-        observed_kind = receipt.diagnostics.get("question_kind")
+        records = receipt.diagnostics.get("question_records")
+        first_record = records[0] if isinstance(records, list) and records else None
+        observed_kind = (
+            first_record.get("question_kind")
+            if isinstance(first_record, Mapping)
+            else receipt.diagnostics.get("question_kind")
+        )
         if isinstance(expected_kind, str):
             checks.append(
                 observed_kind == expected_kind if observed_kind is not None else None
             )
         expected_target_family = expected_clarification.get("target_family")
         if isinstance(expected_target_family, str):
-            observed_match = receipt.diagnostics.get("question_target_family_match")
+            observed_match = (
+                first_record.get("question_target_family_match")
+                if isinstance(first_record, Mapping)
+                else receipt.diagnostics.get("question_target_family_match")
+            )
             checks.append(observed_match if isinstance(observed_match, bool) else None)
 
     if not checks:
@@ -310,6 +335,7 @@ def _cell(
         "accepted_refinements",
         "completed_reassessments",
         "question_intent_failure_reason",
+        "unsupported_transition",
         "last_stage",
         "questions_issued",
         "answers_consumed",
@@ -318,6 +344,7 @@ def _cell(
         "question_target_family",
         "question_target_family_match",
         "question_target_ids",
+        "question_records",
         "refinement_accepted",
         "reassessment_performed",
         "clarification_turns_known",
@@ -579,6 +606,8 @@ def run_paired_benchmark(
         "priced" if output_cost_per_million is not None else "not_priced",
     )
     report_metadata.setdefault("output_cost_per_million", output_cost_per_million)
+    report_metadata.setdefault("target_catalog_version", config.target_catalog_version)
+    report_metadata.setdefault("target_catalog_digest", config.target_catalog_digest)
     return PairedBenchmarkRun(
         corpus_name=corpus.name,
         corpus_version=corpus.version,
@@ -908,6 +937,8 @@ def rescore_paired_receipts(
         "priced" if output_cost_per_million is not None else "not_priced",
     )
     report_metadata.setdefault("output_cost_per_million", output_cost_per_million)
+    report_metadata.setdefault("target_catalog_version", baseline_config.target_catalog_version)
+    report_metadata.setdefault("target_catalog_digest", baseline_config.target_catalog_digest)
     cell_tuple = tuple(cells)
     return PairedBenchmarkRun(
         corpus_name=corpus.name,

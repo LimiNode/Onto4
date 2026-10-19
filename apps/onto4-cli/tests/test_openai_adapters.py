@@ -248,6 +248,43 @@ def test_interpretation_adapter_requires_explicit_host_target_reference():
     assert result.ambiguities[0].target_id == "host-target"
 
 
+def test_interpretation_adapter_rejects_target_reference_with_wrong_kind():
+    payload = interpretation_payload()
+    payload["ambiguities"][0]["target_id"] = "ontology-target"
+    with pytest.raises(ProviderSchemaError, match="wrong target kind"):
+        OpenAICompatibleInterpretationProvider(FakeClient(payload)).interpret(
+            InterpretationRequest(
+                "The door is closed.",
+                state={"semantic_target_catalog": {
+                    "ontology-target": {
+                        "kind": "Ontology",
+                        "description": "an ontological frame",
+                    }
+                }},
+            )
+        )
+
+
+def test_target_catalog_isolated_for_identical_snapshot_ids():
+    client = FakeClient(interpretation_payload())
+    provider = OpenAICompatibleInterpretationProvider(client)
+    first_catalog = {"first": {"kind": "Meaning", "description": "first"}}
+    second_catalog = {"second": {"kind": "Meaning", "description": "second"}}
+    first = provider.interpret(
+        InterpretationRequest("The door is closed.", state={"semantic_target_catalog": first_catalog})
+    )
+    second = provider.interpret(
+        InterpretationRequest("The door is closed.", state={"semantic_target_catalog": second_catalog})
+    )
+    question = ClarificationQuestion(
+        "meaning:closed", ClarificationKind.Meaning, "What does closed mean?", ("ambiguity-0",)
+    )
+    provider.refine(first, question, "first answer")
+    assert '"first"' in client.messages[1]["content"]
+    provider.refine(second, question, "second answer")
+    assert '"second"' in client.messages[1]["content"]
+
+
 def test_interpretation_adapter_rejects_unbound_target_reference():
     payload = interpretation_payload()
     payload["ambiguities"][0]["target_id"] = "not-host-issued"

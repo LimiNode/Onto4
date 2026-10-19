@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -96,6 +97,16 @@ def load_semantic_target_catalog(
             }
         result[case_id] = case_targets
     return version, result
+
+
+def semantic_target_catalog_digest(path: str | Path) -> str:
+    """Return the exact SHA-256 digest of a public target catalog artifact."""
+
+    try:
+        payload = Path(path).read_bytes()
+    except OSError as exc:
+        raise ValueError(f"Unable to read semantic target catalog {path}.") from exc
+    return hashlib.sha256(payload).hexdigest()
 
 
 def host_semantic_target_bindings(

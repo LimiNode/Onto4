@@ -626,6 +626,19 @@ def test_typed_delta_marks_unrelated_question_unsupported():
     assert boundaries == []
 
 
+def test_typed_delta_reports_unsupported_ontology_creation_transition():
+    initial = _space("initial", ambiguous=True)
+    policy = TypedDeltaClarificationPolicy(
+        FixtureClarificationPolicy(),
+        object(),
+    )
+    question = ClarificationQuestion(
+        "ontology:new", ClarificationKind.Ontology, "Which ontology?", ("ambiguity-0",)
+    )
+    with pytest.raises(ValueError, match="unsupported_transition"):
+        policy.successor(interpretation=initial, question=question, answer="ontology")
+
+
 def test_interactive_dialogue_completes_two_question_fixture_loop():
     initial = replace(
         _space("initial", ambiguous=True),

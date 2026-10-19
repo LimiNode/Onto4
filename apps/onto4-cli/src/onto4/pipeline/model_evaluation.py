@@ -566,6 +566,7 @@ class ModelCaseExecutor:
             "reassessment_performed": False,
             "clarification_turns": None,
             "clarification_turns_known": False,
+            "question_records": [],
         }
 
         def with_workflow(diagnostics: Mapping[str, object] | None = None) -> dict[str, object]:
@@ -598,6 +599,26 @@ class ModelCaseExecutor:
                 def validate_question(_, question) -> None:
                     policy.validate_issued(question)
                     expected_intent = expected_intents[policy.issued_questions]
+                    expected_clarification = case.expected_clarification
+                    corpus_match = None
+                    if isinstance(expected_clarification, Mapping):
+                        expected_family = expected_clarification.get("target_family")
+                        if isinstance(expected_family, str) and expected_family.strip():
+                            corpus_match = question.target_family == expected_family
+                    record = {
+                        "turn_index": policy.issued_questions,
+                        "question_id": question.id,
+                        "question_kind": question.kind.value,
+                        "question_target_family": _safe_target_family(question.target_family),
+                        "question_script_target_family_match": (
+                            question.target_family == expected_intent.target_family
+                        ),
+                        "question_target_family_match": corpus_match,
+                        "question_target_ids": tuple(question.target_ids),
+                    }
+                    records = workflow.setdefault("question_records", [])
+                    assert isinstance(records, list)
+                    records.append(record)
                     telemetry = {
                         "questions_issued": int(workflow["questions_issued"]) + 1,
                         "question_id": question.id,
@@ -609,13 +630,8 @@ class ModelCaseExecutor:
                         "question_target_ids": tuple(question.target_ids),
                         "last_stage": "question_issued",
                     }
-                    expected_clarification = case.expected_clarification
-                    if isinstance(expected_clarification, Mapping):
-                        expected_family = expected_clarification.get("target_family")
-                        if isinstance(expected_family, str) and expected_family.strip():
-                            telemetry["question_target_family_match"] = (
-                                question.target_family == expected_family
-                            )
+                    if corpus_match is not None:
+                        telemetry["question_target_family_match"] = corpus_match
                     workflow.update(telemetry)
 
                 def input_fn(_: str) -> str:
@@ -811,8 +827,14 @@ class ModelCaseExecutor:
                 stage_timings=timings,
                 stage_outcomes=outcomes,
                 stage_details=details,
-                detail_code="typed_delta_unsupported",
-                diagnostics=with_workflow(),
+                detail_code=(
+                    "unsupported_transition"
+                    if str(exc).startswith("unsupported_transition:")
+                    else "typed_delta_unsupported"
+                ),
+                diagnostics=with_workflow({
+                    "unsupported_transition": str(exc).startswith("unsupported_transition:"),
+                }),
             )
         except _ReplayError as exc:
             calls, timings, outcomes, details = self._metadata()

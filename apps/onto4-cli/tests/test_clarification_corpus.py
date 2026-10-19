@@ -20,6 +20,7 @@ from onto4.pipeline import (
     issue_reasoning_clarification,
     load_clarification_corpus,
     load_semantic_target_catalog,
+    semantic_target_catalog_digest,
     reassess_reasoning_session_per_reading,
     start_reasoning_session_per_reading,
 )
@@ -145,6 +146,15 @@ def test_public_semantic_target_catalog_is_versioned_and_oracle_free():
     serialized = yaml.safe_dump(targets)
     assert "target_family" not in serialized
     assert "expected_clarification" not in serialized
+
+
+def test_public_semantic_target_catalog_digest_is_stable(tmp_path):
+    path = tmp_path / "targets.yaml"
+    path.write_text("target_catalog:\n  version: 1\n  cases: []\n", encoding="utf-8")
+    first = semantic_target_catalog_digest(path)
+    assert first == semantic_target_catalog_digest(path)
+    path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    assert semantic_target_catalog_digest(path) != first
 
 
 def test_corpus_rejects_contradictory_target_family_oracle(tmp_path):

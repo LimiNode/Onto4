@@ -27,6 +27,7 @@ from onto4.pipeline import (
     load_clarification_corpus,
     host_semantic_target_bindings,
     load_semantic_target_catalog,
+    semantic_target_catalog_digest,
     offline_fixture_executor,
     run_interactive_dialogue,
     TypedDeltaClarificationPolicy,
@@ -256,6 +257,8 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
         corpus = load_clarification_corpus(args.corpus)
         semantic_target_bindings = host_semantic_target_bindings(corpus)
         target_catalog = {}
+        target_catalog_version = None
+        target_catalog_digest = None
         digest = corpus_digest(args.corpus)
         if args.mode == "offline" and args.refinement_mode == "typed_delta":
             raise ValueError(
@@ -273,7 +276,8 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                 raise ValueError("Model-backed evaluation requires at least one --context.")
             if args.target_catalog is None:
                 raise ValueError("Model-backed evaluation requires --target-catalog.")
-            _, target_catalog = load_semantic_target_catalog(args.target_catalog)
+            target_catalog_version, target_catalog = load_semantic_target_catalog(args.target_catalog)
+            target_catalog_digest = semantic_target_catalog_digest(args.target_catalog)
             auth = EndpointAuthKind(args.auth)
             token = os.environ.get(args.token_env) if auth is EndpointAuthKind.Bearer else None
             profile = ProviderProfile(
@@ -351,6 +355,8 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
             },
             interpretation_context_mode=args.interpretation_context_mode,
             refinement_mode=args.refinement_mode,
+            target_catalog_version=target_catalog_version,
+            target_catalog_digest=target_catalog_digest,
         )
         run = SequentialEvaluationRunner(
             executor,
@@ -375,7 +381,8 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     try:
         corpus = load_clarification_corpus(args.corpus)
         semantic_target_bindings = host_semantic_target_bindings(corpus)
-        _, target_catalog = load_semantic_target_catalog(args.target_catalog)
+        target_catalog_version, target_catalog = load_semantic_target_catalog(args.target_catalog)
+        target_catalog_digest = semantic_target_catalog_digest(args.target_catalog)
         if not args.context:
             raise ValueError("A controlled benchmark requires at least one --context.")
         auth = EndpointAuthKind(args.auth)
@@ -452,6 +459,8 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                 for path in args.context
             },
             variant="paired-ab",
+            target_catalog_version=target_catalog_version,
+            target_catalog_digest=target_catalog_digest,
         )
         run = run_paired_benchmark(
             corpus,
@@ -462,6 +471,8 @@ def _run_benchmark(args: argparse.Namespace) -> int:
             metadata={
                 "backend": args.backend_description,
                 "oracle_version": args.oracle_version,
+                "target_catalog_version": target_catalog_version,
+                "target_catalog_digest": target_catalog_digest,
                 "model_artifact_digest": args.model_artifact_digest,
                 "sampling": {
                     "temperature": args.temperature,

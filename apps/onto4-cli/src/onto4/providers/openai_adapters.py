@@ -208,6 +208,7 @@ def _parse_description_items(
     constructor: Any,
     *,
     allowed_target_ids: tuple[str, ...] = (),
+    target_catalog: Mapping[str, Mapping[str, str]] | None = None,
 ) -> tuple[Any, ...]:
     if not isinstance(value, list):
         raise ProviderSchemaError(f"{path} must be a JSON array.")
@@ -231,6 +232,10 @@ def _parse_description_items(
                     raise ProviderSchemaError(
                         f"{path}[{index}].target_id is not an allowed host target."
                     )
+                if target_catalog is not None and target_catalog[target_id].get("kind") != "Meaning":
+                    raise ProviderSchemaError(
+                        f"{path}[{index}].target_id has the wrong target kind."
+                    )
             result.append(constructor(identifier, _string(item.get("term"), f"{path}[{index}].term"), description, target_id))
         else:
             result.append(constructor(identifier, description))
@@ -241,6 +246,7 @@ def _parse_ontology_candidates(
     value: Any,
     *,
     allowed_target_ids: tuple[str, ...] = (),
+    target_catalog: Mapping[str, Mapping[str, str]] | None = None,
 ) -> tuple[OntologyCandidate, ...]:
     if not isinstance(value, list):
         raise ProviderSchemaError("ontologies must be a JSON array.")
@@ -259,6 +265,10 @@ def _parse_ontology_candidates(
             if target_id not in allowed_target_ids:
                 raise ProviderSchemaError(
                     f"ontologies[{index}].target_id is not an allowed host target."
+                )
+            if target_catalog is not None and target_catalog[target_id].get("kind") != "Ontology":
+                raise ProviderSchemaError(
+                    f"ontologies[{index}].target_id has the wrong target kind."
                 )
         result.append(
             OntologyCandidate(
@@ -364,10 +374,13 @@ def _parse_interpretation(payload: Mapping[str, Any], request: InterpretationReq
         ambiguities=_parse_description_items(
             payload["ambiguities"], "ambiguities", Ambiguity,
             allowed_target_ids=tuple(target_catalog),
+            target_catalog=target_catalog,
         ),
         presuppositions=_parse_description_items(payload["presuppositions"], "presuppositions", Presupposition),
         ontologies=_parse_ontology_candidates(
-            payload["ontologies"], allowed_target_ids=tuple(target_catalog)
+            payload["ontologies"],
+            allowed_target_ids=tuple(target_catalog),
+            target_catalog=target_catalog,
         ),
         readings=_parse_readings(
             payload["readings"],
@@ -548,7 +561,10 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
         self.client = client
         self.trace = trace
         self.prompt_variant = prompt_variant
-        self._target_catalogs: dict[str, dict[str, dict[str, str]]] = {}
+        # Catalog provenance is bound to the concrete immutable snapshot
+        # object, not its model-generated ``id``.  Two cases may legitimately
+        # produce byte-identical snapshots with different host catalogs.
+        self._target_catalogs: dict[int, dict[str, dict[str, str]]] = {}
 
     def _remember_target_catalog(
         self,
@@ -559,7 +575,8 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
             target_id: dict(definition)
             for target_id, definition in catalog.items()
         }
-        previous = self._target_catalogs.setdefault(interpretation.id, normalized)
+        key = id(interpretation)
+        previous = self._target_catalogs.setdefault(key, normalized)
         if previous != normalized:
             raise ProviderSchemaError(
                 "Interpretation snapshot has conflicting semantic target catalogs."
@@ -671,7 +688,7 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
         conceptual depth are fixed by the host and validated by the parser.
         """
 
-        target_catalog = self._target_catalogs.get(interpretation.id, {})
+        target_catalog = self._target_catalogs.get(id(interpretation), {})
         current_json = json.dumps(
             _interpretation_projection(interpretation),
             ensure_ascii=False,

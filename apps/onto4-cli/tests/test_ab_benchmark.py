@@ -105,6 +105,23 @@ def test_paired_benchmark_runs_all_four_cells_and_preserves_pairing(tmp_path):
     assert '"A2_vs_B2"' in payload
 
 
+def test_target_catalog_provenance_is_carried_into_benchmark_metadata():
+    run = run_paired_benchmark(
+        _corpus(),
+        executor_factory=lambda _condition: (
+            lambda case, *, request_timeout_seconds: CaseExecution(
+                EvaluationOutcome.ASSESSMENT_COMPLETED
+            )
+        ),
+        config=EvaluationConfig(
+            target_catalog_version=1,
+            target_catalog_digest="catalog-sha256",
+        ),
+    )
+    assert run.metadata["target_catalog_version"] == 1
+    assert run.metadata["target_catalog_digest"] == "catalog-sha256"
+
+
 def test_execution_failure_is_unverified_and_not_a_semantic_error():
     corpus = _corpus()
 
@@ -160,6 +177,59 @@ def test_dialogue_incomplete_does_not_count_as_reassessment_success():
     assert all(cell.workflow_status == BenchmarkStatus.INCORRECT.value for cell in run.cells)
     assert all(cell.semantic_status == BenchmarkStatus.NOT_COMPARABLE.value for cell in run.cells)
     assert run.summary.semantic_errors == 0
+
+
+def test_multiturn_workflow_scores_each_scripted_question_and_accepts_need_evidence():
+    corpus = ClarificationCorpus(
+        version=2,
+        name="multiturn-workflow",
+        cases=(
+            ClarificationCorpusCase(
+                case_id="dialogue",
+                utterance="Claim.",
+                context=None,
+                hidden_interpretation=None,
+                expected_clarification={"kind": "Meaning", "target_family": "first"},
+                expected_after_answer={"disposition": "dialogue_reassessment_required"},
+                mode="dialogue",
+            ),
+        ),
+    )
+    records = [
+        {
+            "question_kind": "Meaning",
+            "question_target_family_match": True,
+            "question_script_target_family_match": True,
+        },
+        {
+            "question_kind": "Ontology",
+            "question_target_family_match": None,
+            "question_script_target_family_match": True,
+        },
+    ]
+
+    run = run_paired_benchmark(
+        corpus,
+        executor_factory=lambda _condition: (
+            lambda case, *, request_timeout_seconds: CaseExecution(
+                EvaluationOutcome.NEED_EVIDENCE,
+                diagnostics={
+                    "required_turns": 2,
+                    "questions_issued": 2,
+                    "answers_consumed": 2,
+                    "admitted_turns": 2,
+                    "answered_turns": 2,
+                    "accepted_refinements": 2,
+                    "completed_reassessments": 2,
+                    "refinement_accepted": True,
+                    "reassessment_performed": True,
+                    "question_records": records,
+                },
+            )
+        ),
+        config=EvaluationConfig(),
+    )
+    assert all(cell.workflow_status == BenchmarkStatus.CORRECT.value for cell in run.cells)
 
 
 def test_missing_semantic_oracle_is_not_comparable():
