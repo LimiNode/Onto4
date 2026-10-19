@@ -74,6 +74,85 @@ class ReceiptProvenanceError(ValueError):
     """Receipt artifacts cannot be trusted for paired re-scoring."""
 
 
+def _scripted_question_intents(
+    case: ClarificationCorpusCase,
+) -> tuple[tuple[str | None, str | None, tuple[str, ...] | None], ...]:
+    """Extract the host-owned question contract from the public dialogue script."""
+
+    intents: list[tuple[str | None, str | None, tuple[str, ...] | None]] = []
+    for turn in case.dialogue:
+        if turn.get("role") != "assistant":
+            continue
+        if not any(key in turn for key in ("question_kind", "target_family", "target_ids")):
+            continue
+        raw_ids = turn.get("target_ids")
+        target_ids = (
+            tuple(raw_ids)
+            if isinstance(raw_ids, list)
+            and all(isinstance(item, str) and item for item in raw_ids)
+            else None
+        )
+        intents.append(
+            (
+                turn.get("question_kind") if isinstance(turn.get("question_kind"), str) else None,
+                turn.get("target_family") if isinstance(turn.get("target_family"), str) else None,
+                target_ids,
+            )
+        )
+    return tuple(intents)
+
+
+def _target_family_digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _scripted_question_records_status(
+    case: ClarificationCorpusCase,
+    diagnostics: Mapping[str, object],
+) -> bool | None:
+    """Compare every recorded question with the immutable corpus script.
+
+    ``None`` means that required evidence is missing; ``False`` means a
+    present, comparable record demonstrably contradicts the script.
+    """
+
+    expected = _scripted_question_intents(case)
+    records = diagnostics.get("question_records")
+    if not expected:
+        return None
+    if not isinstance(records, list):
+        return None
+    if len(records) > len(expected):
+        return False
+    if len(records) < len(expected):
+        return None
+    for index, (expected_kind, expected_family, expected_ids) in enumerate(expected):
+        record = records[index]
+        if not isinstance(record, Mapping):
+            return None
+        if record.get("turn_index") != index:
+            return False
+        actual_kind = record.get("question_kind")
+        actual_ids = record.get("question_target_ids")
+        if expected_kind is None or expected_family is None or expected_ids is None:
+            return None
+        family_match = record.get("question_script_target_family_match")
+        family_digest = record.get("question_target_family_digest")
+        if actual_kind is None or actual_ids is None or family_match is None:
+            return None
+        if family_match is not True:
+            return False
+        if actual_kind != expected_kind:
+            return False
+        if family_digest is None:
+            return None
+        if family_digest != _target_family_digest(expected_family):
+            return False
+        if tuple(actual_ids) != expected_ids:
+            return False
+    return True
+
+
 @dataclass(frozen=True)
 class BenchmarkCondition:
     """One cell in the frozen 2x2 interpretation/refinement design."""
@@ -203,6 +282,8 @@ def _workflow_status(
         elif expected_disposition == "clarification_required":
             checks.append(receipt.outcome is EvaluationOutcome.CLARIFICATION_REQUESTED)
         elif expected_disposition == "dialogue_reassessment_required":
+            expected_intents = _scripted_question_intents(case)
+            expected_turn_count = len(expected_intents)
             required_turns = diagnostics.get("required_turns")
             counters = (
                 diagnostics.get("questions_issued"),
@@ -216,32 +297,27 @@ def _workflow_status(
                 diagnostics.get("refinement_accepted"),
                 diagnostics.get("reassessment_performed"),
             )
+            record_status = _scripted_question_records_status(case, diagnostics)
             if receipt.outcome in {
                 EvaluationOutcome.DIALOGUE_INCOMPLETE,
                 EvaluationOutcome.SCRIPT_EXHAUSTED,
             }:
                 checks.append(False)
+            elif not expected_intents:
+                checks.append(None)
             elif any(value is None for value in required):
                 checks.append(None)
             elif any(type(value) is not int for value in counters):
                 checks.append(None)
-            elif type(required_turns) is not int or required_turns < 1:
+            elif type(required_turns) is not int:
+                checks.append(None)
+            elif required_turns != expected_turn_count:
+                checks.append(False)
+            elif record_status is None:
                 checks.append(None)
             else:
-                records = diagnostics.get("question_records")
-                records_valid: bool | None
-                if not isinstance(records, list):
-                    records_valid = None
-                else:
-                    records_valid = len(records) >= required_turns and all(
-                        isinstance(record, Mapping)
-                        and record.get("question_script_target_family_match") is True
-                        for record in records[:required_turns]
-                    )
                 checks.append(
-                    None
-                    if records_valid is None
-                    else (
+                    (
                     receipt.outcome in {
                         EvaluationOutcome.ASSESSMENT_COMPLETED,
                         EvaluationOutcome.NEED_EVIDENCE,
@@ -250,7 +326,7 @@ def _workflow_status(
                     and all(int(value) >= required_turns for value in counters)
                     and bool(required[-2])
                     and bool(required[-1])
-                    and records_valid
+                    and record_status
                     )
                 )
         else:
@@ -350,6 +426,7 @@ def _cell(
         "question_id",
         "question_kind",
         "question_target_family",
+        "question_target_family_digest",
         "question_target_family_match",
         "question_target_ids",
         "question_records",

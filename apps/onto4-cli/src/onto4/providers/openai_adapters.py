@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import weakref
 from time import perf_counter
 from dataclasses import replace
 from typing import Any, Callable, Mapping, Sequence
@@ -562,9 +563,11 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
         self.trace = trace
         self.prompt_variant = prompt_variant
         # Catalog provenance is bound to the concrete immutable snapshot
-        # object, not its model-generated ``id``.  Two cases may legitimately
-        # produce byte-identical snapshots with different host catalogs.
-        self._target_catalogs: dict[int, dict[str, dict[str, str]]] = {}
+        # object, not its model-generated ``id``.  Weak identity references
+        # avoid both equal-content collisions and stale object-id reuse.
+        self._target_catalogs: list[
+            tuple[weakref.ReferenceType[InterpretationSpace], dict[str, dict[str, str]]]
+        ] = []
 
     def _remember_target_catalog(
         self,
@@ -575,12 +578,38 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
             target_id: dict(definition)
             for target_id, definition in catalog.items()
         }
-        key = id(interpretation)
-        previous = self._target_catalogs.setdefault(key, normalized)
-        if previous != normalized:
-            raise ProviderSchemaError(
-                "Interpretation snapshot has conflicting semantic target catalogs."
-            )
+        live: list[
+            tuple[weakref.ReferenceType[InterpretationSpace], dict[str, dict[str, str]]]
+        ] = []
+        for reference, previous in self._target_catalogs:
+            snapshot = reference()
+            if snapshot is None:
+                continue
+            live.append((reference, previous))
+            if snapshot is interpretation:
+                if previous != normalized:
+                    raise ProviderSchemaError(
+                        "Interpretation snapshot has conflicting semantic target catalogs."
+                    )
+                self._target_catalogs = live
+                return
+        live.append((weakref.ref(interpretation), normalized))
+        self._target_catalogs = live
+
+    def _catalog_for(self, interpretation: InterpretationSpace) -> dict[str, dict[str, str]]:
+        live: list[
+            tuple[weakref.ReferenceType[InterpretationSpace], dict[str, dict[str, str]]]
+        ] = []
+        result: dict[str, dict[str, str]] = {}
+        for reference, catalog in self._target_catalogs:
+            snapshot = reference()
+            if snapshot is None:
+                continue
+            live.append((reference, catalog))
+            if snapshot is interpretation:
+                result = catalog
+        self._target_catalogs = live
+        return result
 
     def interpret(self, request: InterpretationRequest) -> InterpretationSpace:
         requested_depth = (
@@ -688,7 +717,7 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
         conceptual depth are fixed by the host and validated by the parser.
         """
 
-        target_catalog = self._target_catalogs.get(id(interpretation), {})
+        target_catalog = self._catalog_for(interpretation)
         current_json = json.dumps(
             _interpretation_projection(interpretation),
             ensure_ascii=False,

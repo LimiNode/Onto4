@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import hashlib
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import Mapping, TypeAlias
@@ -62,6 +63,12 @@ def _safe_target_family(value: object) -> str | None:
     if normalized in {"candidate", "context", "reading", "ambiguity", "ontology"}:
         return normalized
     return "opaque"
+
+
+def _target_family_digest(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 class _ReplayError(ValueError):
@@ -610,6 +617,9 @@ class ModelCaseExecutor:
                         "question_id": question.id,
                         "question_kind": question.kind.value,
                         "question_target_family": _safe_target_family(question.target_family),
+                        "question_target_family_digest": _target_family_digest(
+                            question.target_family
+                        ),
                         "question_script_target_family_match": (
                             question.target_family == expected_intent.target_family
                         ),
@@ -829,11 +839,12 @@ class ModelCaseExecutor:
                 stage_details=details,
                 detail_code=(
                     "unsupported_transition"
-                    if str(exc).startswith("unsupported_transition:")
+                    if getattr(exc, "code", None) == "unsupported_transition"
                     else "typed_delta_unsupported"
                 ),
                 diagnostics=with_workflow({
-                    "unsupported_transition": str(exc).startswith("unsupported_transition:"),
+                    "unsupported_transition": getattr(exc, "code", None)
+                    == "unsupported_transition",
                 }),
             )
         except _ReplayError as exc:

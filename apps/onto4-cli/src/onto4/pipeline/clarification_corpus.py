@@ -345,5 +345,6 @@ __all__ = [
     "ClarificationCorpusCase",
     "host_semantic_target_bindings",
     "load_semantic_target_catalog",
+    "semantic_target_catalog_digest",
     "load_clarification_corpus",
 ]

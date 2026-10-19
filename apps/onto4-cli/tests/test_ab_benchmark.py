@@ -23,6 +23,8 @@ from onto4.pipeline.ab_benchmark import (
     _semantic_obligation_payload,
     _snapshot_digest,
     write_benchmark_report,
+    _workflow_status,
+    _target_family_digest,
 )
 from onto4.pipeline.evaluation import CaseReceipt
 from onto4.reasoning import (
@@ -192,6 +194,23 @@ def test_multiturn_workflow_scores_each_scripted_question_and_accepts_need_evide
                 expected_clarification={"kind": "Meaning", "target_family": "first"},
                 expected_after_answer={"disposition": "dialogue_reassessment_required"},
                 mode="dialogue",
+                dialogue=(
+                    {"role": "user", "text": "Claim."},
+                    {
+                        "role": "assistant",
+                        "question_kind": "Meaning",
+                        "target_family": "first",
+                        "target_ids": ["a"],
+                    },
+                    {"role": "user", "text": "answer"},
+                    {
+                        "role": "assistant",
+                        "question_kind": "Ontology",
+                        "target_family": "second",
+                        "target_ids": ["b"],
+                    },
+                    {"role": "user", "text": "answer two"},
+                ),
             ),
         ),
     )
@@ -200,11 +219,17 @@ def test_multiturn_workflow_scores_each_scripted_question_and_accepts_need_evide
             "question_kind": "Meaning",
             "question_target_family_match": True,
             "question_script_target_family_match": True,
+            "question_target_family_digest": _target_family_digest("first"),
+            "turn_index": 0,
+            "question_target_ids": ["a"],
         },
         {
             "question_kind": "Ontology",
             "question_target_family_match": None,
             "question_script_target_family_match": True,
+            "question_target_family_digest": _target_family_digest("second"),
+            "turn_index": 1,
+            "question_target_ids": ["b"],
         },
     ]
 
@@ -230,6 +255,106 @@ def test_multiturn_workflow_scores_each_scripted_question_and_accepts_need_evide
         config=EvaluationConfig(),
     )
     assert all(cell.workflow_status == BenchmarkStatus.CORRECT.value for cell in run.cells)
+
+
+def test_multiturn_workflow_rejects_tampered_order_kind_targets_and_counts():
+    case = ClarificationCorpusCase(
+        case_id="dialogue",
+        utterance="Claim.",
+        context=None,
+        hidden_interpretation=None,
+        expected_clarification={"kind": "Meaning", "target_family": "first"},
+        expected_after_answer={"disposition": "dialogue_reassessment_required"},
+        mode="dialogue",
+        dialogue=(
+            {"role": "user", "text": "Claim."},
+            {"role": "assistant", "question_kind": "Meaning", "target_family": "first", "target_ids": ["a"]},
+            {"role": "user", "text": "answer"},
+            {"role": "assistant", "question_kind": "Ontology", "target_family": "second", "target_ids": ["b"]},
+            {"role": "user", "text": "answer two"},
+        ),
+    )
+    base = {
+        "required_turns": 2,
+        "questions_issued": 2,
+        "answers_consumed": 2,
+        "admitted_turns": 2,
+        "answered_turns": 2,
+        "accepted_refinements": 2,
+        "completed_reassessments": 2,
+        "refinement_accepted": True,
+        "reassessment_performed": True,
+    }
+    records = [
+        {"turn_index": 0, "question_kind": "Meaning", "question_target_ids": ["a"], "question_script_target_family_match": True, "question_target_family_digest": _target_family_digest("first")},
+        {"turn_index": 1, "question_kind": "Ontology", "question_target_ids": ["b"], "question_script_target_family_match": True, "question_target_family_digest": _target_family_digest("second")},
+    ]
+    for tampered in (
+        [records[0], {**records[1], "question_kind": "Reference"}],
+        [records[0], {**records[1], "question_target_ids": ["wrong"]}],
+        [records[0], {**records[1], "question_target_family_digest": _target_family_digest("wrong") }],
+        [records[1], records[0]],
+    ):
+        diagnostics = {**base, "question_records": tampered}
+        receipt = CaseReceipt(
+            case_id=case.case_id,
+            case_mode=case.mode,
+            outcome=EvaluationOutcome.NEED_EVIDENCE,
+            elapsed_seconds=0.0,
+            diagnostics=diagnostics,
+        )
+        assert _workflow_status(case, receipt) is BenchmarkStatus.INCORRECT
+
+    reduced = {**base, "required_turns": 1, "question_records": records}
+    receipt = CaseReceipt(
+        case_id=case.case_id,
+        case_mode=case.mode,
+        outcome=EvaluationOutcome.NEED_EVIDENCE,
+        elapsed_seconds=0.0,
+        diagnostics=reduced,
+    )
+    assert _workflow_status(case, receipt) is BenchmarkStatus.INCORRECT
+
+    missing = {**base, "question_records": [records[0]]}
+    receipt = CaseReceipt(
+        case_id=case.case_id,
+        case_mode=case.mode,
+        outcome=EvaluationOutcome.NEED_EVIDENCE,
+        elapsed_seconds=0.0,
+        diagnostics=missing,
+    )
+    assert _workflow_status(case, receipt) is BenchmarkStatus.UNVERIFIED
+
+
+def test_dialogue_without_script_cannot_be_scored_correct_from_fabricated_records():
+    case = ClarificationCorpusCase(
+        case_id="unscripted",
+        utterance="Claim.",
+        context=None,
+        hidden_interpretation=None,
+        expected_clarification={"kind": "Meaning"},
+        expected_after_answer={"disposition": "dialogue_reassessment_required"},
+        mode="dialogue",
+    )
+    receipt = CaseReceipt(
+        case_id=case.case_id,
+        case_mode=case.mode,
+        outcome=EvaluationOutcome.NEED_EVIDENCE,
+        elapsed_seconds=0.0,
+        diagnostics={
+            "required_turns": 2,
+            "questions_issued": 2,
+            "answers_consumed": 2,
+            "admitted_turns": 2,
+            "answered_turns": 2,
+            "accepted_refinements": 2,
+            "completed_reassessments": 2,
+            "refinement_accepted": True,
+            "reassessment_performed": True,
+            "question_records": [{"question_script_target_family_match": True}],
+        },
+    )
+    assert _workflow_status(case, receipt) is BenchmarkStatus.UNVERIFIED
 
 
 def test_missing_semantic_oracle_is_not_comparable():

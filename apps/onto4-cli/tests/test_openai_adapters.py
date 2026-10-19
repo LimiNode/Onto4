@@ -1,4 +1,5 @@
 import json
+import gc
 from pathlib import Path
 
 import pytest
@@ -283,6 +284,21 @@ def test_target_catalog_isolated_for_identical_snapshot_ids():
     assert '"first"' in client.messages[1]["content"]
     provider.refine(second, question, "second answer")
     assert '"second"' in client.messages[1]["content"]
+
+
+def test_target_catalog_bindings_do_not_retain_dead_snapshots():
+    client = FakeClient(interpretation_payload())
+    provider = OpenAICompatibleInterpretationProvider(client)
+    catalog = {"target": {"kind": "Meaning", "description": "target"}}
+    snapshot = provider.interpret(
+        InterpretationRequest("The door is closed.", state={"semantic_target_catalog": catalog})
+    )
+    assert len(provider._target_catalogs) == 1
+    del snapshot
+    gc.collect()
+    # A subsequent lookup prunes dead weak references.
+    provider._catalog_for(InterpretationSpace("other", "The door is closed.", ConceptualDepth.Ordinary))
+    assert provider._target_catalogs == []
 
 
 def test_interpretation_adapter_rejects_unbound_target_reference():

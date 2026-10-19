@@ -293,7 +293,8 @@ class TypedDeltaClarificationPolicy(TransitionAwareClarificationPolicy):
             if question.kind is ClarificationKind.Ontology and not request.allowed_ontology_ids:
                 raise RefinementUnsupportedError(
                     "unsupported_transition: typed delta cannot create a new "
-                    "ontology candidate from this clarification target."
+                    "ontology candidate from this clarification target.",
+                    code="unsupported_transition",
                 )
             meaningful = set(allowed_operations) - {RefinementOperation.ABSTAIN.value}
             if not meaningful:
