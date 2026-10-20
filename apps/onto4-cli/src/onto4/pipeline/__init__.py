@@ -104,6 +104,14 @@ from .semantic_binding import (
     evaluate_binding_claims,
     parse_binding_claim,
 )
+from .semantic_adjudication import (
+    AdjudicationDecision,
+    AdjudicationSchemaError,
+    SemanticAdjudicationEvaluation,
+    SemanticAdjudicationReceipt,
+    evaluate_semantic_adjudication,
+    parse_adjudication_receipt,
+)
 from .decision_bridge import (
     ClarificationDecisionResult,
     ClarificationQuestionDecision,
@@ -228,6 +236,12 @@ __all__ = [
     "evaluate_binding_claim",
     "evaluate_binding_claims",
     "parse_binding_claim",
+    "AdjudicationDecision",
+    "AdjudicationSchemaError",
+    "SemanticAdjudicationEvaluation",
+    "SemanticAdjudicationReceipt",
+    "evaluate_semantic_adjudication",
+    "parse_adjudication_receipt",
     "build_clarification_request",
     "decide_clarification",
     "decide_clarification_question",
