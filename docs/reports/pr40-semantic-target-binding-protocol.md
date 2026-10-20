@@ -98,8 +98,8 @@ their model outputs or provenance fields.
 ## Current status
 
 - Baseline: `d969338ee040e304e4dc1afb0f3aa1a373604967` (merged PR #38).
-- Structural corrective pass implementation: `2ea587a324a8987adea49d1510e62c6cd3dfbc9f`.
-- Exact-head CI for that implementation: `39443827968` (Python 3.10/3.12) — success.
+- Structural corrective pass implementation: `d3a9168661d46f76b7f8ba0a41cc032da7058068`.
+- Exact-head CI for that implementation: `39471839646` (Python 3.10/3.12) — success.
 - Production admission: unchanged.
 - Automatic target-ID inheritance: prohibited.
 - Model-backed pilot: bounded paired run completed; no final T/F/U/C oracle.
