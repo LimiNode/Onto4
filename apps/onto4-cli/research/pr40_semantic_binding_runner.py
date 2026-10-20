@@ -13,7 +13,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from onto4.pipeline.semantic_binding import (
     BindingEvaluation,
@@ -44,7 +44,32 @@ from onto4.reasoning import (
 
 
 SOURCE_SHA = "d969338ee040e304e4dc1afb0f3aa1a373604967"
-PROMPT_VERSION = "pr40-semantic-binding-v2"
+PROMPT_VERSION = "pr40-semantic-binding-v3"
+EXPLICIT_BINDING_SYSTEM_PROMPT = "Return only the requested JSON object."
+
+# This is the canonical prompt template whose digest is recorded in evidence.
+# Runtime case data is interpolated into the template; it is not confused with
+# the version label or with a provider's private response payload.
+EXPLICIT_BINDING_PROMPT_TEMPLATE = (
+    "Refine the current interpretation after the user's answer. Return exactly "
+    "{{successor, binding_claim}}. The successor MUST have exactly these keys: "
+    "source_text, conceptual_depth, ambiguities, presuppositions, ontologies, "
+    "readings. Each ambiguity has exactly term, description, target_id (optional); "
+    "each presupposition has exactly description; each ontology has exactly label, "
+    "description, target_id (optional); each reading has exactly label, description "
+    "and presupposition_indexes. Do not put term or target_id in presuppositions. "
+    "The successor contains only source_text, conceptual_depth, ambiguities, "
+    "presuppositions, ontologies and readings; do not invent object IDs. The "
+    "binding_claim is a separate provider claim. Use relation anchored_update only "
+    "when the same host target remains the object of the refinement; otherwise use "
+    "no_binding. Do not infer a target from position. The host-issued target is the "
+    "only allowed target. Host previous_snapshot_id: {previous_snapshot_id}. "
+    "Host current_snapshot_id: {current_snapshot_id}. Public target catalog: "
+    "{public_catalog}\nCurrent interpretation: {current_interpretation}\nQuestion: "
+    "{question}\nAnswer: {answer}\nThe binding_claim fields are relation, "
+    "target_id, target_kind, source_target_id, previous_snapshot_id and "
+    "current_snapshot_id."
+)
 
 
 @dataclass(frozen=True)
@@ -164,6 +189,25 @@ def _evaluation_payload(evaluation: BindingEvaluation) -> dict[str, Any]:
     }
 
 
+def _parse_explicit_envelope(payload: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Require the exact provider-facing envelope before parsing its children."""
+
+    if not isinstance(payload, Mapping):
+        raise ProviderSchemaError("Explicit binding response must be a JSON object.")
+    expected = {"successor", "binding_claim"}
+    unknown = set(payload) - expected
+    missing = expected - set(payload)
+    if unknown:
+        raise ProviderSchemaError(f"Explicit binding response has unknown fields: {sorted(unknown)!r}.")
+    if missing:
+        raise ProviderSchemaError(f"Explicit binding response is missing fields: {sorted(missing)!r}.")
+    successor_payload = payload["successor"]
+    claim_payload = payload["binding_claim"]
+    if not isinstance(successor_payload, dict) or not isinstance(claim_payload, dict):
+        raise ProviderSchemaError("Explicit binding response requires successor and binding_claim objects.")
+    return successor_payload, claim_payload
+
+
 def _full_snapshot(
     client: OpenAICompatibleClient,
     spec: CaseSpec,
@@ -209,39 +253,23 @@ def _explicit_binding(
         target.id: {"kind": target.kind, "description": target.description}
         for target in catalog.targets.values()
     }
+    prompt = EXPLICIT_BINDING_PROMPT_TEMPLATE.format(
+        previous_snapshot_id=initial.id,
+        current_snapshot_id=host_successor_id,
+        public_catalog=json.dumps(public_catalog, ensure_ascii=False, sort_keys=True),
+        current_interpretation=json.dumps(_projection(initial), ensure_ascii=False, sort_keys=True),
+        question=json.dumps(
+            {"kind": question.kind.value, "target_ids": list(question.target_ids)},
+            ensure_ascii=False,
+        ),
+        answer=spec.answer,
+    )
     messages = (
-        {"role": "system", "content": "Return only the requested JSON object."},
-        {
-            "role": "user",
-            "content": (
-                "Refine the current interpretation after the user's answer. Return exactly "
-                "{successor, binding_claim}. The successor MUST have exactly these keys: "
-                "source_text, conceptual_depth, ambiguities, presuppositions, ontologies, "
-                "readings. Each ambiguity has exactly term, description, target_id (optional); "
-                "each presupposition has exactly description; each ontology has exactly label, "
-                "description, target_id (optional); each reading has exactly label, description "
-                "and presupposition_indexes. Do not put term or target_id in presuppositions. "
-                "The successor contains only source_text, "
-                "conceptual_depth, ambiguities, presuppositions, ontologies and readings; "
-                "do not invent object IDs. The binding_claim is a separate provider claim. "
-                "Use relation anchored_update only when the same host target remains the "
-                "object of the refinement; otherwise use no_binding. Do not infer a target "
-                "from position. The host-issued target is the only allowed target. "
-                f"Host previous_snapshot_id: {initial.id}. Host current_snapshot_id: {host_successor_id}. "
-                f"Public target catalog: {json.dumps(public_catalog, ensure_ascii=False, sort_keys=True)}\n"
-                f"Current interpretation: {json.dumps(_projection(initial), ensure_ascii=False, sort_keys=True)}\n"
-                f"Question: {json.dumps({'kind': question.kind.value, 'target_ids': list(question.target_ids)}, ensure_ascii=False)}\n"
-                f"Answer: {spec.answer}\n"
-                "The binding_claim fields are relation, target_id, target_kind, "
-                "source_target_id, previous_snapshot_id and current_snapshot_id."
-            ),
-        },
+        {"role": "system", "content": EXPLICIT_BINDING_SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
     )
     payload = _response_json(client, messages, stage="pr40-explicit-binding")
-    successor_payload = payload.get("successor")
-    claim_payload = payload.get("binding_claim")
-    if not isinstance(successor_payload, dict) or not isinstance(claim_payload, dict):
-        raise ProviderSchemaError("Explicit binding response requires successor and binding_claim objects.")
+    successor_payload, claim_payload = _parse_explicit_envelope(payload)
     parsed = _parse_interpretation(
         successor_payload,
         InterpretationRequest(
@@ -315,7 +343,13 @@ def main() -> None:
         timeout_seconds=90,
     )
     client = OpenAICompatibleClient(profile)
-    prompt_hash = hashlib.sha256(PROMPT_VERSION.encode("utf-8")).hexdigest()
+    prompt_template_digest = hashlib.sha256(
+        (
+            EXPLICIT_BINDING_SYSTEM_PROMPT
+            + "\n"
+            + EXPLICIT_BINDING_PROMPT_TEMPLATE
+        ).encode("utf-8")
+    ).hexdigest()
     payload = {
         "record_type": "pr40_semantic_target_binding_pilot",
         "run_id": args.run_id,
@@ -328,7 +362,7 @@ def main() -> None:
             "max_output_tokens": args.max_output_tokens,
         },
         "prompt_version": PROMPT_VERSION,
-        "prompt_hash": prompt_hash,
+        "prompt_template_digest": prompt_template_digest,
         "semantic_oracle": None,
         "host_workflow_admission": "not_evaluated",
         "cases": [run_case(client, spec) for spec in CASES],

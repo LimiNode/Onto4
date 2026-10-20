@@ -128,6 +128,18 @@ def test_permuting_two_meaning_targets_is_rejected():
     assert result.transition is CheckStatus.INVALID
 
 
+def test_preserve_rejects_a_different_source_target():
+    result = evaluate_binding_claim(
+        _claim(relation="preserve", source_target_id="target-b"),
+        transition=_transition(two_targets=True),
+        catalog=_catalog(),
+    )
+    assert result.schema is CheckStatus.VALID
+    assert result.catalog is CheckStatus.VALID
+    assert result.transition is CheckStatus.INVALID
+    assert "source target identity" in " ".join(result.errors)
+
+
 def test_cross_kind_binding_is_rejected_even_for_known_id():
     result = evaluate_binding_claim(
         _claim(target_id="target-o", target_kind="Ontology", source_target_id="target-o"),
@@ -176,9 +188,33 @@ def test_semantic_text_change_does_not_become_verified():
 
 def test_create_cannot_inherit_an_existing_target_id():
     result = evaluate_binding_claim(
-        _claim(relation="create"), transition=_transition(), catalog=_catalog()
+        _claim(relation="create", source_target_id=None),
+        transition=_transition(),
+        catalog=_catalog(),
+    )
+    assert result.schema is CheckStatus.VALID
+    assert result.transition is CheckStatus.INVALID
+
+
+def test_create_rejects_a_source_target_id_at_schema_boundary():
+    with pytest.raises(ValueError, match="create claim cannot carry source_target_id"):
+        parse_binding_claim(_claim(relation="create", source_target_id="target-a"))
+
+
+def test_duplicate_snapshot_target_ids_are_not_normalized_away():
+    transition = _transition()
+    conflicting_current = replace(
+        transition.current,
+        ontologies=(OntologyCandidate("o0", "same id", "other kind", target_id="target-a"),),
+    )
+    result = evaluate_binding_claim(
+        _claim(),
+        transition=BindingTransition(transition.previous, conflicting_current, transition.question),
+        catalog=_catalog(),
     )
     assert result.transition is CheckStatus.INVALID
+    assert any("duplicate target id" in error for error in result.errors)
+    assert any("conflicting kinds" in error for error in result.errors)
 
 
 def test_no_binding_is_explicit_non_comparable_outcome():

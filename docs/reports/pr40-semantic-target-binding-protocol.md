@@ -38,8 +38,17 @@ non-comparable outcome.
 
 `anchored_update` requires the same source and destination target ID and the
 target to exist in both snapshots. `create` requires the target to be new in
-the current snapshot. A `preserve` claim also names its source target so a
-permutation of two valid IDs is rejected.
+the current snapshot and does not carry a source target ID. A `preserve` claim
+also names the same source target as its destination, so a claim that points
+at another valid ID is rejected. Snapshot target IDs are checked before these
+relations are evaluated: duplicates and conflicting `Meaning`/`Ontology`
+kinds are invalid rather than silently normalized by a dictionary.
+
+The explicit-binding runner accepts exactly the outer keys `successor` and
+`binding_claim`; private oracle fields and arbitrary additions fail closed. Its
+`prompt_template_digest` is the SHA-256 digest of the canonical prompt
+template used by the runner. It is not a hash of the human-readable version
+label and is not a hash of a provider response.
 
 ## Deterministic validation matrix
 
@@ -58,7 +67,9 @@ The regression suite covers:
 - rejection of private oracle fields in model-facing claims;
 - valid `Ontology` binding.
 
-The deterministic tests validate the boundary, not final T/F/U/C correctness.
+The deterministic suite now contains 19 checks: 5 acceptance/metadata checks
+and 14 negative regressions. These tests validate the protocol boundary, not
+final T/F/U/C correctness.
 The bounded pilot used the same two frozen cases and `4096` output-token
 budget for one Full Snapshot and one explicit-binding call per case.
 
@@ -75,12 +86,15 @@ produced:
 
 Host workflow admission was not evaluated and no semantic oracle was supplied.
 The explicit-binding result therefore demonstrates a structurally admissible
-claim, not semantic equivalence of the returned text.
+claim, not semantic equivalence of the returned text. The published pilot
+receipts remain historical artifacts; the corrective pass does not rewrite
+their model outputs or provenance fields.
 
 ## Current status
 
 - Baseline: `d969338ee040e304e4dc1afb0f3aa1a373604967` (merged PR #38).
-- Research runner/evidence HEAD: `49fa7229f665c8ba0d6eab1bfa9320412e9c7c09`.
+- Research runner/evidence HEAD: updated by the structural corrective pass
+  (exact commit recorded with the handoff).
 - Exact-head CI: `39368828349` (Python 3.10/3.12) — success.
 - Production admission: unchanged.
 - Automatic target-ID inheritance: prohibited.
@@ -89,3 +103,6 @@ claim, not semantic equivalence of the returned text.
   `pr40-bonsai-20261020-semantic-binding-paired-4096-v2`.
 - Redacted machine-readable outputs: `pr40-semantic-target-binding-pilot.json`
   and `pr40-semantic-target-binding-pilot-v2.json`.
+- The corrective pass adds no new model run and leaves both receipts intact;
+  future runner output records `prompt_template_digest` instead of the former
+  version-label `prompt_hash`.

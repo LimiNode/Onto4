@@ -167,6 +167,8 @@ def parse_binding_claim(payload: Mapping[str, Any]) -> BindingClaim:
         raise BindingSchemaError("A preserve claim requires source_target_id.")
     if relation is BindingRelation.ANCHORED_UPDATE and source_target_id is None:
         raise BindingSchemaError("An anchored_update claim requires source_target_id.")
+    if relation is BindingRelation.CREATE and source_target_id is not None:
+        raise BindingSchemaError("A create claim cannot carry source_target_id.")
     return BindingClaim(
         relation=relation,
         target_id=target_id,
@@ -177,15 +179,32 @@ def parse_binding_claim(payload: Mapping[str, Any]) -> BindingClaim:
     )
 
 
-def _snapshot_targets(snapshot: InterpretationSpace) -> dict[str, str]:
+def _snapshot_targets(snapshot: InterpretationSpace) -> tuple[dict[str, str], tuple[str, ...]]:
     targets: dict[str, str] = {}
+    errors: list[str] = []
     for ambiguity in snapshot.ambiguities:
         if ambiguity.target_id is not None:
-            targets[ambiguity.target_id] = ClarificationKind.Meaning.value
+            target_id = ambiguity.target_id
+            kind = ClarificationKind.Meaning.value
+            previous_kind = targets.get(target_id)
+            if previous_kind is not None:
+                errors.append(f"Snapshot contains duplicate target id {target_id!r}.")
+                if previous_kind != kind:
+                    errors.append(f"Snapshot contains conflicting kinds for target id {target_id!r}.")
+            else:
+                targets[target_id] = kind
     for ontology in snapshot.ontologies:
         if ontology.target_id is not None:
-            targets[ontology.target_id] = ClarificationKind.Ontology.value
-    return targets
+            target_id = ontology.target_id
+            kind = ClarificationKind.Ontology.value
+            previous_kind = targets.get(target_id)
+            if previous_kind is not None:
+                errors.append(f"Snapshot contains duplicate target id {target_id!r}.")
+                if previous_kind != kind:
+                    errors.append(f"Snapshot contains conflicting kinds for target id {target_id!r}.")
+            else:
+                targets[target_id] = kind
+    return targets, tuple(errors)
 
 
 def _invalid(
@@ -252,16 +271,24 @@ def evaluate_binding_claim(
         lineage_status = CheckStatus.INVALID
         errors.append("Claim snapshot lineage does not match the host transition.")
 
-    previous_targets = _snapshot_targets(transition.previous)
-    current_targets = _snapshot_targets(transition.current)
+    previous_targets, previous_snapshot_errors = _snapshot_targets(transition.previous)
+    current_targets, current_snapshot_errors = _snapshot_targets(transition.current)
+    snapshot_errors = (*previous_snapshot_errors, *current_snapshot_errors)
+    if snapshot_errors:
+        transition_status = CheckStatus.INVALID
+        errors.extend(snapshot_errors)
     question_targets = set(transition.question.target_ids)
     if claim.relation is BindingRelation.NO_BINDING:
-        transition_status = CheckStatus.VALID
+        if not snapshot_errors:
+            transition_status = CheckStatus.VALID
     elif claim.target_id not in question_targets:
         transition_status = CheckStatus.INVALID
         errors.append("Claim target is not one of the host-issued question targets.")
     elif claim.relation is BindingRelation.PRESERVE:
-        if claim.target_id not in previous_targets or claim.target_id not in current_targets:
+        if claim.source_target_id != claim.target_id:
+            transition_status = CheckStatus.INVALID
+            errors.append("A preserve claim must retain the source target identity.")
+        elif claim.target_id not in previous_targets or claim.target_id not in current_targets:
             transition_status = CheckStatus.INVALID
             errors.append("A preserve claim must bind the target in both snapshots.")
     elif claim.relation is BindingRelation.ANCHORED_UPDATE:
