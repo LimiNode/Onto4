@@ -1,6 +1,7 @@
 {
   "record_type": "pr40_semantic_target_binding_protocol",
   "baseline_sha": "d969338ee040e304e4dc1afb0f3aa1a373604967",
+  "runner_source_sha": "49fa7229f665c8ba0d6eab1bfa9320412e9c7c09",
   "protocol": "research_only_explicit_binding_v1",
   "model_pilot": "bounded_paired_4096_v2",
   "production_admission_changed": false,

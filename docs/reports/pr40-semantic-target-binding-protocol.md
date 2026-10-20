@@ -80,6 +80,8 @@ claim, not semantic equivalence of the returned text.
 ## Current status
 
 - Baseline: `d969338ee040e304e4dc1afb0f3aa1a373604967` (merged PR #38).
+- Research runner/evidence HEAD: `49fa7229f665c8ba0d6eab1bfa9320412e9c7c09`.
+- Exact-head CI: `39368828349` (Python 3.10/3.12) — success.
 - Production admission: unchanged.
 - Automatic target-ID inheritance: prohibited.
 - Model-backed pilot: bounded paired run completed; no final T/F/U/C oracle.
