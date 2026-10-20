@@ -58,15 +58,32 @@ The regression suite covers:
 - rejection of private oracle fields in model-facing claims;
 - valid `Ontology` binding.
 
-These tests are deliberately offline. They validate the boundary, not a model
-and not final T/F/U/C correctness. A future bounded model pilot must report
-provider schema success, catalog/kind validity, lineage, transition admission,
-binding conflicts and semantic identity independently, and must preserve
-`unverified` when no independent semantic adjudication is available.
+The deterministic tests validate the boundary, not final T/F/U/C correctness.
+The bounded pilot used the same two frozen cases and `4096` output-token
+budget for one Full Snapshot and one explicit-binding call per case.
+
+The first explicit-binding prompt produced a schema failure in both cases:
+the model added `target_id`/`term` fields to presuppositions. That run is kept
+as a protocol-discipline baseline and was not counted as a semantic failure.
+After the prompt was made exact about every nested JSON shape, the repeat run
+produced:
+
+| case | Full Snapshot | explicit binding |
+| --- | --- | --- |
+| genome identity | provider-valid, target absent | provider-valid, structural checks valid, semantic identity unverified |
+| intrinsic time | provider-valid, target absent | provider-valid, structural checks valid, semantic identity unverified |
+
+Host workflow admission was not evaluated and no semantic oracle was supplied.
+The explicit-binding result therefore demonstrates a structurally admissible
+claim, not semantic equivalence of the returned text.
 
 ## Current status
 
 - Baseline: `d969338ee040e304e4dc1afb0f3aa1a373604967` (merged PR #38).
 - Production admission: unchanged.
 - Automatic target-ID inheritance: prohibited.
-- Model-backed pilot: not run in this initial protocol commit.
+- Model-backed pilot: bounded paired run completed; no final T/F/U/C oracle.
+- Pilot run IDs: `pr40-bonsai-20261020-semantic-binding-paired-4096` and
+  `pr40-bonsai-20261020-semantic-binding-paired-4096-v2`.
+- Redacted machine-readable outputs: `pr40-semantic-target-binding-pilot.json`
+  and `pr40-semantic-target-binding-pilot-v2.json`.

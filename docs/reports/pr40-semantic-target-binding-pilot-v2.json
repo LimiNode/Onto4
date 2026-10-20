@@ -1,0 +1,100 @@
+{
+  "record_type": "pr40_semantic_target_binding_pilot",
+  "run_id": "pr40-bonsai-20261020-semantic-binding-paired-4096-v2",
+  "source_sha": "d969338ee040e304e4dc1afb0f3aa1a373604967",
+  "model": "bonsai2-27b-pq2_0",
+  "backend": "llama.cpp OpenAI-compatible /v1",
+  "sampling": {
+    "temperature": 0,
+    "thinking_enabled": false,
+    "max_output_tokens": 4096
+  },
+  "prompt_version": "pr40-semantic-binding-v2",
+  "prompt_hash": "8d548fe62cb51d51da4db8b1bc939c4b67c8528dd0cc4b73a6672139a7f09550",
+  "semantic_oracle": null,
+  "host_workflow_admission": "not_evaluated",
+  "cases": [
+    {
+      "case_id": "genome-identity-bounded",
+      "question_kind": "Meaning",
+      "question_target_ids": [
+        "ambiguity-genome"
+      ],
+      "host_workflow_admission": "not_evaluated",
+      "semantic_oracle": "none",
+      "cells": [
+        {
+          "condition": "full_snapshot",
+          "provider_successor_valid": true,
+          "transition_provenance_valid": true,
+          "target_present_in_successor": false,
+          "binding": {
+            "schema": "valid",
+            "catalog": "valid",
+            "lineage": "valid",
+            "transition": "valid",
+            "semantic_identity": "not_comparable",
+            "structurally_admissible": false,
+            "errors": []
+          }
+        },
+        {
+          "condition": "explicit_binding",
+          "provider_successor_valid": true,
+          "transition_provenance_valid": true,
+          "target_present_in_successor": true,
+          "binding": {
+            "schema": "valid",
+            "catalog": "valid",
+            "lineage": "valid",
+            "transition": "valid",
+            "semantic_identity": "unverified",
+            "structurally_admissible": true,
+            "errors": []
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "intrinsic-time-bounded",
+      "question_kind": "Meaning",
+      "question_target_ids": [
+        "ambiguity-present"
+      ],
+      "host_workflow_admission": "not_evaluated",
+      "semantic_oracle": "none",
+      "cells": [
+        {
+          "condition": "full_snapshot",
+          "provider_successor_valid": true,
+          "transition_provenance_valid": true,
+          "target_present_in_successor": false,
+          "binding": {
+            "schema": "valid",
+            "catalog": "valid",
+            "lineage": "valid",
+            "transition": "valid",
+            "semantic_identity": "not_comparable",
+            "structurally_admissible": false,
+            "errors": []
+          }
+        },
+        {
+          "condition": "explicit_binding",
+          "provider_successor_valid": true,
+          "transition_provenance_valid": true,
+          "target_present_in_successor": true,
+          "binding": {
+            "schema": "valid",
+            "catalog": "valid",
+            "lineage": "valid",
+            "transition": "valid",
+            "semantic_identity": "unverified",
+            "structurally_admissible": true,
+            "errors": []
+          }
+        }
+      ]
+    }
+  ]
+}

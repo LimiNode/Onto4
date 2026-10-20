@@ -2,10 +2,32 @@
   "record_type": "pr40_semantic_target_binding_protocol",
   "baseline_sha": "d969338ee040e304e4dc1afb0f3aa1a373604967",
   "protocol": "research_only_explicit_binding_v1",
-  "model_pilot": "not_run",
+  "model_pilot": "bounded_paired_4096_v2",
   "production_admission_changed": false,
   "automatic_target_id_inheritance": false,
   "semantic_identity_default": "unverified",
+  "pilot_runs": [
+    {
+      "run_id": "pr40-bonsai-20261020-semantic-binding-paired-4096",
+      "prompt_version": "pr40-semantic-binding-v1",
+      "status": "schema_failure_baseline",
+      "detail_code": "schema_invalid",
+      "cases": 2,
+      "provider_valid_explicit_binding": 0
+    },
+    {
+      "run_id": "pr40-bonsai-20261020-semantic-binding-paired-4096-v2",
+      "prompt_version": "pr40-semantic-binding-v2",
+      "status": "completed",
+      "cases": 2,
+      "full_snapshot_provider_valid": 2,
+      "full_snapshot_target_present": 0,
+      "explicit_binding_provider_valid": 2,
+      "explicit_binding_structurally_admissible": 2,
+      "semantic_identity_verified": 0,
+      "host_workflow_admission": "not_evaluated"
+    }
+  ],
   "deterministic_cases": 13,
   "covered_failures": [
     "schema_invalid",
@@ -19,5 +41,5 @@
     "automatic_identity_inheritance",
     "private_oracle_field"
   ],
-  "privacy": "offline deterministic evidence only; no prompts, model payloads or credentials"
+  "privacy": "redacted stage outcomes only; no prompts, raw model payloads, credentials or local filesystem paths"
 }
