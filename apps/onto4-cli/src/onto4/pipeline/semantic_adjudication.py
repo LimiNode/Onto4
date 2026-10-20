@@ -61,6 +61,7 @@ class SemanticAdjudicationEvaluation:
     receipt: SemanticAdjudicationReceipt | None
     schema: CheckStatus
     provenance: CheckStatus
+    origin: CheckStatus
     independence: CheckStatus
     decision: AdjudicationDecision
     errors: tuple[str, ...] = ()
@@ -71,6 +72,7 @@ class SemanticAdjudicationEvaluation:
             self.decision is AdjudicationDecision.VERIFIED
             and self.schema is CheckStatus.VALID
             and self.provenance is CheckStatus.VALID
+            and self.origin is CheckStatus.VALID
             and self.independence is CheckStatus.VALID
         )
 
@@ -137,6 +139,7 @@ def _invalid(
     receipt: SemanticAdjudicationReceipt | None,
     schema: CheckStatus,
     provenance: CheckStatus,
+    origin: CheckStatus,
     independence: CheckStatus,
     errors: tuple[str, ...],
 ) -> SemanticAdjudicationEvaluation:
@@ -144,6 +147,7 @@ def _invalid(
         receipt=receipt,
         schema=schema,
         provenance=provenance,
+        origin=origin,
         independence=independence,
         decision=AdjudicationDecision.NOT_COMPARABLE,
         errors=errors,
@@ -157,6 +161,7 @@ def evaluate_semantic_adjudication(
     transition: BindingTransition,
     provider_id: str,
     expected_basis_digest: str,
+    trusted_adjudicator_registry: Mapping[str, str],
 ) -> SemanticAdjudicationEvaluation:
     """Validate an independent receipt without deriving semantic meaning.
 
@@ -171,6 +176,7 @@ def evaluate_semantic_adjudication(
             receipt=None,
             schema=CheckStatus.VALID,
             provenance=CheckStatus.INVALID,
+            origin=CheckStatus.NOT_APPLICABLE,
             independence=CheckStatus.INVALID,
             errors=("Provider identity is required for an independence check.",),
         )
@@ -179,6 +185,7 @@ def evaluate_semantic_adjudication(
             receipt=None,
             schema=CheckStatus.VALID,
             provenance=CheckStatus.INVALID,
+            origin=CheckStatus.NOT_APPLICABLE,
             independence=CheckStatus.NOT_APPLICABLE,
             errors=("Expected adjudication basis must be a lowercase SHA-256 digest.",),
         )
@@ -187,6 +194,7 @@ def evaluate_semantic_adjudication(
             receipt=None,
             schema=CheckStatus.NOT_APPLICABLE,
             provenance=CheckStatus.NOT_APPLICABLE,
+            origin=CheckStatus.NOT_APPLICABLE,
             independence=CheckStatus.NOT_APPLICABLE,
             errors=("Semantic adjudication requires a structurally admissible binding claim.",),
         )
@@ -195,6 +203,7 @@ def evaluate_semantic_adjudication(
             receipt=None,
             schema=CheckStatus.NOT_APPLICABLE,
             provenance=CheckStatus.NOT_APPLICABLE,
+            origin=CheckStatus.NOT_APPLICABLE,
             independence=CheckStatus.NOT_APPLICABLE,
             decision=AdjudicationDecision.NOT_COMPARABLE,
             errors=("No independent adjudication receipt was supplied.",),
@@ -206,14 +215,23 @@ def evaluate_semantic_adjudication(
             receipt=None,
             schema=CheckStatus.INVALID,
             provenance=CheckStatus.NOT_APPLICABLE,
+            origin=CheckStatus.NOT_APPLICABLE,
             independence=CheckStatus.NOT_APPLICABLE,
             errors=(str(exc),),
         )
 
     errors: list[str] = []
     provenance_status = CheckStatus.VALID
+    origin_status = CheckStatus.VALID
     independence_status = CheckStatus.VALID
     claim = binding.claim
+    if (
+        binding.evaluated_previous_snapshot_id != transition.previous.id
+        or binding.evaluated_current_snapshot_id != transition.current.id
+        or binding.evaluated_question_id != transition.question.id
+    ):
+        provenance_status = CheckStatus.INVALID
+        errors.append("Binding evaluation provenance does not match the host transition.")
     if (
         receipt.previous_snapshot_id != transition.previous.id
         or receipt.current_snapshot_id != transition.current.id
@@ -229,11 +247,27 @@ def evaluate_semantic_adjudication(
     if receipt.adjudicator_id == provider_id:
         independence_status = CheckStatus.INVALID
         errors.append("Adjudicator identity must be distinct from provider identity.")
-    decision = receipt.decision if provenance_status is CheckStatus.VALID and independence_status is CheckStatus.VALID else AdjudicationDecision.NOT_COMPARABLE
+    trusted_version = trusted_adjudicator_registry.get(receipt.adjudicator_id)
+    if trusted_version is None:
+        origin_status = CheckStatus.INVALID
+        errors.append("Adjudicator identity is not present in the host trusted registry.")
+    elif trusted_version != receipt.adjudicator_version:
+        origin_status = CheckStatus.INVALID
+        errors.append("Adjudicator version does not match the host trusted registry.")
+    decision = (
+        receipt.decision
+        if (
+            provenance_status is CheckStatus.VALID
+            and origin_status is CheckStatus.VALID
+            and independence_status is CheckStatus.VALID
+        )
+        else AdjudicationDecision.NOT_COMPARABLE
+    )
     return SemanticAdjudicationEvaluation(
         receipt=receipt,
         schema=CheckStatus.VALID,
         provenance=provenance_status,
+        origin=origin_status,
         independence=independence_status,
         decision=decision,
         errors=tuple(errors),

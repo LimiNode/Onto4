@@ -44,9 +44,11 @@ The evaluator checks four separate conditions:
 
 1. the receipt has the exact schema;
 2. its snapshots, target and relation match the structurally admissible
-   binding claim and issued transition;
+   binding claim and issued transition. The binding evaluation itself must
+   carry the same snapshot IDs and host question identity;
 3. its basis digest matches the host-owned basis for this run;
-4. the adjudicator identity differs from the provider identity.
+4. the adjudicator identity differs from the provider identity and matches a
+   host-owned trusted registry with the recorded `adjudicator_version`.
 
 Only a receipt that passes all four checks can produce `verified` or
 `contradicted`. A missing receipt, a structurally invalid binding or a failed
@@ -69,11 +71,13 @@ admit a successor snapshot.
 
 ## Deterministic boundary tests
 
-The first bounded implementation has eleven tests covering:
+The first bounded implementation has fifteen tests covering:
 
 - a valid independent receipt;
 - an explicitly contradicted receipt;
 - same-actor provider/adjudicator rejection;
+- untrusted adjudicator identities and versions;
+- reuse of a binding evaluation for another transition or question;
 - stale snapshot lineage;
 - target/relation mismatch;
 - basis-digest mismatch;
