@@ -59,10 +59,13 @@ The regression suite covers:
 - permutation of two valid `Meaning` targets;
 - cross-kind binding;
 - duplicate/conflicting claims;
+- `preserve` pointing at a different source target;
+- duplicate snapshot IDs and conflicting snapshot kinds;
 - stale snapshot lineage;
 - changed semantic text with structural success still marked
   `semantic_identity=unverified`;
 - attempted inheritance of an existing ID through `create`;
+- non-empty `source_target_id` on `create` at the schema boundary;
 - explicit `no_binding`;
 - rejection of private oracle fields in model-facing claims;
 - valid `Ontology` binding.
@@ -93,9 +96,8 @@ their model outputs or provenance fields.
 ## Current status
 
 - Baseline: `d969338ee040e304e4dc1afb0f3aa1a373604967` (merged PR #38).
-- Research runner/evidence HEAD: updated by the structural corrective pass
-  (exact commit recorded with the handoff).
-- Exact-head CI: `39368828349` (Python 3.10/3.12) — success.
+- Structural corrective pass implementation: `2ea587a324a8987adea49d1510e62c6cd3dfbc9f`.
+- Exact-head CI for that implementation: `39443827968` (Python 3.10/3.12) — success.
 - Production admission: unchanged.
 - Automatic target-ID inheritance: prohibited.
 - Model-backed pilot: bounded paired run completed; no final T/F/U/C oracle.
