@@ -1,0 +1,23 @@
+{
+  "record_type": "pr40_semantic_target_binding_protocol",
+  "baseline_sha": "d969338ee040e304e4dc1afb0f3aa1a373604967",
+  "protocol": "research_only_explicit_binding_v1",
+  "model_pilot": "not_run",
+  "production_admission_changed": false,
+  "automatic_target_id_inheritance": false,
+  "semantic_identity_default": "unverified",
+  "deterministic_cases": 13,
+  "covered_failures": [
+    "schema_invalid",
+    "unknown_target",
+    "wrong_valid_same_kind_target",
+    "target_permutation",
+    "cross_kind_binding",
+    "duplicate_or_conflicting_claim",
+    "stale_snapshot_lineage",
+    "unsupported_semantic_inference",
+    "automatic_identity_inheritance",
+    "private_oracle_field"
+  ],
+  "privacy": "offline deterministic evidence only; no prompts, model payloads or credentials"
+}
