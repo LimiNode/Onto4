@@ -10,7 +10,7 @@ from onto4.pipeline import (
     PublicSemanticTarget,
     SemanticTargetCatalog,
     evaluate_binding_claim,
-    evaluate_semantic_adjudication,
+    evaluate_semantic_adjudication as _evaluate_semantic_adjudication,
     parse_adjudication_receipt,
 )
 from onto4.reasoning import (
@@ -24,6 +24,11 @@ from onto4.reasoning import (
 
 BASIS_DIGEST = "a" * 64
 TRUSTED_REGISTRY = {"human-panel-1": "rubric-v1"}
+
+
+def evaluate_semantic_adjudication(payload, **kwargs):
+    kwargs.setdefault("origin_attested", True)
+    return _evaluate_semantic_adjudication(payload, **kwargs)
 
 
 def _transition() -> BindingTransition:
@@ -172,6 +177,22 @@ def test_untrusted_adjudicator_version_cannot_verify():
         provider_id="provider-bonsai",
         expected_basis_digest=BASIS_DIGEST,
         trusted_adjudicator_registry=TRUSTED_REGISTRY,
+    )
+    assert result.origin is CheckStatus.INVALID
+    assert result.decision is AdjudicationDecision.NOT_COMPARABLE
+    assert not result.verified
+
+
+def test_unattested_receipt_origin_cannot_verify():
+    transition, binding = _binding()
+    result = _evaluate_semantic_adjudication(
+        _receipt(),
+        binding=binding,
+        transition=transition,
+        provider_id="provider-bonsai",
+        expected_basis_digest=BASIS_DIGEST,
+        trusted_adjudicator_registry=TRUSTED_REGISTRY,
+        origin_attested=False,
     )
     assert result.origin is CheckStatus.INVALID
     assert result.decision is AdjudicationDecision.NOT_COMPARABLE

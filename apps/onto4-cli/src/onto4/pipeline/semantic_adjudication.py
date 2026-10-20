@@ -162,13 +162,16 @@ def evaluate_semantic_adjudication(
     provider_id: str,
     expected_basis_digest: str,
     trusted_adjudicator_registry: Mapping[str, str],
+    origin_attested: bool,
 ) -> SemanticAdjudicationEvaluation:
     """Validate an independent receipt without deriving semantic meaning.
 
     A structurally inadmissible binding cannot be upgraded by an adjudicator
     receipt.  For an admissible binding, the receipt must match the exact host
     transition and claim, use the expected host-owned basis, and name an actor
-    distinct from the provider.
+    distinct from the provider.  The host must also attest that the receipt
+    arrived through its trusted adjudication channel; the receipt cannot assert
+    this authority itself.
     """
 
     if not isinstance(provider_id, str) or not provider_id.strip():
@@ -188,6 +191,15 @@ def evaluate_semantic_adjudication(
             origin=CheckStatus.NOT_APPLICABLE,
             independence=CheckStatus.NOT_APPLICABLE,
             errors=("Expected adjudication basis must be a lowercase SHA-256 digest.",),
+        )
+    if not isinstance(origin_attested, bool) or not origin_attested:
+        return _invalid(
+            receipt=None,
+            schema=CheckStatus.VALID,
+            provenance=CheckStatus.NOT_APPLICABLE,
+            origin=CheckStatus.INVALID,
+            independence=CheckStatus.NOT_APPLICABLE,
+            errors=("Host trusted-origin attestation is required for adjudication.",),
         )
     if not binding.structurally_admissible or binding.claim is None:
         return _invalid(
@@ -229,6 +241,8 @@ def evaluate_semantic_adjudication(
         binding.evaluated_previous_snapshot_id != transition.previous.id
         or binding.evaluated_current_snapshot_id != transition.current.id
         or binding.evaluated_question_id != transition.question.id
+        or claim.previous_snapshot_id != binding.evaluated_previous_snapshot_id
+        or claim.current_snapshot_id != binding.evaluated_current_snapshot_id
     ):
         provenance_status = CheckStatus.INVALID
         errors.append("Binding evaluation provenance does not match the host transition.")

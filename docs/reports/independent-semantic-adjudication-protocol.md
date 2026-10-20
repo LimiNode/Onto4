@@ -48,7 +48,9 @@ The evaluator checks four separate conditions:
    carry the same snapshot IDs and host question identity;
 3. its basis digest matches the host-owned basis for this run;
 4. the adjudicator identity differs from the provider identity and matches a
-   host-owned trusted registry with the recorded `adjudicator_version`.
+   host-owned trusted registry with the recorded `adjudicator_version`, and the
+   host separately attests that the receipt arrived through that trusted
+   channel. The receipt cannot self-assert this authority.
 
 Only a receipt that passes all four checks can produce `verified` or
 `contradicted`. A missing receipt, a structurally invalid binding or a failed
@@ -71,12 +73,13 @@ admit a successor snapshot.
 
 ## Deterministic boundary tests
 
-The first bounded implementation has fifteen tests covering:
+The first bounded implementation has sixteen tests covering:
 
 - a valid independent receipt;
 - an explicitly contradicted receipt;
 - same-actor provider/adjudicator rejection;
 - untrusted adjudicator identities and versions;
+- an unattested receipt origin;
 - reuse of a binding evaluation for another transition or question;
 - stale snapshot lineage;
 - target/relation mismatch;
