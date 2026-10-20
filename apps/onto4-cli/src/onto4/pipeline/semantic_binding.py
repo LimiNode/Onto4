@@ -207,6 +207,28 @@ def _snapshot_targets(snapshot: InterpretationSpace) -> tuple[dict[str, str], tu
     return targets, tuple(errors)
 
 
+def _snapshot_catalog_errors(
+    snapshot_name: str,
+    targets: Mapping[str, str],
+    catalog: SemanticTargetCatalog,
+) -> tuple[str, ...]:
+    """Ensure every host snapshot target has its catalog-declared kind."""
+
+    errors: list[str] = []
+    for target_id, actual_kind in targets.items():
+        public_target = catalog.targets.get(target_id)
+        if public_target is None:
+            errors.append(
+                f"{snapshot_name} snapshot target id {target_id!r} is absent from the public catalog."
+            )
+        elif public_target.kind != actual_kind:
+            errors.append(
+                f"{snapshot_name} snapshot target {target_id!r} has kind {actual_kind!r}, "
+                f"but the public catalog declares {public_target.kind!r}."
+            )
+    return tuple(errors)
+
+
 def _invalid(
     claim: BindingClaim | None,
     *,
@@ -273,7 +295,15 @@ def evaluate_binding_claim(
 
     previous_targets, previous_snapshot_errors = _snapshot_targets(transition.previous)
     current_targets, current_snapshot_errors = _snapshot_targets(transition.current)
-    snapshot_errors = (*previous_snapshot_errors, *current_snapshot_errors)
+    snapshot_catalog_errors = (
+        *_snapshot_catalog_errors("Previous", previous_targets, catalog),
+        *_snapshot_catalog_errors("Current", current_targets, catalog),
+    )
+    snapshot_errors = (
+        *previous_snapshot_errors,
+        *current_snapshot_errors,
+        *snapshot_catalog_errors,
+    )
     if snapshot_errors:
         transition_status = CheckStatus.INVALID
         errors.extend(snapshot_errors)

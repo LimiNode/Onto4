@@ -217,6 +217,51 @@ def test_duplicate_snapshot_target_ids_are_not_normalized_away():
     assert any("conflicting kinds" in error for error in result.errors)
 
 
+def test_meaning_to_ontology_target_kind_drift_is_rejected_without_duplicate_ids():
+    transition = _transition()
+    current = replace(
+        transition.current,
+        ambiguities=(),
+        ontologies=(OntologyCandidate("o0", "drifted target", "new", target_id="target-a"),),
+    )
+    result = evaluate_binding_claim(
+        _claim(),
+        transition=BindingTransition(transition.previous, current, transition.question),
+        catalog=_catalog(),
+    )
+    assert result.catalog is CheckStatus.VALID
+    assert result.transition is CheckStatus.INVALID
+    assert any("Current snapshot target 'target-a'" in error for error in result.errors)
+
+
+def test_ontology_to_meaning_target_kind_drift_is_rejected_without_duplicate_ids():
+    transition = _transition()
+    previous = replace(
+        transition.previous,
+        ambiguities=(),
+        ontologies=(OntologyCandidate("o0", "drifted target", "old", target_id="target-a"),),
+    )
+    question = replace(
+        transition.question,
+        kind=ClarificationKind.Ontology,
+        target_ids=("target-a",),
+    )
+    ontology_catalog = SemanticTargetCatalog(
+        1,
+        {
+            "target-a": PublicSemanticTarget("target-a", "Ontology", "ontology target"),
+        },
+    )
+    result = evaluate_binding_claim(
+        _claim(target_kind="Ontology"),
+        transition=BindingTransition(previous, transition.current, question),
+        catalog=ontology_catalog,
+    )
+    assert result.catalog is CheckStatus.VALID
+    assert result.transition is CheckStatus.INVALID
+    assert any("Current snapshot target 'target-a'" in error for error in result.errors)
+
+
 def test_no_binding_is_explicit_non_comparable_outcome():
     result = evaluate_binding_claim(
         _claim(

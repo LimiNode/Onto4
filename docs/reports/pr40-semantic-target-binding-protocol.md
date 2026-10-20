@@ -61,6 +61,8 @@ The regression suite covers:
 - duplicate/conflicting claims;
 - `preserve` pointing at a different source target;
 - duplicate snapshot IDs and conflicting snapshot kinds;
+- snapshot `Meaning`/`Ontology` kind drift against the public catalog in either
+  transition direction;
 - stale snapshot lineage;
 - changed semantic text with structural success still marked
   `semantic_identity=unverified`;
@@ -70,8 +72,8 @@ The regression suite covers:
 - rejection of private oracle fields in model-facing claims;
 - valid `Ontology` binding.
 
-The deterministic suite now contains 19 checks: 5 acceptance/metadata checks
-and 14 negative regressions. These tests validate the protocol boundary, not
+The deterministic suite now contains 21 checks: 5 acceptance/metadata checks
+and 16 negative regressions. These tests validate the protocol boundary, not
 final T/F/U/C correctness.
 The bounded pilot used the same two frozen cases and `4096` output-token
 budget for one Full Snapshot and one explicit-binding call per case.
