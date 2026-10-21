@@ -32,14 +32,18 @@ future normalizer must supply. It contains:
 - only normalized `affirmed`, `denied` or `unspecified` commitments.
 
 Raw provider text, prompts and private oracle material are not fields in that
-envelope. An opaque source digest records which material an independently
-trusted normalizer inspected; the digest does not itself establish the
-material's meaning.
+envelope. The normalizer's `source_digest` is only an assertion until the host
+supplies the expected digest from a trusted source manifest. The evaluator
+requires those digests to match; a mismatch is `provenance=invalid` and
+`not_comparable`. The digest is computed over the canonical UTF-8 bytes of the
+selected source representation, with CRLF normalized to LF. The digest does
+not itself establish the material's meaning.
 
 Before using the commitments, the host checks that the record belongs to the
 same structurally admissible binding claim and host-issued transition, uses
-the selected `basis_digest`, arrived through an attested trusted-normalizer
-channel, and names an actor other than the provider. It then applies the
+the selected `basis_digest`, matches the host-owned source manifest, arrived
+through an attested trusted-normalizer channel, and names an actor other than
+the provider. It then applies the
 profile-relative basis from PR #42.
 
 The resulting `verified`, `contradicted` or `unverified` value is still only

@@ -95,6 +95,7 @@ def _normalization(**overrides):
 def _evaluate(payload, **overrides):
     transition, binding = _binding()
     overrides.setdefault("origin_attested", True)
+    overrides.setdefault("expected_source_digest", SOURCE_DIGEST)
     return evaluate_independent_evidence_normalization(
         payload,
         basis=GENOME_IDENTITY_FIRST_TURN_BASIS,
@@ -148,6 +149,19 @@ def test_normalization_must_match_exact_transition_claim_and_basis(overrides):
     assert not result.usable
 
 
+def test_normalization_must_match_host_selected_source_digest():
+    result = _evaluate(_normalization(), expected_source_digest="c" * 64)
+    assert result.provenance is CheckStatus.INVALID
+    assert result.decision is AdjudicationDecision.NOT_COMPARABLE
+    assert not result.usable
+
+
+def test_invalid_host_source_digest_fails_closed():
+    result = _evaluate(_normalization(), expected_source_digest="not-a-digest")
+    assert result.provenance is CheckStatus.INVALID
+    assert result.decision is AdjudicationDecision.NOT_COMPARABLE
+
+
 def test_provider_cannot_normalize_its_own_output():
     result = _evaluate(_normalization(normalizer_id="provider-bonsai"))
     assert result.independence is CheckStatus.INVALID
@@ -184,3 +198,10 @@ def test_public_envelope_rejects_private_source_text_and_invalid_digest():
         )
     with pytest.raises(EvidenceNormalizationSchemaError, match="source_digest"):
         parse_independent_evidence_normalization(_normalization(source_digest="not-a-digest"))
+
+
+def test_parser_rejects_mixed_unknown_top_level_key_types_without_type_error():
+    payload = _normalization()
+    payload[1] = "unknown"
+    with pytest.raises(EvidenceNormalizationSchemaError, match="Unknown evidence normalization fields"):
+        parse_independent_evidence_normalization(payload)

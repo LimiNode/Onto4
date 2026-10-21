@@ -4,7 +4,8 @@ This module sits between a private adjudication procedure and a public
 adjudication receipt.  A normalizer may inspect source material that must not
 be published, but it can publish an opaque source digest and normalized
 commitments.  The host verifies that the record belongs to one concrete,
-structurally admissible transition and one versioned profile-relative basis.
+structurally admissible transition and one versioned profile-relative basis,
+and that its source digest matches a host-owned source manifest.
 
 It does not read provider prose, infer commitments from a binding claim, or
 turn a normalization record into a semantic-adjudication receipt.
@@ -116,11 +117,11 @@ def parse_independent_evidence_normalization(
         "source_digest",
         "commitments",
     }
-    unknown = set(payload) - required
+    unknown = [key for key in payload if key not in required]
     missing = required - set(payload)
     if unknown:
         raise EvidenceNormalizationSchemaError(
-            f"Unknown evidence normalization fields: {sorted(unknown)!r}."
+            f"Unknown evidence normalization fields: {unknown!r}."
         )
     if missing:
         raise EvidenceNormalizationSchemaError(
@@ -211,12 +212,15 @@ def evaluate_independent_evidence_normalization(
     binding: BindingEvaluation,
     transition: BindingTransition,
     provider_id: str,
+    expected_source_digest: str,
     trusted_normalizer_registry: Mapping[str, str],
     origin_attested: bool,
 ) -> EvidenceNormalizationEvaluation:
     """Validate evidence before applying its profile-relative commitments.
 
-    The host must attest the normalizer's channel separately.  A provider
+    ``expected_source_digest`` comes from a host-owned source manifest; the
+    normalizer's claimed digest is not trusted on its own. The host must
+    attest the normalizer's channel separately.  A provider
     cannot normalize its own binding claim, and a structural claim without a
     complete transition match cannot be upgraded by this record.
     """
@@ -230,6 +234,16 @@ def evaluate_independent_evidence_normalization(
             origin=CheckStatus.NOT_APPLICABLE,
             independence=CheckStatus.INVALID,
             errors=("Provider identity is required for an independence check.",),
+        )
+    if not isinstance(expected_source_digest, str) or _SHA256.fullmatch(expected_source_digest) is None:
+        return _not_comparable(
+            normalization=None,
+            profile_evaluation=None,
+            schema=CheckStatus.VALID,
+            provenance=CheckStatus.INVALID,
+            origin=CheckStatus.NOT_APPLICABLE,
+            independence=CheckStatus.NOT_APPLICABLE,
+            errors=("Host expected_source_digest must be a lowercase SHA-256 digest.",),
         )
     if not isinstance(origin_attested, bool) or not origin_attested:
         return _not_comparable(
@@ -285,6 +299,7 @@ def evaluate_independent_evidence_normalization(
         or normalization.target_id != claim.target_id
         or normalization.relation is not claim.relation
         or normalization.basis_digest != basis.basis_digest
+        or normalization.source_digest != expected_source_digest
     ):
         return _not_comparable(
             normalization=normalization,
@@ -293,7 +308,7 @@ def evaluate_independent_evidence_normalization(
             provenance=CheckStatus.INVALID,
             origin=CheckStatus.NOT_APPLICABLE,
             independence=CheckStatus.NOT_APPLICABLE,
-            errors=("Normalization does not match the host transition, claim or basis.",),
+            errors=("Normalization does not match the host transition, claim, basis or source manifest.",),
         )
     if normalization.normalizer_id == provider_id:
         return _not_comparable(
