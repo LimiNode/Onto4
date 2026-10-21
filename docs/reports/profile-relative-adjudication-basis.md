@@ -29,24 +29,38 @@ The adjudication basis therefore evaluates normalized commitments supplied by
 an independent host-side procedure. It does not classify provider text and it
 does not treat the provider's confidence as evidence.
 
-## Frozen profiles
+## Frozen profiles and their scope
 
-The implementation in `onto4.pipeline.semantic_basis` defines two versioned
-profiles. Each criterion is a commitment that the successor must affirm.
+The frozen dialogue has two different kinds of transition. The first
+transition receives the user's initial clarification. Later transitions refine
+that interpretation after a new question. A basis for the first transition
+must not require commitments that only become available later.
 
-| Profile | Target | Required commitments |
+The implementation therefore defines four versioned profiles:
+
+| Profile | Scope, question, target and relation | Commitments available at this stage |
 | --- | --- | --- |
-| `genome-identity-bounded` v1 | `ambiguity-genome` | the identity criterion is numerical; a shared genome is not sufficient; distinct persons can share a genome |
-| `intrinsic-time-bounded` v1 | `ambiguity-present` | the present is observer-independent; sequence order alone is not the present |
+| `genome-identity-first-turn` v1 | first turn, `meaning:ambiguity-genome`, `ambiguity-genome`, `anchored_update` | the identity criterion is numerical |
+| `genome-identity-whole-dialogue` v1 | whole dialogue, `meaning:ambiguity-criterion`, `ambiguity-criterion`, `create` | a shared genome is not sufficient; distinct persons can share a genome |
+| `intrinsic-time-first-turn` v1 | first turn, `meaning:ambiguity-present`, `ambiguity-present`, `anchored_update` | the present is observer-independent |
+| `intrinsic-time-whole-dialogue` v1 | whole dialogue, `ontology:ambiguity-observer`, `ambiguity-observer`, `anchored_update` | the present is observer-independent; sequence order alone is not the present |
+
+Each profile records the exact frozen answer IDs that are available to it.
+Evidence naming a later answer for a first-turn profile is not comparable. The
+short names `GENOME_IDENTITY_BASIS` and `INTRINSIC_TIME_BASIS` remain aliases
+for the corresponding first-turn profiles; they are retained for callers of
+the initial implementation.
 
 These are preservation criteria, not claims that either profile is the
-canonical Onto4 answer. In particular, the second profile records the user's
-observer-independent-time commitment; it does not silently turn that
+canonical Onto4 answer. In particular, the intrinsic-time profiles record the
+user's observer-independent-time commitment; they do not silently turn that
 commitment into observer-independent time in the modeled system.
 
-The profile's canonical JSON description has a SHA-256 digest. The digest
-identifies the exact criterion set used by a receipt and prevents a later
-change to the rubric from being presented as the same basis.
+The profile's canonical JSON description includes its version, scope, question
+ID, target ID, available answer IDs and criteria, and has a SHA-256 digest.
+The digest identifies the exact criterion set and scope used by a receipt.
+Changing normative criteria, scope, question, target or available answers
+requires a new basis version and therefore a new digest.
 
 ## Decision rules
 
@@ -58,7 +72,8 @@ The host supplies one normalized state for each criterion:
 - `unverified`: no commitment is denied, but at least one required commitment
   is `unspecified`;
 - `not_comparable`: the evidence is absent, malformed, contains an unknown
-  commitment, or names another case, target or relation.
+  commitment, or names another case, question, target, transition scope or
+  relation.
 
 Contradiction takes precedence over missing evidence. This keeps an explicit
 semantic reversal distinct from a lack of adjudicator evidence.
@@ -79,9 +94,12 @@ It also does not parse provider prose, infer commitments from lexical overlap,
 rewrite snapshots, admit a successor, or run a model. A malformed or
 profile-mismatched evidence record cannot produce `verified`.
 
-The deterministic tests cover both profiles and all four decisions, including
-cross-profile reuse, missing criteria, explicit contradiction, unknown
-commitments and malformed envelopes. No new Bonsai run is part of this stage;
+The deterministic tests cover both cases, both scopes and all four decisions,
+including future-answer leakage, cross-profile reuse, missing criteria,
+explicit contradiction, unknown commitments, malformed envelopes and typed
+evidence with invalid commitment keys. Mapping input and already-constructed
+evidence objects use the same fail-closed validation rules. No new Bonsai run
+is part of this stage;
 the earlier PR #40 receipts remain unchanged and their semantic identity stays
 `unverified` until a separately reviewed adjudication record is produced.
 
