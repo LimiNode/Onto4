@@ -21,18 +21,20 @@ the normalizer is permitted to inspect. The manifest records:
 The manifest is host-side custody metadata. It is not included in provider
 input, and it does not assert that the source has a particular meaning.
 
-`evaluate_source_manifest` checks the manifest against a trusted manifest
-registry, the normalized record's digest and the host-issued transition. A
-missing attestation, untrusted manifest version, digest mismatch or transition
-mismatch fails closed. The evaluator returns provenance/custody/transition
-statuses only; it does not produce a semantic decision or an adjudication
-receipt.
+`evaluate_source_manifest` checks the complete canonical manifest digest
+against a host-owned registry, the normalized record's digest and the
+host-issued transition. The normalized record's snapshot IDs, question ID and
+target must also match that transition; a digest cannot be reused to smuggle
+evidence from another transition. A missing attestation, untrusted manifest
+content, digest mismatch or transition mismatch fails closed. The evaluator
+returns provenance/custody/transition statuses only; it does not produce a
+semantic decision or an adjudication receipt.
 
-The canonical digest is computed over UTF-8 text after CRLF is normalized to
-LF. The source representation must be preserved in the trusted contour long
-enough for the host to reproduce that digest independently. A digest copied
-from a normalizer without that host-owned manifest is not source-backed
-provenance.
+The canonical source digest is computed by the shared helper over UTF-8 text
+after CRLF is normalized to LF. Golden vectors cover LF, CRLF and Unicode. The
+source representation must be preserved in the trusted contour long enough
+for the host to reproduce that digest independently. A digest copied from a
+normalizer without that host-owned manifest is not source-backed provenance.
 
 ## Future bounded run
 

@@ -141,6 +141,7 @@ from .source_manifest import (
     SourceManifest,
     SourceManifestEvaluation,
     SourceManifestSchemaError,
+    canonical_source_digest,
     evaluate_source_manifest,
     parse_source_manifest,
 )
@@ -298,6 +299,7 @@ __all__ = [
     "SourceManifest",
     "SourceManifestEvaluation",
     "SourceManifestSchemaError",
+    "canonical_source_digest",
     "evaluate_source_manifest",
     "parse_source_manifest",
     "build_clarification_request",
