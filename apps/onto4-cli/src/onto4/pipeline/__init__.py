@@ -137,6 +137,13 @@ from .semantic_normalization import (
     evaluate_independent_evidence_normalization,
     parse_independent_evidence_normalization,
 )
+from .source_manifest import (
+    SourceManifest,
+    SourceManifestEvaluation,
+    SourceManifestSchemaError,
+    evaluate_source_manifest,
+    parse_source_manifest,
+)
 from .decision_bridge import (
     ClarificationDecisionResult,
     ClarificationQuestionDecision,
@@ -288,6 +295,11 @@ __all__ = [
     "IndependentEvidenceNormalization",
     "evaluate_independent_evidence_normalization",
     "parse_independent_evidence_normalization",
+    "SourceManifest",
+    "SourceManifestEvaluation",
+    "SourceManifestSchemaError",
+    "evaluate_source_manifest",
+    "parse_source_manifest",
     "build_clarification_request",
     "decide_clarification",
     "decide_clarification_question",
