@@ -8,7 +8,7 @@
   "sources": [
     {
       "path": "docs/reports/pr40-semantic-target-binding-pilot.json",
-      "sha256": "f3b72d80f3a4e38065bf25db5323f06ff07f5e551808fa39868a99a8225f805c",
+      "sha256": "923569698888dc6df68065cd9814a8ce093e850298ed6f205962ba70e5f33995",
       "run_id": "pr40-bonsai-20261020-semantic-binding-paired-4096",
       "status": "insufficient_evidence",
       "missing": [
@@ -20,7 +20,7 @@
     },
     {
       "path": "docs/reports/pr40-semantic-target-binding-pilot-v2.json",
-      "sha256": "ee4e3ce77323add19740252d414604d39c3cdb0d5d7c394c3ae72a1da6f54239",
+      "sha256": "b35deebfeae731be70cde316275ca30b4696c80ea137775b68314771f13cdd8c",
       "run_id": "pr40-bonsai-20261020-semantic-binding-paired-4096-v2",
       "status": "insufficient_evidence",
       "missing": [

@@ -18,7 +18,9 @@ def test_pr43_assessment_is_reproducible_and_does_not_upgrade_pr40():
     assert assessment["semantic_identity_upgrade"] == "none"
     for source in assessment["sources"]:
         artifact = ROOT / source["path"]
-        digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        digest = hashlib.sha256(
+            artifact.read_text(encoding="utf-8").replace("\r\n", "\n").encode("utf-8")
+        ).hexdigest()
         assert source["sha256"] == digest
         assert source["status"] == "insufficient_evidence"
         assert source["missing"] == [

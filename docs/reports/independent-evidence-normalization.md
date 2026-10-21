@@ -15,7 +15,8 @@ The recorded result is therefore `insufficient_evidence`, not `verified` and
 not a negative semantic judgment. The assessment and SHA-256 digests of the
 two inspected artifacts are published in
 `pr43-independent-evidence-normalization-assessment.json`. No historical
-receipt has been changed.
+receipt has been changed. The digest uses UTF-8 text after CRLF is normalized
+to LF, so its value does not depend on the checkout platform.
 
 ## A record for a future independent normalization
 
