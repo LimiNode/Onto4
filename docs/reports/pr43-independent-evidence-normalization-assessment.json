@@ -1,0 +1,37 @@
+{
+  "record_type": "pr43_independent_evidence_normalization_assessment",
+  "assessment_version": 1,
+  "scope": "public_redacted_pr40_artifacts_only",
+  "model_run_started": false,
+  "historical_receipts_rewritten": false,
+  "production_admission_changed": false,
+  "sources": [
+    {
+      "path": "docs/reports/pr40-semantic-target-binding-pilot.json",
+      "sha256": "f3b72d80f3a4e38065bf25db5323f06ff07f5e551808fa39868a99a8225f805c",
+      "run_id": "pr40-bonsai-20261020-semantic-binding-paired-4096",
+      "status": "insufficient_evidence",
+      "missing": [
+        "successor_snapshot_content",
+        "previous_snapshot_id",
+        "current_snapshot_id",
+        "normalized_commitments"
+      ]
+    },
+    {
+      "path": "docs/reports/pr40-semantic-target-binding-pilot-v2.json",
+      "sha256": "ee4e3ce77323add19740252d414604d39c3cdb0d5d7c394c3ae72a1da6f54239",
+      "run_id": "pr40-bonsai-20261020-semantic-binding-paired-4096-v2",
+      "status": "insufficient_evidence",
+      "missing": [
+        "successor_snapshot_content",
+        "previous_snapshot_id",
+        "current_snapshot_id",
+        "normalized_commitments"
+      ]
+    }
+  ],
+  "normalization_records_created": 0,
+  "adjudication_receipts_created": 0,
+  "semantic_identity_upgrade": "none"
+}
