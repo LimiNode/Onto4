@@ -48,8 +48,7 @@ a universal Onto4 semantic verdict.
 From `apps/onto4-cli`:
 
 ```text
-python research/pr45_source_backed_experiment.py \
-  --output ../../docs/reports/pr45-source-backed-experiment.json
+python research/pr45_source_backed_experiment.py --output ../../docs/reports/pr45-source-backed-experiment.json
 ```
 
 The regression tests execute `run_experiment()` without network access or
