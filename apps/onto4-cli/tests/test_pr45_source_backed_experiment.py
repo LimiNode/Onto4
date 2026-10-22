@@ -4,6 +4,7 @@ import sys
 
 
 _SCRIPT_PATH = Path(__file__).parents[1] / "research" / "pr45_source_backed_experiment.py"
+sys.path.insert(0, str(_SCRIPT_PATH.parent))
 _SPEC = importlib.util.spec_from_file_location("pr45_source_backed_experiment", _SCRIPT_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 _SCRIPT = importlib.util.module_from_spec(_SPEC)
@@ -41,3 +42,25 @@ def test_experiment_has_no_model_run_receipt_or_admission_side_effect():
     assert result["historical_pr40_successor_used"] is False
     assert result["adjudication_receipt_created"] is False
     assert result["production_admission_changed"] is False
+
+
+def test_content_changing_negative_control_is_not_verified():
+    source = _SCRIPT._load_source_slice()
+    source["answer"] = "I mean genetic similarity, not numerical identity."
+
+    result = _SCRIPT.run_experiment(source)
+
+    assert result["normalization"]["commitments"] == {
+        "identity_criterion_is_numerical": "denied"
+    }
+    assert result["normalization_evaluation"]["decision"] == "contradicted"
+    assert result["profile_relative_result"] == "contradicted"
+
+
+def test_published_artifact_matches_reproduced_experiment():
+    import json
+
+    artifact_path = Path(__file__).parents[3] / "docs" / "reports" / "pr45-source-backed-experiment.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert artifact == _SCRIPT.run_experiment()

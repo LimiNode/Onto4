@@ -13,10 +13,18 @@ The host canonicalizes the selected source representation with
 binds the source to the host transition (`corpus:genome-1` →
 `corpus:genome-2`) and the question `meaning:ambiguity-genome`.
 
-The independent normalizer then commits to the profile-relative
-`GENOME_IDENTITY_FIRST_TURN_BASIS`, including the commitment that the identity
-criterion is numerical. The host checks structural binding, source custody,
-transition consistency, normalizer identity and source-digest equality.
+The separately implemented `pr45_independent_corpus_normalizer` reads the
+answer text and derives the one profile-relevant commitment. Its frozen rubric
+recognizes explicit assertions of numerical identity as `affirmed`, explicit
+assertions of genetic similarity or a rejection of numerical identity as
+`denied`, and leaves other wording `unspecified`. The host then checks
+structural binding, source custody, transition consistency, normalizer
+identity and source-digest equality.
+
+This is a content-sensitive normalization procedure, rather than a commitment
+written by the experiment runner. It is deliberately narrow: it establishes
+the behavior of this documented rubric for this frozen case, not general
+natural-language semantic adjudication.
 
 The deterministic result is:
 
@@ -43,6 +51,14 @@ not prove that the representation is semantically correct. Likewise,
 `verified` is relative to the named profile and normalizer contract; it is not
 a universal Onto4 semantic verdict.
 
+## Negative control
+
+The regression suite replaces the answer with “I mean genetic similarity, not
+numerical identity.” The normalizer derives `denied` from that changed source,
+and the profile result becomes `contradicted`, never `verified`. The suite
+also checks that the published JSON artifact exactly equals a fresh
+`run_experiment()` result.
+
 ## Reproduction
 
 From `apps/onto4-cli`:
@@ -52,5 +68,5 @@ python research/pr45_source_backed_experiment.py --output ../../docs/reports/pr4
 ```
 
 The regression tests execute `run_experiment()` without network access or
-provider calls and verify digest reproducibility, the bounded case and all
-non-claims above.
+provider calls and verify digest reproducibility, content-sensitive negative
+control, artifact reproducibility, the bounded case and all non-claims above.

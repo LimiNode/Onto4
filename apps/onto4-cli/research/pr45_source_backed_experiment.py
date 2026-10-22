@@ -1,4 +1,4 @@
-"""Run one deterministic source-backed normalization experiment.
+"""Run one deterministic, source-backed normalization experiment.
 
 This experiment uses an exact public slice of ``bounded-dialogue-v1`` as the
 host-selected source.  It exercises source custody and profile-relative
@@ -12,14 +12,13 @@ import argparse
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import yaml
 
 from onto4.pipeline import (
     BindingTransition,
     GENOME_IDENTITY_FIRST_TURN_BASIS,
-    IndependentEvidenceNormalization,
     PublicSemanticTarget,
     SemanticTargetCatalog,
     SourceManifest,
@@ -35,6 +34,11 @@ from onto4.reasoning import (
     ConceptualDepth,
     InterpretationSpace,
 )
+from pr45_independent_corpus_normalizer import (
+    NORMALIZER_ID,
+    NORMALIZER_VERSION,
+    normalize_genome_identity_first_turn,
+)
 
 
 CORPUS_PATH = Path(__file__).parents[1] / "eval/clarification/bounded-dialogue-v1.yaml"
@@ -43,8 +47,6 @@ TARGET_ID = "ambiguity-genome"
 QUESTION_ID = "meaning:ambiguity-genome"
 PREVIOUS_ID = "corpus:genome-1"
 CURRENT_ID = "corpus:genome-2"
-NORMALIZER_ID = "independent-corpus-rubric"
-NORMALIZER_VERSION = "v1"
 PROVIDER_ID = "historical-pr40-provider"
 
 
@@ -87,8 +89,10 @@ def _transition(source: dict[str, Any]) -> BindingTransition:
     return BindingTransition(previous, current, question)
 
 
-def run_experiment() -> dict[str, Any]:
-    source = _load_source_slice()
+def run_experiment(source_slice: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Evaluate one source slice; tests may supply a content-changing control."""
+
+    source = dict(_load_source_slice() if source_slice is None else source_slice)
     source_bytes = json.dumps(source, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     source_digest = canonical_source_digest(source_bytes)
     transition = _transition(source)
@@ -120,20 +124,7 @@ def run_experiment() -> dict[str, Any]:
         question_id=QUESTION_ID,
         access_attested=True,
     )
-    normalization = IndependentEvidenceNormalization(
-        case_id=CASE_ID,
-        previous_snapshot_id=PREVIOUS_ID,
-        current_snapshot_id=CURRENT_ID,
-        target_id=TARGET_ID,
-        question_id=QUESTION_ID,
-        answer_ids=("genome-2",),
-        relation=GENOME_IDENTITY_FIRST_TURN_BASIS.relation,
-        basis_digest=GENOME_IDENTITY_FIRST_TURN_BASIS.basis_digest,
-        normalizer_id=NORMALIZER_ID,
-        normalizer_version=NORMALIZER_VERSION,
-        source_digest=source_digest,
-        commitments={"identity_criterion_is_numerical": "affirmed"},
-    )
+    normalization = normalize_genome_identity_first_turn(source, source_digest=source_digest)
     manifest_evaluation = evaluate_source_manifest(
         manifest,
         normalization=normalization,
@@ -189,6 +180,8 @@ def run_experiment() -> dict[str, Any]:
         "normalization": {
             "normalizer_id": normalization.normalizer_id,
             "normalizer_version": normalization.normalizer_version,
+            "procedure": "pr45_independent_corpus_normalizer"
+            ": content-sensitive frozen-corpus rubric",
             "basis_digest": normalization.basis_digest,
             "source_digest": normalization.source_digest,
             "commitments": dict(normalization.commitments),
@@ -202,7 +195,7 @@ def run_experiment() -> dict[str, Any]:
             "usable": normalization_evaluation.usable,
             "errors": list(normalization_evaluation.errors),
         },
-        "profile_relative_result": "verified",
+        "profile_relative_result": normalization_evaluation.decision.value,
         "historical_pr40_semantic_identity": "not_evaluated",
     }
 
