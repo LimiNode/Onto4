@@ -5,6 +5,9 @@ import sys
 
 _SCRIPT_PATH = Path(__file__).parents[1] / "research" / "pr45_source_backed_experiment.py"
 sys.path.insert(0, str(_SCRIPT_PATH.parent))
+from pr45_independent_corpus_normalizer import derive_identity_commitment
+
+
 _SPEC = importlib.util.spec_from_file_location("pr45_source_backed_experiment", _SCRIPT_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 _SCRIPT = importlib.util.module_from_spec(_SPEC)
@@ -55,6 +58,40 @@ def test_content_changing_negative_control_is_not_verified():
     }
     assert result["normalization_evaluation"]["decision"] == "contradicted"
     assert result["profile_relative_result"] == "contradicted"
+
+
+def test_frozen_normalizer_handles_negation_without_keyword_guessing():
+    assert derive_identity_commitment(
+        "I mean numerical identity: they are one and the same individual."
+    ) == "affirmed"
+    assert derive_identity_commitment("I reject numerical identity.") == "denied"
+    assert derive_identity_commitment(
+        "I mean not genetic similarity, but numerical identity."
+    ) == "affirmed"
+    assert derive_identity_commitment(
+        "I mean genetic similarity, not numerical identity."
+    ) == "denied"
+    assert derive_identity_commitment("Perhaps the relation needs clarification.") == "unspecified"
+
+
+def test_rejection_of_numerical_identity_is_not_verified():
+    source = _SCRIPT._load_source_slice()
+    source["answer"] = "I reject numerical identity."
+
+    result = _SCRIPT.run_experiment(source)
+
+    assert result["normalization_evaluation"]["decision"] == "contradicted"
+    assert result["profile_relative_result"] != "verified"
+
+
+def test_negated_similarity_contrast_is_not_falsely_contradicted():
+    source = _SCRIPT._load_source_slice()
+    source["answer"] = "I mean not genetic similarity, but numerical identity."
+
+    result = _SCRIPT.run_experiment(source)
+
+    assert result["normalization_evaluation"]["decision"] == "verified"
+    assert result["profile_relative_result"] == "verified"
 
 
 def test_published_artifact_matches_reproduced_experiment():

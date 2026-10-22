@@ -14,17 +14,20 @@ binds the source to the host transition (`corpus:genome-1` →
 `corpus:genome-2`) and the question `meaning:ambiguity-genome`.
 
 The separately implemented `pr45_independent_corpus_normalizer` reads the
-answer text and derives the one profile-relevant commitment. Its frozen rubric
-recognizes explicit assertions of numerical identity as `affirmed`, explicit
-assertions of genetic similarity or a rejection of numerical identity as
-`denied`, and leaves other wording `unspecified`. The host then checks
-structural binding, source custody, transition consistency, normalizer
-identity and source-digest equality.
+answer text and derives the one profile-relevant commitment. Its frozen grammar
+recognizes only a small set of complete, unambiguous constructions. The
+original assertion of numerical identity and the contrast “not genetic
+similarity, but numerical identity” are `affirmed`; an explicit rejection of
+numerical identity and the defined genetic-similarity control are `denied`.
+All other wording is `unspecified`. The host then checks structural binding,
+source custody, transition consistency, normalizer identity and source-digest
+equality.
 
 This is a content-sensitive normalization procedure, rather than a commitment
 written by the experiment runner. It is deliberately narrow: it establishes
-the behavior of this documented rubric for this frozen case, not general
-natural-language semantic adjudication.
+the behavior of this documented grammar for this frozen case, not general
+natural-language semantic adjudication. Mentioning a keyword alone is never
+enough to infer a commitment.
 
 The deterministic result is:
 
@@ -55,9 +58,11 @@ a universal Onto4 semantic verdict.
 
 The regression suite replaces the answer with “I mean genetic similarity, not
 numerical identity.” The normalizer derives `denied` from that changed source,
-and the profile result becomes `contradicted`, never `verified`. The suite
-also checks that the published JSON artifact exactly equals a fresh
-`run_experiment()` result.
+and the profile result becomes `contradicted`, never `verified`. It also checks
+that “I reject numerical identity” is never verified, while “I mean not
+genetic similarity, but numerical identity” remains affirmed. Unrecognized
+wording becomes `unspecified`. The suite also checks that the published JSON
+artifact exactly equals a fresh `run_experiment()` result.
 
 ## Reproduction
 

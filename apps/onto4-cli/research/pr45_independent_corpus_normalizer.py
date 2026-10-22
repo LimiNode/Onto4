@@ -12,7 +12,6 @@ universal Onto4 oracle.  Text outside the frozen discriminator set is left
 
 from __future__ import annotations
 
-import re
 from typing import Mapping
 
 from onto4.pipeline import (
@@ -22,39 +21,37 @@ from onto4.pipeline import (
 
 
 NORMALIZER_ID = "independent-corpus-rubric"
-NORMALIZER_VERSION = "v2"
+NORMALIZER_VERSION = "v3"
 COMMITMENT_KEY = "identity_criterion_is_numerical"
 
-# The negative signals take precedence: an answer explicitly rejecting
-# numerical identity must not be upgraded merely because it repeats the term.
-_DENIED_SIGNALS = (
-    "genetic similarity",
-    "not numerical identity",
-    "не численное тождество",
-    "генетическое сходство",
-)
-_AFFIRMED_SIGNALS = (
-    "numerical identity",
-    "one and the same individual",
-    "численное тождество",
-    "одно и то же лицо",
-)
+# This intentionally accepts a small frozen grammar instead of matching
+# keywords.  A phrase mentioning a criterion can affirm, reject, or contrast
+# it; unfamiliar wording must remain unspecified rather than be guessed.
+_AFFIRMED_ANSWERS = {
+    "i mean numerical identity: they are one and the same individual.",
+    "i mean numerical identity.",
+    "i mean not genetic similarity, but numerical identity.",
+}
+_DENIED_ANSWERS = {
+    "i reject numerical identity.",
+    "i mean genetic similarity, not numerical identity.",
+}
 
 
 def _normalized_text(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("The corpus answer must be text.")
-    return re.sub(r"\s+", " ", value).strip().casefold()
+    return " ".join(value.split()).casefold()
 
 
 def derive_identity_commitment(answer: str) -> str:
     """Derive the frozen basis commitment from the inspected answer text."""
 
     normalized = _normalized_text(answer)
-    if any(signal in normalized for signal in _DENIED_SIGNALS):
-        return "denied"
-    if any(signal in normalized for signal in _AFFIRMED_SIGNALS):
+    if normalized in _AFFIRMED_ANSWERS:
         return "affirmed"
+    if normalized in _DENIED_ANSWERS:
+        return "denied"
     return "unspecified"
 
 

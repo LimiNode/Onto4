@@ -44,7 +44,7 @@
   "binding_structurally_admissible": true,
   "normalization": {
     "normalizer_id": "independent-corpus-rubric",
-    "normalizer_version": "v2",
+    "normalizer_version": "v3",
     "procedure": "pr45_independent_corpus_normalizer: content-sensitive frozen-corpus rubric",
     "basis_digest": "de31ba185b941ea7dedb882e35b5762a38f57af549f936544be86639be1b16ba",
     "source_digest": "e013f4f847fa73286423da7ee744164faa60c70e3033cc3e992ad8c101775d87",
