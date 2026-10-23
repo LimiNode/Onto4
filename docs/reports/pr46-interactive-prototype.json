@@ -8,11 +8,10 @@
     "context_id": "identity_and_genome"
   },
   "answer": {
-    "digest": "aefab91d4e45d6f18bdd4b4fa3a1215af5a2bd5cf23a9df008a842b698ce596c",
-    "length": 64
+    "fixture_id": "genome-identity-numerical-first-turn"
   },
   "provider": {
-    "endpoint": "http://127.0.0.1:8080/v1",
+    "endpoint": "http://127.0.0.1:8080",
     "model": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
     "temperature": 0.0,
     "max_output_tokens": 768,

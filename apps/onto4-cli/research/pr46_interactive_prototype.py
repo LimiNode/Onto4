@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path, PureWindowsPath
 from typing import Any
 from urllib.parse import urlsplit
@@ -38,6 +39,16 @@ from onto4.reasoning import FixtureClarificationPolicy
 CASE_ID = "genome-identity-interactive-one-turn"
 SOURCE_TEXT = "Does sharing a genome make two people one person?"
 ANSWER = "I mean numerical identity: they are one and the same individual."
+FROZEN_ANSWER_ID = "genome-identity-numerical-first-turn"
+
+_SAFE_STAGES = frozenset({"interpretation", "formalization", "refinement"})
+_SAFE_PHASES = frozenset(
+    {"started", "response_received", "json_valid", "json_invalid", "completed", "failed"}
+)
+_SAFE_FINISH_REASONS = frozenset(
+    {"stop", "length", "tool_calls", "function_call", "content_filter", "unknown"}
+)
+_SAFE_FAILURE_DETAILS = frozenset({"transport", "schema", "unexpected"})
 
 
 def _digest(value: str) -> str:
@@ -49,7 +60,7 @@ def _safe_endpoint(base_url: str) -> str:
     host = parsed.hostname or ""
     if parsed.port is not None:
         host = f"{host}:{parsed.port}"
-    return f"{parsed.scheme}://{host}{parsed.path.rstrip('/')}"
+    return f"{parsed.scheme}://{host}"
 
 
 def _safe_model(model: str) -> str:
@@ -58,12 +69,45 @@ def _safe_model(model: str) -> str:
     return Path(model).name if "/" in model else model
 
 
+def _safe_answer_metadata(answer: str) -> dict[str, Any]:
+    if answer == ANSWER:
+        return {"fixture_id": FROZEN_ANSWER_ID}
+    return {"fingerprint_recorded": False}
+
+
 def _event_payload(event: ProviderStageEvent) -> dict[str, Any]:
+    stage = event.stage if isinstance(event.stage, str) and event.stage in _SAFE_STAGES else "unknown"
+    phase = event.phase if isinstance(event.phase, str) and event.phase in _SAFE_PHASES else "unknown"
+    detail = ""
+    raw_detail = event.detail if isinstance(event.detail, str) else ""
+    if phase == "response_received":
+        finish_reason = "unknown"
+        completion_tokens: int | None = None
+        if raw_detail.startswith("finish_reason="):
+            raw_finish, *raw_usage = raw_detail.split(", ", 1)
+            candidate = raw_finish.removeprefix("finish_reason=")
+            if candidate in _SAFE_FINISH_REASONS:
+                finish_reason = candidate
+            if raw_usage and raw_usage[0].startswith("completion_tokens="):
+                raw_tokens = raw_usage[0].removeprefix("completion_tokens=")
+                if raw_tokens.isdigit():
+                    completion_tokens = int(raw_tokens)
+        detail = f"finish_reason={finish_reason}"
+        if completion_tokens is not None:
+            detail += f", completion_tokens={completion_tokens}"
+    elif phase == "completed" and raw_detail == "schema_valid":
+        detail = "schema_valid"
+    elif phase == "failed" and raw_detail in _SAFE_FAILURE_DETAILS:
+        detail = raw_detail
+    elapsed = event.elapsed_seconds
+    if not isinstance(elapsed, (int, float)) or isinstance(elapsed, bool) or not math.isfinite(elapsed):
+        elapsed = 0.0
+    elapsed = max(0.0, min(float(elapsed), 86_400.0))
     return {
-        "stage": event.stage,
-        "phase": event.phase,
-        "elapsed_seconds": round(event.elapsed_seconds, 3),
-        "detail": event.detail,
+        "stage": stage,
+        "phase": phase,
+        "elapsed_seconds": round(elapsed, 3),
+        "detail": detail,
     }
 
 
@@ -148,7 +192,7 @@ def run_prototype(
             "source_length": len(SOURCE_TEXT),
             "context_id": context_path.stem,
         },
-        "answer": {"digest": _digest(answer), "length": len(answer)},
+        "answer": _safe_answer_metadata(answer),
         "provider": {
             "endpoint": _safe_endpoint(endpoint),
             "model": _safe_model(model),
