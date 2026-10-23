@@ -128,6 +128,31 @@ cases:
     }
 
 
+def test_corpus_rejects_contradictory_target_family_oracle(tmp_path):
+    corpus_path = tmp_path / "contradictory-target-family.yaml"
+    corpus_path.write_text(
+        """
+version: 2
+name: contradictory
+cases:
+  - case_id: one
+    utterance: claim
+    mode: dialogue
+    expected_clarification:
+      kind: Meaning
+      target_family: numerical_identity
+    expected_after_answer: {}
+    dialogue:
+      - {turn_id: initial, role: user, text: claim}
+      - {turn_id: question, role: assistant, text: clarify, question_kind: Meaning, target_family: causal_identity}
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="contradictory.*target_family"):
+        load_clarification_corpus(corpus_path)
+
+
 @pytest.mark.parametrize("invalid_visibility", ("other", [], {}))
 def test_invalid_model_visibility_is_controlled_error(tmp_path, invalid_visibility):
     corpus_path = tmp_path / "invalid-visibility.yaml"

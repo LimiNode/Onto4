@@ -327,6 +327,87 @@ operation, while `abstain` preserves the current snapshot. The experiment is
 not part of the default `onto4 ask` path until comparative fixture results
 justify adopting it.
 
+## Controlled architecture A/B benchmark
+
+The `benchmark` command provides a paired experiment for the two independent
+design choices in the model-backed clarification path. It runs the same public
+corpus through four cells:
+
+```text
+             full_snapshot       typed_delta
+context_late      A1                  B1
+context_aware     A2                  B2
+```
+
+`A1` versus `B1` and `A2` versus `B2` are the refinement comparisons.
+`A1` versus `A2` and `B1` versus `B2` are the context-timing comparisons. The
+pairing is by stable `case_id`; a cell is not compared with a different
+utterance or a different corpus version. This runner is explicitly an
+**E2E paired-by-case** experiment: it does not claim that the model produced
+identical initial `InterpretationSpace` snapshots in the four cells.
+
+The starter corpus is
+`eval/clarification/ab-philosophical-smoke.yaml`. It is deliberately small
+and executable: continuity and substance provide same-utterance controls, and
+the genome and intrinsic-time cases exercise bounded clarification dialogues.
+The hidden expected readings remain in the corpus for the evaluation driver;
+they are not included in model-facing input. This smoke corpus is contextual:
+the `context_late` cells receive the case context identifier, while
+`context_aware` additionally receives the bounded ontology projection. This
+keeps the context-timing comparison executable rather than silently running
+the same interpretation input in all four cells.
+
+Run it against an OpenAI-compatible endpoint with:
+
+```text
+onto4 benchmark \
+  --corpus eval/clarification/ab-philosophical-smoke.yaml \
+  --endpoint http://127.0.0.1:8080/v1 \
+  --model bonsai \
+  --context profiles/contexts/continuity.yaml \
+  --context profiles/contexts/substance.yaml \
+  --context profiles/contexts/identity_and_genome.yaml \
+  --context profiles/contexts/relational_time.yaml \
+  --artifacts-dir artifacts/ab-smoke \
+  --report artifacts/ab-smoke/report.json
+```
+
+Each cell writes privacy-preserving receipts. The paired report keeps three
+axes separate:
+
+```text
+execution: successful | failed | incomplete | unsupported
+workflow:  correct | incorrect | unverified | not_comparable
+semantic:  correct | incorrect | unverified | not_comparable
+```
+
+Schema/provenance failures and exhausted scripts therefore do not become
+semantic errors. A semantic mismatch is counted only when a successful cell
+has a sufficient semantic oracle. Unknown clarification-turn counts remain
+`null`, rather than being reported as zero. The report also contains per-cell
+execution/workflow/semantic counts, success denominators, all four pairings,
+safe workflow diagnostics and the exact run configurations. An omitted
+`--output-cost-per-million` is recorded as `not_priced` with a `null` cost;
+prompt-token costs are never inferred.
+
+For a true refinement comparison, use the isolated protocol API
+`run_isolated_refinement_pair()`: one immutable initial snapshot, one
+host-issued question and one scripted answer are passed independently to the
+full-snapshot and typed-delta transitions. Their accepted transitions and
+semantic-obligation digests are reported separately from E2E metrics.
+
+Reports should include a source SHA, model artifact digest, prompt
+version/hash, context digests, sampling settings, backend description, oracle
+version and run identifier. A single condition order is not a latency claim;
+repeat runs with a warm-up and permuted condition order before comparing
+timings.
+
+The benchmark does not turn a model response into an Onto4 verdict. `T`, `F`,
+`U` and `C` still come only from the deterministic core, and no semantic
+fidelity claim is made without an oracle comparison. The command also writes a
+safe per-case diagnostics report; it contains stages, counts, provenance
+codes and failure classes, never prompts, raw model payloads or credentials.
+
 ## Interactive evaluation corpus
 
 The reserved corpus at `eval/clarification/corpus.yaml` contains everyday

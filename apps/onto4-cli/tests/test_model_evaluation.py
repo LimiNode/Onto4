@@ -485,6 +485,27 @@ def test_dialogue_replay_allows_semantic_target_reindex_when_binding_is_unique()
     )
 
     assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
+    assert execution.diagnostics["question_target_family"] == "opaque"
+    assert '"question_target_family": "mass"' not in json.dumps(execution.diagnostics)
+
+
+def test_target_family_match_uses_independent_corpus_oracle():
+    case = _dialogue_case()
+    case = ClarificationCorpusCase(
+        **{
+            **case.__dict__,
+            "expected_clarification": {
+                "kind": "Meaning",
+                "target": "mass",
+                "target_family": "causal_identity",
+            },
+        }
+    )
+    execution = _ambiguous_dialogue_executor()(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
+    assert execution.diagnostics["question_script_target_family_match"] is True
+    assert execution.diagnostics["question_target_family_match"] is False
 
 
 def test_dialogue_replay_refuses_unbound_question_intent():

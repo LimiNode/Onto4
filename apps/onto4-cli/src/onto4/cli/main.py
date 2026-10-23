@@ -16,8 +16,11 @@ import yaml
 from onto4.core import AssessmentResult
 from onto4.pipeline import (
     EvaluationConfig,
-    ModelClarificationPolicy,
     ModelCaseExecutor,
+    run_paired_benchmark,
+    write_benchmark_diagnostics,
+    write_benchmark_report,
+    ModelClarificationPolicy,
     SequentialEvaluationRunner,
     ask_per_reading,
     corpus_digest,
@@ -358,6 +361,122 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
         return 1
 
 
+def _run_benchmark(args: argparse.Namespace) -> int:
+    try:
+        corpus = load_clarification_corpus(args.corpus)
+        if not args.context:
+            raise ValueError("A controlled benchmark requires at least one --context.")
+        auth = EndpointAuthKind(args.auth)
+        profile = ProviderProfile(
+            base_url=args.endpoint,
+            model=args.model,
+            auth=auth,
+            timeout_seconds=args.timeout,
+            max_output_tokens=args.max_output_tokens,
+            disable_thinking=not args.enable_thinking,
+            temperature=args.temperature,
+        )
+        token = os.environ.get(args.token_env) if auth is EndpointAuthKind.Bearer else None
+        client = OpenAICompatibleClient(profile, bearer_token=token)
+        contexts = {}
+        for context_path in args.context:
+            context_id = context_path.stem
+            if context_id in contexts:
+                raise ValueError(f"Duplicate context id from --context: {context_id!r}.")
+            contexts[context_id] = load_context(context_path)
+        requested_depth = None if args.depth == "auto" else ConceptualDepth(args.depth)
+
+        def executor_factory(condition):
+            interpretation_adapter = OpenAICompatibleInterpretationProvider(
+                client, prompt_variant=args.prompt_variant
+            )
+            formalization_adapter = OpenAICompatibleFormalizationProvider(
+                client, context_ids=tuple(contexts)
+            )
+            delta_adapter = OpenAICompatibleRefinementDeltaProvider(client)
+            executor = ModelCaseExecutor(
+                interpretation_adapter,
+                formalization_adapter,
+                contexts,
+                max_turns=args.max_turns,
+                requested_conceptual_depth=requested_depth,
+                interpretation_context_mode=condition.interpretation_context_mode,
+                refinement_mode=condition.refinement_mode,
+                refinement_delta_provider=delta_adapter,
+            )
+            # Keep benchmark telemetry at the same boundary as eval-corpus:
+            # adapters emit safe stage events into the executor, which owns
+            # per-case accounting and strips payloads before receipts.
+            interpretation_adapter.trace = executor.provider_trace
+            formalization_adapter.trace = executor.provider_trace
+            delta_adapter.trace = executor.provider_trace
+            return executor
+
+        config = EvaluationConfig(
+            request_timeout_seconds=args.timeout,
+            case_deadline_seconds=args.case_deadline,
+            inter_case_delay_seconds=args.inter_case_delay,
+            max_retries=args.max_retries,
+            provider="openai-compatible",
+            model=args.model,
+            mode="model-backed",
+            prompt_version=args.prompt_version,
+            prompt_hash=args.prompt_hash,
+            commit_sha=args.commit_sha,
+            model_artifact_digest=args.model_artifact_digest,
+            temperature=args.temperature,
+            thinking_enabled=args.enable_thinking,
+            max_output_tokens=args.max_output_tokens,
+            prompt_variant=args.prompt_variant,
+            requested_conceptual_depth=(
+                requested_depth.value if requested_depth is not None else "auto"
+            ),
+            run_id=args.run_id,
+            context_profile_digests={
+                path.stem: hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in args.context
+            },
+            variant="paired-ab",
+        )
+        run = run_paired_benchmark(
+            corpus,
+            executor_factory=executor_factory,
+            config=config,
+            receipt_dir=args.artifacts_dir,
+            output_cost_per_million=args.output_cost_per_million,
+            metadata={
+                "backend": args.backend_description,
+                "oracle_version": args.oracle_version,
+                "model_artifact_digest": args.model_artifact_digest,
+                "sampling": {
+                    "temperature": args.temperature,
+                    "max_output_tokens": args.max_output_tokens,
+                    "thinking_enabled": args.enable_thinking,
+                },
+            },
+        )
+        write_benchmark_report(run, args.report)
+        diagnostics_path = args.diagnostics or args.report.with_name(
+            f"{args.report.stem}.diagnostics.json"
+        )
+        write_benchmark_diagnostics(run, diagnostics_path)
+        print(json.dumps({
+            "corpus": run.corpus_name,
+            "cases": run.summary.total_cases,
+            "oracle_observations": run.summary.oracle_comparable_observations,
+            "oracle_passed": run.summary.oracle_passed_observations,
+            "semantic_errors": run.summary.semantic_errors,
+            "operational_failures": run.summary.operational_failures,
+            "report": str(args.report),
+            "diagnostics": str(diagnostics_path),
+            "artifacts": str(args.artifacts_dir),
+        }, ensure_ascii=False, indent=2))
+        return 0
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        print(f"Benchmark error: {exc}", file=sys.stderr)
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="onto4")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -496,6 +615,67 @@ def build_parser() -> argparse.ArgumentParser:
     corpus_parser.add_argument("--variant", default="default")
     corpus_parser.add_argument("--run-id")
     corpus_parser.add_argument("--debug", action="store_true")
+
+    benchmark_parser = subparsers.add_parser(
+        "benchmark",
+        help="Run the controlled model-backed A/B benchmark (A1/A2/B1/B2).",
+    )
+    benchmark_parser.add_argument("--corpus", required=True, type=Path)
+    benchmark_parser.add_argument("--report", required=True, type=Path)
+    benchmark_parser.add_argument("--artifacts-dir", required=True, type=Path)
+    benchmark_parser.add_argument("--endpoint", required=True)
+    benchmark_parser.add_argument("--model", required=True)
+    benchmark_parser.add_argument("--context", action="append", required=True, type=Path)
+    benchmark_parser.add_argument("--timeout", type=float, default=30.0)
+    benchmark_parser.add_argument("--case-deadline", type=float, default=120.0)
+    benchmark_parser.add_argument("--inter-case-delay", type=float, default=0.0)
+    benchmark_parser.add_argument("--max-retries", type=int, default=0)
+    benchmark_parser.add_argument("--prompt-version", default="unspecified")
+    benchmark_parser.add_argument(
+        "--prompt-variant",
+        choices=("baseline", "explicit_depth", "compact_json"),
+        default="baseline",
+    )
+    benchmark_parser.add_argument("--prompt-hash")
+    benchmark_parser.add_argument("--model-artifact-digest")
+    benchmark_parser.add_argument(
+        "--commit-sha",
+        default=os.environ.get("ONTO4_COMMIT_SHA"),
+        help="Exact source Git SHA recorded in the benchmark manifest.",
+    )
+    benchmark_parser.add_argument(
+        "--backend-description",
+        default="unspecified",
+        help="Backend/runtime description recorded in the manifest.",
+    )
+    benchmark_parser.add_argument(
+        "--oracle-version",
+        default="ab-benchmark-v2",
+        help="Oracle/scorer version recorded in the manifest.",
+    )
+    benchmark_parser.add_argument(
+        "--depth",
+        choices=("auto", *(depth.value for depth in ConceptualDepth)),
+        default="auto",
+    )
+    benchmark_parser.add_argument("--auth", choices=("none", "bearer"), default="none")
+    benchmark_parser.add_argument("--token-env", default="ONTO4_API_TOKEN")
+    benchmark_parser.add_argument("--max-output-tokens", type=int, default=1024)
+    benchmark_parser.add_argument("--temperature", type=float, default=0.0)
+    benchmark_parser.add_argument("--enable-thinking", action="store_true")
+    benchmark_parser.add_argument("--max-turns", type=int, default=4)
+    benchmark_parser.add_argument("--run-id")
+    benchmark_parser.add_argument(
+        "--output-cost-per-million",
+        type=float,
+        default=None,
+        help="Optional output-token price in USD per million tokens.",
+    )
+    benchmark_parser.add_argument(
+        "--diagnostics",
+        type=Path,
+        help="Optional safe per-case diagnostics report path.",
+    )
     return parser
 
 
@@ -531,6 +711,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "eval-corpus":
         return _run_eval_corpus(args)
+
+    if args.command == "benchmark":
+        return _run_benchmark(args)
 
     return 2
 
