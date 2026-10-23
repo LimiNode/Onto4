@@ -1,0 +1,66 @@
+{
+  "record_type": "pr45_source_backed_semantic_adjudication_experiment",
+  "experiment_version": 1,
+  "case_id": "genome-identity-bounded",
+  "scope": "public_host_dialogue_slice_first_turn",
+  "model_run_started": false,
+  "historical_pr40_successor_used": false,
+  "production_admission_changed": false,
+  "adjudication_receipt_created": false,
+  "source": {
+    "corpus": "bounded-dialogue-v1",
+    "corpus_version": 2,
+    "case_id": "genome-identity-bounded",
+    "selected_turn_ids": [
+      "genome-1",
+      "genome-2"
+    ],
+    "question": "What does sharing a genome mean here?",
+    "answer": "I mean numerical identity: they are one and the same individual.",
+    "question_id": "meaning:ambiguity-genome",
+    "target_id": "ambiguity-genome"
+  },
+  "source_manifest": {
+    "manifest_id": "pr45-public-genome-first-turn",
+    "version": "v1",
+    "source_id": "bounded-dialogue-v1:genome-identity-first-turn",
+    "source_kind": "public_host_dialogue_slice",
+    "source_digest": "e013f4f847fa73286423da7ee744164faa60c70e3033cc3e992ad8c101775d87",
+    "canonicalization": "utf8-lf-sha256-v1",
+    "previous_snapshot_id": "corpus:genome-1",
+    "current_snapshot_id": "corpus:genome-2",
+    "question_id": "meaning:ambiguity-genome",
+    "access_attested": true,
+    "manifest_digest": "ff1b882cc89ec2d7e5bebeb60064851a90bea33c06a6535a01e82391e7710df2"
+  },
+  "source_manifest_evaluation": {
+    "schema": "valid",
+    "provenance": "valid",
+    "custody": "valid",
+    "transition": "valid",
+    "usable": true,
+    "errors": []
+  },
+  "binding_structurally_admissible": true,
+  "normalization": {
+    "normalizer_id": "independent-corpus-rubric",
+    "normalizer_version": "v3",
+    "procedure": "pr45_independent_corpus_normalizer: content-sensitive frozen-corpus rubric",
+    "basis_digest": "de31ba185b941ea7dedb882e35b5762a38f57af549f936544be86639be1b16ba",
+    "source_digest": "e013f4f847fa73286423da7ee744164faa60c70e3033cc3e992ad8c101775d87",
+    "commitments": {
+      "identity_criterion_is_numerical": "affirmed"
+    }
+  },
+  "normalization_evaluation": {
+    "schema": "valid",
+    "provenance": "valid",
+    "origin": "valid",
+    "independence": "valid",
+    "decision": "verified",
+    "usable": true,
+    "errors": []
+  },
+  "profile_relative_result": "verified",
+  "historical_pr40_semantic_identity": "not_evaluated"
+}
