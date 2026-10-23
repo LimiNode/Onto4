@@ -1,0 +1,236 @@
+version: 2
+name: philosophical-dialogues-v2
+visibility:
+  model_input: utterance_only
+  hidden_fields:
+    - evaluation_class
+    - hidden_interpretation
+    - expected_clarification
+    - expected_after_answer
+    - dialogue
+    - oracle_notes
+context_profiles:
+  ordinary_physical: "Strict physical ontology with only supplied evidence."
+  fictional_character: "Explicit fictional ontology where named characters are objects."
+  ordinary_arithmetic: "Natural-number order with supplied arithmetic rules."
+  identity_path: "File identity is keyed by canonical path."
+  identity_bytes: "File identity is keyed by byte content."
+  historical_caloric: "Historical caloric theory is admitted as an ontology."
+  modern_thermal: "Modern thermal ontology has no caloric substance."
+  closed_box_unknown: "Closed-box scene with no observation of contents."
+  closed_box_red_confirmed: "Closed-box scene with supplied observation of a red ball."
+  ordinary_reference: "Ordinary reference profile with supplied bindings only."
+  fiction_holmes: "Fictional Sherlock Holmes reference profile."
+  truth_self_reference: "Strict truth predicate with self-application restricted."
+  quote_context: "Quotation is represented as an object, not self-application."
+  flash_drive_process: "Identity by causal continuity of an ideal flash drive."
+  flash_drive_substrate: "Identity by retained physical substrate."
+  distinction_profile: "Distinction event and its representation are separate."
+  sequence_time: "Observed sequence without an intrinsic-time commitment."
+scoring:
+  exact_question_text: false
+  require_provenance: true
+  require_no_common_knowledge_shortcut: true
+  require_explicit_ontology_boundary: true
+  require_explicit_evidence_boundary: true
+  require_context_scoped_oracle: true
+cases:
+  - {case_id: seven-bed-ordinary, evaluation_class: category_error, context: ordinary_physical, utterance: "Число 7 лежит в кровати.", expected_clarification: none, expected_after_answer: {verdict: C, semantic_status: Inapplicable}}
+  - {case_id: seven-bed-fiction, evaluation_class: context_dependent, context: fictional_character, utterance: "Число 7 лежит в кровати.", expected_clarification: none, expected_after_answer: {verdict: U, semantic_status: Admitted}}
+  - {case_id: saturday-sleeps-calendar, evaluation_class: category_error, context: ordinary_physical, utterance: "Суббота спит.", expected_clarification: none, expected_after_answer: {verdict: C, semantic_status: Inapplicable}}
+  - {case_id: saturday-sleeps-character, evaluation_class: context_dependent, context: fictional_character, utterance: "Суббота спит.", expected_clarification: none, expected_after_answer: {verdict: U, semantic_status: Admitted}}
+  - {case_id: temperature-left-physical, evaluation_class: category_error, context: ordinary_physical, utterance: "Температура находится слева от шкафа.", expected_clarification: none, expected_after_answer: {verdict: C, semantic_status: Inapplicable}}
+  - {case_id: temperature-left-field, evaluation_class: context_dependent, context: fictional_character, utterance: "Температура находится слева от шкафа.", expected_clarification: {kind: Ontology, target: spatial_temperature_field}, expected_after_answer: {disposition: clarification_required}}
+  - {case_id: belief-weighs-physical, evaluation_class: category_error, context: ordinary_physical, utterance: "Убеждение весит 200 граммов.", expected_clarification: {kind: Ontology, target: mental_state}, expected_after_answer: {verdict: C, semantic_status: Inapplicable}}
+  - {case_id: belief-weighs-neural, evaluation_class: context_dependent, context: fictional_character, utterance: "Убеждение весит 200 граммов.", expected_clarification: {kind: Ontology, target: physical_neural_state}, expected_after_answer: {disposition: clarification_required}}
+
+  - {case_id: genes-causal, evaluation_class: context_dependent, context: ordinary_physical, utterance: "Настоящая личность определяется его генами.", expected_clarification: {kind: Meaning, target: causal_influence}, expected_after_answer: {disposition: clarification_required}}
+  - {case_id: genes-essential, evaluation_class: context_dependent, context: fictional_character, utterance: "Настоящая личность определяется его генами.", expected_clarification: {kind: Meaning, target: identity_essence}, expected_after_answer: {disposition: clarification_required}}
+  - {case_id: same-genome-identity, evaluation_class: context_dependent, context: ordinary_physical, utterance: "Два человека имеют одинаковый геном — это один человек.", expected_clarification: {kind: Meaning, target: numerical_identity}, expected_after_answer: {disposition: clarification_required}}
+  - {case_id: file-copy-path, evaluation_class: context_dependent, context: identity_path, utterance: "Две копии файла являются одним файлом.", expected_clarification: none, expected_after_answer: {verdict: T, semantic_status: Admitted}}
+  - {case_id: file-copy-bytes, evaluation_class: context_dependent, context: identity_bytes, utterance: "Две копии файла являются одним файлом.", expected_clarification: none, expected_after_answer: {verdict: F, semantic_status: Admitted}}
+  - {case_id: replacement-continuity, evaluation_class: context_dependent, context: flash_drive_process, utterance: "Один и тот же объект сохранился после полной замены частей.", expected_clarification: none, expected_after_answer: {verdict: T, semantic_status: Admitted}}
+  - {case_id: replacement-substrate, evaluation_class: context_dependent, context: flash_drive_substrate, utterance: "Один и тот же объект сохранился после полной замены частей.", expected_clarification: none, expected_after_answer: {verdict: F, semantic_status: Admitted}}
+
+  - {case_id: caloric-transfer-historical, evaluation_class: historical_ontology, context: historical_caloric, utterance: "Теплород переходит между телами.", expected_clarification: none, expected_after_answer: {verdict: U, semantic_status: Admitted}}
+  - {case_id: caloric-transfer-modern, evaluation_class: historical_ontology, context: modern_thermal, utterance: "Теплород переходит между телами.", expected_clarification: {kind: Ontology, target: caloric_substance}, expected_after_answer: {disposition: clarification_required}}
+  - {case_id: phlogiston-historical, evaluation_class: historical_ontology, context: historical_caloric, utterance: "Древесина выделяет флогистон.", expected_clarification: none, expected_after_answer: {verdict: U, semantic_status: Admitted}}
+  - {case_id: phlogiston-modern, evaluation_class: category_error, context: modern_thermal, utterance: "Древесина выделяет флогистон.", expected_clarification: none, expected_after_answer: {verdict: C, semantic_status: Inapplicable}}
+
+  - {case_id: teapot-orbit, evaluation_class: unsupported_but_meaningful, context: ordinary_physical, utterance: "Между Землёй и Марсом движется фарфоровый чайник.", expected_clarification: none, expected_after_answer: {verdict: U, semantic_status: Admitted}}
+  - {case_id: red-ball-unknown, evaluation_class: insufficient_evidence, context: closed_box_unknown, utterance: "В коробке красный шар.", expected_clarification: none, expected_after_answer: {verdict: U, semantic_status: Admitted}}
+  - {case_id: red-ball-confirmed, evaluation_class: evidence_supported, context: closed_box_red_confirmed, utterance: "В коробке красный шар.", expected_clarification: none, expected_after_answer: {verdict: T, semantic_status: Admitted}}
+  - {case_id: conflicting-ball-evidence, evaluation_class: conflicting_evidence, context: closed_box_unknown, utterance: "В коробке красный шар.", expected_clarification: {kind: Evidence, target: conflicting_reports}, expected_after_answer: {verdict: U, semantic_status: Admitted}}
+
+  - {case_id: current-king-france, evaluation_class: reference_failure, context: ordinary_reference, utterance: "Нынешний король Франции лыс.", expected_clarification: {kind: Reference, target: current_king_of_france}, expected_after_answer: {disposition: clarification_required}}
+  - {case_id: holmes-ordinary, evaluation_class: reference_failure, context: ordinary_reference, utterance: "Рост Шерлока Холмса составляет 180 см.", expected_clarification: {kind: Reference, target: sherlock_holmes}, expected_after_answer: {disposition: clarification_required}}
+  - {case_id: holmes-fiction, evaluation_class: insufficient_evidence, context: fiction_holmes, utterance: "Рост Шерлока Холмса составляет 180 см.", expected_clarification: none, expected_after_answer: {verdict: U, semantic_status: Admitted}}
+  - {case_id: university-between, evaluation_class: context_dependent, context: ordinary_reference, utterance: "Университет находится между двумя зданиями.", expected_clarification: {kind: Reference, target: buildings}, expected_after_answer: {disposition: clarification_required}}
+
+  - {case_id: liar-self-application, evaluation_class: self_reference, context: truth_self_reference, utterance: "Это предложение ложно.", expected_clarification: {kind: Meaning, target: self_application}, expected_after_answer: {disposition: clarification_required}}
+  - {case_id: true-self-application, evaluation_class: self_reference, context: truth_self_reference, utterance: "Это утверждение истинно.", expected_clarification: {kind: Meaning, target: self_application}, expected_after_answer: {disposition: clarification_required}}
+  - {case_id: quoted-liar, evaluation_class: self_reference, context: quote_context, utterance: "Цитата «это предложение ложно» сама является ложной.", expected_clarification: none, expected_after_answer: {verdict: U, semantic_status: Admitted}}
+  - {case_id: distinction-representation, evaluation_class: canonical_experiment, context: distinction_profile, utterance: "Представление различия является самим различием.", expected_clarification: {kind: Meaning, target: event_representation}, expected_after_answer: {disposition: clarification_required}}
+
+  - {case_id: seven-greater-one, evaluation_class: ordinary_control, context: ordinary_arithmetic, utterance: "2 больше 1.", expected_clarification: none, expected_after_answer: {verdict: T, semantic_status: Admitted}}
+  - {case_id: two-greater-seven, evaluation_class: ordinary_control, context: ordinary_arithmetic, utterance: "2 больше 7.", expected_clarification: none, expected_after_answer: {verdict: F, semantic_status: Admitted}}
+  - {case_id: triangle-three-sides, evaluation_class: ordinary_control, context: ordinary_physical, utterance: "Треугольник имеет три стороны.", expected_clarification: none, expected_after_answer: {verdict: T, semantic_status: Admitted}}
+  - {case_id: server-running, evaluation_class: ordinary_control, context: ordinary_physical, utterance: "Сервер работает.", expected_clarification: none, expected_after_answer: {verdict: U, semantic_status: Admitted}}
+
+  - case_id: genes-dialogue
+    evaluation_class: dialogue_identity
+    mode: dialogue
+    context: ordinary_physical
+    utterance: "Настоящая личность определяется его генами."
+    expected_clarification: {kind: Meaning, target: causal_influence}
+    expected_after_answer: {disposition: dialogue_reassessment_required, open_targets: [numerical_identity]}
+    hidden_interpretation: {reading: causal_influence, commitments: [genes_cause_development]}
+    dialogue:
+      - {turn_id: genes-0, role: user, text: "Настоящая личность определяется его генами."}
+      - {turn_id: genes-1, role: assistant, text: "Под «определяется» имеется в виду причинное влияние или носитель сущности?"}
+      - {turn_id: genes-2, role: user, text: "Гены содержат то, чем человек является на самом деле."}
+      - {turn_id: genes-3, role: assistant, text: "Если у двух разных людей одинаковый геном, это один и тот же человек?"}
+
+  - case_id: file-dialogue
+    evaluation_class: dialogue_identity
+    mode: dialogue
+    context: identity_path
+    utterance: "Две копии файла являются одним файлом."
+    expected_clarification: {kind: Meaning, target: identity_criterion}
+    expected_after_answer: {disposition: dialogue_reassessment_required, open_targets: []}
+    dialogue:
+      - {turn_id: file-0, role: user, text: "Две копии файла являются одним файлом."}
+      - {turn_id: file-1, role: assistant, text: "Критерий тождества — путь, байты или происхождение?"}
+      - {turn_id: file-2, role: user, text: "Для меня важен путь хранения."}
+      - {turn_id: file-3, role: assistant, text: "Тогда две записи по одному пути считаются одним файлом."}
+
+  - case_id: teapot-dialogue
+    evaluation_class: dialogue_evidence
+    mode: dialogue
+    context: ordinary_physical
+    utterance: "Между Землёй и Марсом движется фарфоровый чайник."
+    expected_clarification: none
+    expected_after_answer: {disposition: complete, verdict: U, open_targets: [evidence]
+    }
+    dialogue:
+      - {turn_id: teapot-0, role: user, text: "Между Землёй и Марсом движется фарфоровый чайник."}
+      - {turn_id: teapot-1, role: assistant, text: "Есть ли наблюдение или свидетельство этого объекта?"}
+      - {turn_id: teapot-2, role: user, text: "Нет, только логическая возможность."}
+      - {turn_id: teapot-3, role: assistant, text: "Утверждение остаётся осмысленным, но неустановленным."}
+
+  - case_id: saturday-dialogue
+    evaluation_class: dialogue_reference
+    mode: dialogue
+    context: fictional_character
+    utterance: "Суббота спит."
+    expected_clarification: {kind: Reference, target: saturday}
+    expected_after_answer: {disposition: dialogue_reassessment_required, open_targets: [evidence]}
+    dialogue:
+      - {turn_id: saturday-0, role: user, text: "Суббота спит."}
+      - {turn_id: saturday-1, role: assistant, text: "«Суббота» — календарный день или имя персонажа?"}
+      - {turn_id: saturday-2, role: user, text: "Это имя персонажа."}
+      - {turn_id: saturday-3, role: assistant, text: "Тогда вопрос о сне зависит от свидетельств о персонаже."}
+
+  - case_id: caloric-dialogue
+    evaluation_class: dialogue_history
+    mode: dialogue
+    context: historical_caloric
+    utterance: "Теплород переходит между телами."
+    expected_clarification: {kind: Ontology, target: historical_theory}
+    expected_after_answer: {disposition: complete, verdict: U, open_targets: [evidence]}
+    dialogue:
+      - {turn_id: caloric-0, role: user, text: "Теплород переходит между телами."}
+      - {turn_id: caloric-1, role: assistant, text: "Рассматривать теплород как историческую теорию?"}
+      - {turn_id: caloric-2, role: user, text: "Да, в рамках этой теории."}
+      - {turn_id: caloric-3, role: assistant, text: "Историческая осмысленность не устанавливает эмпирическую истинность."}
+
+  - case_id: box-dialogue
+    evaluation_class: dialogue_evidence
+    mode: dialogue
+    context: closed_box_unknown
+    utterance: "В коробке красный шар."
+    expected_clarification: {kind: Evidence, target: observation}
+    expected_after_answer: {disposition: dialogue_reassessment_required, open_targets: [evidence]}
+    dialogue:
+      - {turn_id: box-0, role: user, text: "В коробке красный шар."}
+      - {turn_id: box-1, role: assistant, text: "Есть ли наблюдение содержимого коробки?"}
+      - {turn_id: box-2, role: user, text: "Коробку открыли и шар увидели."}
+      - {turn_id: box-3, role: assistant, text: "Теперь утверждение имеет подтверждение в выбранном контексте."}
+
+  - case_id: king-dialogue
+    evaluation_class: dialogue_reference
+    mode: dialogue
+    context: ordinary_reference
+    utterance: "Нынешний король Франции лыс."
+    expected_clarification: {kind: Reference, target: current_king_of_france}
+    expected_after_answer: {disposition: clarification_required, open_targets: [reference]}
+    dialogue:
+      - {turn_id: king-0, role: user, text: "Нынешний король Франции лыс."}
+      - {turn_id: king-1, role: assistant, text: "Какой объект является референтом выражения «нынешний король»?"}
+      - {turn_id: king-2, role: user, text: "Ни один вариант мне не подходит."}
+      - {turn_id: king-3, role: assistant, text: "Система сохраняет вопрос открытым и не навязывает референт."}
+
+  - case_id: liar-dialogue
+    evaluation_class: dialogue_self_reference
+    mode: dialogue
+    context: truth_self_reference
+    utterance: "Это предложение ложно."
+    expected_clarification: {kind: Meaning, target: self_application}
+    expected_after_answer: {disposition: clarification_required, open_targets: [truth_fixed_point]}
+    dialogue:
+      - {turn_id: liar-0, role: user, text: "Это предложение ложно."}
+      - {turn_id: liar-1, role: assistant, text: "Речь о самоприменении предиката истинности?"}
+      - {turn_id: liar-2, role: user, text: "Да, это именно самоприменение."}
+      - {turn_id: liar-3, role: assistant, text: "Ограничение остаётся нерешённым, а не автоматически категориальной ошибкой."}
+
+  - case_id: flash-dialogue
+    evaluation_class: dialogue_identity
+    mode: dialogue
+    context: flash_drive_process
+    utterance: "Идеальная флешка остаётся той же после замены всех частей."
+    expected_clarification: {kind: Meaning, target: identity_criterion}
+    expected_after_answer: {disposition: complete, verdict: T, open_targets: []}
+    dialogue:
+      - {turn_id: flash-0, role: user, text: "Идеальная флешка остаётся той же после замены всех частей."}
+      - {turn_id: flash-1, role: assistant, text: "Критерий — непрерывность процесса или сохранение субстрата?"}
+      - {turn_id: flash-2, role: user, text: "Критерий — непрерывность процесса."}
+      - {turn_id: flash-3, role: assistant, text: "В выбранной онтологии непрерывность поддерживает тождество."}
+
+  - case_id: distinction-dialogue
+    evaluation_class: dialogue_canonical
+    mode: dialogue
+    context: distinction_profile
+    utterance: "Представление различия является самим различием."
+    expected_clarification: {kind: Meaning, target: event_representation}
+    expected_after_answer: {disposition: clarification_required, open_targets: [representation_scope]}
+    dialogue:
+      - {turn_id: distinction-0, role: user, text: "Представление различия является самим различием."}
+      - {turn_id: distinction-1, role: assistant, text: "Вы отождествляете акт различения с его носителем?"}
+      - {turn_id: distinction-2, role: user, text: "Нет, я говорю только о совпадении описаний."}
+      - {turn_id: distinction-3, role: assistant, text: "Это уточняет представление, но не стирает различие D/R."}
+
+  - case_id: arithmetic-dialogue
+    evaluation_class: dialogue_control
+    mode: dialogue
+    context: ordinary_arithmetic
+    utterance: "2 больше 1."
+    expected_clarification: none
+    expected_after_answer: {disposition: complete, verdict: T, open_targets: []}
+    dialogue:
+      - {turn_id: arithmetic-0, role: user, text: "2 больше 1."}
+      - {turn_id: arithmetic-1, role: assistant, text: "В обычном арифметическом контексте принимаю отношение порядка."}
+      - {turn_id: arithmetic-2, role: user, text: "Да, без философского анализа порядка."}
+      - {turn_id: arithmetic-3, role: assistant, text: "Дополнительное уточнение не требуется."}
+
+  - case_id: none-above-dialogue
+    evaluation_class: dialogue_abstention
+    mode: dialogue
+    context: fictional_character
+    utterance: "Суббота спит."
+    expected_clarification: {kind: Reference, target: saturday}
+    expected_after_answer: {disposition: clarification_required, open_targets: [reference]}
+    dialogue:
+      - {turn_id: none-0, role: user, text: "Суббота спит."}
+      - {turn_id: none-1, role: assistant, text: "Это день или персонаж?"}
+      - {turn_id: none-2, role: user, text: "Ни один вариант мне не подходит."}
+      - {turn_id: none-3, role: assistant, text: "Сохраняю неоднозначность без принудительного выбора."}
