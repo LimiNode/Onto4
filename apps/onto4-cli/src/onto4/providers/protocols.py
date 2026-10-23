@@ -17,6 +17,10 @@ from onto4.reasoning import (
 from .projection import AssessmentContextProjection
 
 
+# Host-side bound shared by typed refinement providers and batch admission.
+MAX_REFINEMENT_OPERATIONS = 16
+
+
 @dataclass(frozen=True)
 class TypedDecisionRequest:
     profile: str
@@ -161,6 +165,23 @@ class InterpretationRefinementProvider(Protocol):
         question: ClarificationQuestion,
         answer: str,
     ) -> InterpretationSpace:
+        ...
+
+
+class RefinementDeltaProvider(Protocol):
+    """Propose bounded non-authoritative refinement operations as JSON content."""
+
+    def propose_refinement_deltas(
+        self,
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+        answer: str,
+        *,
+        allowed_operations: Sequence[str],
+        allowed_reading_ids: Sequence[str],
+        allowed_ambiguity_ids: Sequence[str],
+        allowed_ontology_ids: Sequence[str],
+    ) -> Sequence[Mapping[str, object]]:
         ...
 
 

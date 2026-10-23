@@ -187,6 +187,21 @@ def test_model_case_executor_allowlists_stage_names_and_phases():
     assert "secret" not in safe.lower()
 
 
+def test_model_case_executor_records_refinement_stage_without_collapsing_it():
+    executor = _executor()
+    executor._last_events = [
+        ProviderStageEvent("refinement", "started", 0.0),
+        ProviderStageEvent("refinement", "completed", 0.25, "schema_valid"),
+    ]
+
+    calls, timings, outcomes, details = executor._metadata()
+
+    assert calls == 1
+    assert timings == {"refinement": 0.25}
+    assert outcomes == {"refinement": "completed"}
+    assert details == {"refinement": "schema_valid"}
+
+
 def test_model_case_executor_runs_dialogue_with_fake_refinement():
     context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
     initial = InterpretationSpace(
@@ -238,6 +253,85 @@ def test_model_case_executor_runs_dialogue_with_fake_refinement():
 
     assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
     assert execution.semantic_verdict == "C"
+
+
+def test_model_case_executor_runs_dialogue_with_typed_delta_refinement():
+    context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
+    initial = InterpretationSpace(
+        "dialogue-space",
+        "What is the mass of integer 7?",
+        ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-0", "mass", "physical or abstract"),),
+        readings=(SemanticReading("reading-0", "physical", "physical mass"),),
+    )
+
+    class InterpretationProvider:
+        def interpret(self, request):
+            return initial
+
+        def refine(self, *args, **kwargs):
+            raise AssertionError("full snapshot refinement must not run")
+
+    class Formalizer:
+        def formalize(self, request):
+            return (
+                FormalizationCandidate(
+                    f"candidate:{request.interpretation.id}",
+                    "mass",
+                    "has-mass",
+                    request.context_id,
+                    PredicateExpr(PredicateCall("has_mass", (Term("integer_7"),))),
+                    reading_id=request.reading.id,
+                ),
+            )
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **boundary):
+            assert boundary["allowed_reading_ids"] == ("reading-0",)
+            assert boundary["allowed_ambiguity_ids"] == ("ambiguity-0",)
+            return ({
+                "operation": "select_reading",
+                "target_id": "reading-0",
+                "resolved_ambiguity_ids": ["ambiguity-0"],
+            },)
+
+    executor = ModelCaseExecutor(
+        InterpretationProvider(),
+        Formalizer(),
+        {"physical_objects": context},
+        refinement_mode="typed_delta",
+        refinement_delta_provider=DeltaProvider(),
+    )
+    case = ClarificationCorpusCase(
+        **{
+            **_case(mode="dialogue").__dict__,
+            "dialogue": (
+                {
+                    "turn_id": "initial",
+                    "role": "user",
+                    "text": "What is the mass of integer 7?",
+                },
+                {
+                    "turn_id": "question",
+                    "role": "assistant",
+                    "text": "Clarify mass.",
+                    "question_kind": "Meaning",
+                    "target_family": "mass",
+                    "target_ids": ["ambiguity-0"],
+                },
+                {"turn_id": "answer", "role": "user", "text": "physical mass"},
+            ),
+        }
+    )
+
+    execution = executor(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
+    assert execution.diagnostics["ambiguity_count"] == 0
+    assert execution.diagnostics["refinement_operations"] == {"select_reading": 1}
+    assert execution.diagnostics["refinement_effects"] == {"applied": 1}
+    assert execution.diagnostics["refinement_commits"] == 1
+    assert execution.diagnostics["refinement_proposed"] == 1
 
 
 def test_model_case_executor_isolates_case_context():

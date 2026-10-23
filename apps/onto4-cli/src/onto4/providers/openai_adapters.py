@@ -22,7 +22,14 @@ from onto4.reasoning import (
 
 from .openai_compatible import OpenAICompatibleClient, ProviderTransportError
 from .diagnostics import ProviderTrace, ProviderStageEvent, emit_provider_trace
-from .protocols import FormalizationProvider, FormalizationRequest, InterpretationProvider, InterpretationRequest
+from .protocols import (
+    FormalizationProvider,
+    FormalizationRequest,
+    InterpretationProvider,
+    InterpretationRequest,
+    MAX_REFINEMENT_OPERATIONS,
+    RefinementDeltaProvider,
+)
 
 
 class ProviderSchemaError(ValueError):
@@ -617,6 +624,110 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
         return _traced_stage("refinement", self.trace, operation)
 
 
+class OpenAICompatibleRefinementDeltaProvider(RefinementDeltaProvider):
+    """Request bounded operations; host code validates and applies them."""
+
+    def __init__(
+        self,
+        client: OpenAICompatibleClient,
+        *,
+        trace: ProviderTrace | None = None,
+    ) -> None:
+        self.client = client
+        self.trace = trace
+
+    def propose_refinement_deltas(
+        self,
+        interpretation: InterpretationSpace,
+        question: ClarificationQuestion,
+        answer: str,
+        *,
+        allowed_operations: Sequence[str],
+        allowed_reading_ids: Sequence[str],
+        allowed_ambiguity_ids: Sequence[str],
+        allowed_ontology_ids: Sequence[str],
+    ) -> tuple[Mapping[str, object], ...]:
+        interpretation_json = json.dumps(
+            _interpretation_projection(interpretation),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        boundary = {
+            "operations": list(allowed_operations),
+            "reading_ids": list(allowed_reading_ids),
+            "ambiguity_ids": list(allowed_ambiguity_ids),
+            "ontology_ids": list(allowed_ontology_ids),
+        }
+
+        def operation() -> Mapping[str, object]:
+            payload = _response_json(
+                self.client,
+                (
+                    {
+                        "role": "system",
+                        "content": "Return only bounded refinement delta JSON objects.",
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Propose one or more semantic refinement operations after the "
+                            "user's answer. Return {\"deltas\": [{...}]}. Every operation "
+                            f"must be allowed, and the total must be at or below {MAX_REFINEMENT_OPERATIONS}. "
+                            "Operations may reference only host IDs listed in "
+                            "allowed_boundary. Do not return a successor snapshot, invented IDs, "
+                            "an Onto4 verdict, evidence, history or assessment. "
+                            "Operation fields are: select_reading(target_id, "
+                            "resolved_ambiguity_ids), retain_ambiguity(target_id, reason), "
+                            "refine_ambiguity(target_id, text, description, reason), "
+                            "add_presupposition(reading_id, description, reason), "
+                            "qualify_ontology_candidate(target_id, description, reason), "
+                            "or abstain(reason). Omit fields not used by the operation. "
+                            "abstain and retain_ambiguity must each be the only operation "
+                            "in the deltas array when used. "
+                            "Return JSON only.\n\n"
+                            f"allowed_boundary: {json.dumps(boundary, ensure_ascii=False, sort_keys=True)}\n"
+                            f"current_interpretation: {interpretation_json}\n"
+                            f"question: {json.dumps({'id': question.id, 'kind': question.kind.value, 'text': question.text, 'target_ids': list(question.target_ids), 'choices': list(question.choices)}, ensure_ascii=False, sort_keys=True)}\n"
+                            f"user_answer: {answer}"
+                        ),
+                    },
+                ),
+                trace=self.trace,
+                stage="refinement",
+            )
+            _keys(payload, "refinement", {"deltas"})
+            raw_deltas = payload["deltas"]
+            if not isinstance(raw_deltas, list) or not raw_deltas:
+                raise ProviderSchemaError("deltas must be a non-empty JSON array.")
+            if len(raw_deltas) > MAX_REFINEMENT_OPERATIONS:
+                raise ProviderSchemaError(
+                    "deltas exceeds the host operation limit of "
+                    f"{MAX_REFINEMENT_OPERATIONS}."
+                )
+            deltas = []
+            for index, raw_delta in enumerate(raw_deltas):
+                path = f"deltas[{index}]"
+                delta = _object(raw_delta, path)
+                _keys(
+                    delta,
+                    path,
+                    {"operation"},
+                    {
+                        "target_id",
+                        "text",
+                        "label",
+                        "description",
+                        "reason",
+                        "reading_id",
+                        "resolved_ambiguity_ids",
+                    },
+                )
+                deltas.append(dict(delta))
+            return tuple(deltas)
+
+        return _traced_stage("refinement", self.trace, operation)
+
+
 class OpenAICompatibleFormalizationProvider(FormalizationProvider):
     """Build explicit formalization candidates from a structured model reply."""
 
@@ -783,5 +894,6 @@ class OpenAICompatibleFormalizationProvider(FormalizationProvider):
 __all__ = [
     "OpenAICompatibleFormalizationProvider",
     "OpenAICompatibleInterpretationProvider",
+    "OpenAICompatibleRefinementDeltaProvider",
     "ProviderSchemaError",
 ]

@@ -98,6 +98,7 @@ class EvaluationConfig:
     run_id: str | None = None
     context_profile_digests: Mapping[str, str] = field(default_factory=dict)
     interpretation_context_mode: str = "context_late"
+    refinement_mode: str = "full_snapshot"
 
     def __post_init__(self) -> None:
         if self.request_timeout_seconds <= 0:
@@ -126,6 +127,8 @@ class EvaluationConfig:
             raise ValueError(
                 "interpretation_context_mode must be context_late or context_aware."
             )
+        if self.refinement_mode not in {"full_snapshot", "typed_delta"}:
+            raise ValueError("refinement_mode must be full_snapshot or typed_delta.")
 
 
 @dataclass(frozen=True)
@@ -409,16 +412,16 @@ def _load_existing_receipts(
         legacy_manifest = dict(manifest)
         legacy_config = legacy_manifest.get("config")
         expected_config = expected.get("config")
-        if (
-            isinstance(legacy_config, dict)
-            and isinstance(expected_config, dict)
-            and "interpretation_context_mode" not in legacy_config
-            and expected_config.get("interpretation_context_mode") == "context_late"
-        ):
-            legacy_manifest["config"] = {
-                **legacy_config,
+        if isinstance(legacy_config, dict) and isinstance(expected_config, dict):
+            migrated_config = dict(legacy_config)
+            legacy_defaults = {
                 "interpretation_context_mode": "context_late",
+                "refinement_mode": "full_snapshot",
             }
+            for name, default in legacy_defaults.items():
+                if name not in migrated_config and expected_config.get(name) == default:
+                    migrated_config[name] = default
+            legacy_manifest["config"] = migrated_config
         if legacy_manifest != expected:
             raise ValueError("Receipt manifest does not match this evaluation run.")
     existing: dict[str, CaseReceipt] = {}

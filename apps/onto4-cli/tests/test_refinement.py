@@ -12,6 +12,7 @@ from onto4.pipeline import (
     apply_refinement_batch,
     apply_refinement_delta,
 )
+from onto4.providers import MAX_REFINEMENT_OPERATIONS
 from onto4.reasoning import (
     Ambiguity,
     ConceptualDepth,
@@ -116,6 +117,36 @@ def test_add_presupposition_assigns_id_and_does_not_accept_model_id():
                 "description": "meaning",
                 "id": "model-invented",
             }
+        )
+
+
+def test_add_presupposition_can_attach_to_host_bound_reading():
+    request = _request()
+    result = apply_refinement_delta(
+        request,
+        RefinementDelta(
+            RefinementOperation.ADD_PRESUPPOSITION,
+            reading_id="reading-0",
+            description="the speaker commits to an identity bearer",
+        ),
+        successor_id="successor",
+    )
+
+    assert result.successor.readings[0].presupposition_ids == (
+        "presupposition-1",
+    )
+
+
+def test_add_presupposition_rejects_forged_reading_attachment():
+    with pytest.raises(RefinementValidationError, match="Unknown or inadmissible reading"):
+        apply_refinement_delta(
+            _request(),
+            RefinementDelta(
+                RefinementOperation.ADD_PRESUPPOSITION,
+                reading_id="model-invented",
+                description="identity bearer",
+            ),
+            successor_id="successor",
         )
 
 
@@ -235,6 +266,22 @@ def test_batch_applies_multiple_nonconflicting_operations_atomically():
         RefinementOperation.REFINE_AMBIGUITY,
         RefinementOperation.ADD_PRESUPPOSITION,
     ]
+
+
+def test_batch_rejects_operation_count_over_host_limit_before_application():
+    request = _request()
+    deltas = tuple(
+        RefinementDelta(
+            RefinementOperation.ADD_PRESUPPOSITION,
+            description=f"presupposition-{index}",
+        )
+        for index in range(MAX_REFINEMENT_OPERATIONS + 1)
+    )
+
+    with pytest.raises(RefinementValidationError, match="operation limit"):
+        apply_refinement_batch(request, deltas, successor_id="successor")
+
+    assert request.interpretation == _space()
 
 
 @pytest.mark.parametrize(

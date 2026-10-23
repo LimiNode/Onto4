@@ -17,6 +17,7 @@ from .interactive import (
     ModelClarificationPolicy,
     NONE_OF_THE_ABOVE_ANSWERS,
     ProgressAwareClarificationPolicy,
+    TypedDeltaClarificationPolicy,
     interactive_decision_profile,
     run_interactive_dialogue,
 )
@@ -49,6 +50,8 @@ from .refinement import (
     RefinementRequest,
     RefinementResult,
     RefinementValidationError,
+    RefinementUnsupportedError,
+    RefinementTransitionEvidence,
     apply_refinement_batch,
     apply_refinement_delta,
 )
@@ -130,6 +133,8 @@ __all__ = [
     "RefinementRequest",
     "RefinementResult",
     "RefinementValidationError",
+    "RefinementUnsupportedError",
+    "RefinementTransitionEvidence",
     "apply_refinement_batch",
     "apply_refinement_delta",
     "build_clarification_request",
@@ -154,6 +159,7 @@ __all__ = [
     "InteractiveDialogueResult",
     "ModelClarificationPolicy",
     "ProgressAwareClarificationPolicy",
+    "TypedDeltaClarificationPolicy",
     "NONE_OF_THE_ABOVE_ANSWERS",
     "interactive_decision_profile",
     "run_interactive_dialogue",

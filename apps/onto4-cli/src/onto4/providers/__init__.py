@@ -18,6 +18,7 @@ from .openai_compatible import (
 from .openai_adapters import (
     OpenAICompatibleFormalizationProvider,
     OpenAICompatibleInterpretationProvider,
+    OpenAICompatibleRefinementDeltaProvider,
     ProviderSchemaError,
 )
 from .protocols import (
@@ -26,6 +27,8 @@ from .protocols import (
     InterpretationProvider,
     InterpretationRefinementProvider,
     InterpretationRequest,
+    MAX_REFINEMENT_OPERATIONS,
+    RefinementDeltaProvider,
     AbstentionPolicy,
     DecisionProfile,
     TypedDecision,
@@ -49,9 +52,12 @@ __all__ = [
     "InterpretationProvider",
     "InterpretationRefinementProvider",
     "InterpretationRequest",
+    "MAX_REFINEMENT_OPERATIONS",
+    "RefinementDeltaProvider",
     "OpenAICompatibleClient",
     "OpenAICompatibleFormalizationProvider",
     "OpenAICompatibleInterpretationProvider",
+    "OpenAICompatibleRefinementDeltaProvider",
     "ProviderProfile",
     "ProviderStageEvent",
     "ProviderSchemaError",

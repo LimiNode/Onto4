@@ -9,6 +9,7 @@ from onto4.providers import (
     InterpretationRequest,
     OpenAICompatibleFormalizationProvider,
     OpenAICompatibleInterpretationProvider,
+    OpenAICompatibleRefinementDeltaProvider,
     ProviderSchemaError,
 )
 from onto4.reasoning import (
@@ -65,6 +66,127 @@ def test_interpretation_adapter_parses_structured_space_and_requests_json_mode()
     assert result.ambiguities[0].id == "ambiguity-0"
     assert result.readings[0].id == "reading-0"
     assert client.messages[0]["role"] == "system"
+
+
+def test_refinement_delta_adapter_returns_only_bounded_operation_content():
+    client = FakeClient(
+        {
+            "deltas": [{
+                "operation": "select_reading",
+                "target_id": "reading-0",
+                "resolved_ambiguity_ids": ["ambiguity-0"],
+            }]
+        }
+    )
+    interpretation = InterpretationSpace(
+        "space",
+        "The door is closed.",
+        ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-0", "closed", "position or lock"),),
+        readings=(SemanticReading("reading-0", "position", "not open"),),
+    )
+    question = ClarificationQuestion(
+        "meaning:ambiguity-0",
+        ClarificationKind.Meaning,
+        "What does closed mean?",
+        ("ambiguity-0",),
+    )
+
+    deltas = OpenAICompatibleRefinementDeltaProvider(client).propose_refinement_deltas(
+        interpretation,
+        question,
+        "not open",
+        allowed_operations=("select_reading", "abstain"),
+        allowed_reading_ids=("reading-0",),
+        allowed_ambiguity_ids=("ambiguity-0",),
+        allowed_ontology_ids=(),
+    )
+
+    assert deltas[0]["operation"] == "select_reading"
+    prompt = client.messages[1]["content"]
+    assert "reading-0" in prompt
+    assert "ambiguity-0" in prompt
+    assert "Do not return a successor snapshot" in prompt
+    assert "Onto4 verdict" in prompt
+
+
+def test_refinement_delta_adapter_rejects_snapshot_or_verdict_fields():
+    payload = {
+        "deltas": [
+            {"operation": "abstain", "successor": {}, "verdict": "T"}
+        ]
+    }
+    provider = OpenAICompatibleRefinementDeltaProvider(FakeClient(payload))
+    interpretation = InterpretationSpace(
+        "space", "The door is closed.", ConceptualDepth.Ordinary
+    )
+    question = ClarificationQuestion(
+        "question", ClarificationKind.Meaning, "Clarify", ()
+    )
+
+    with pytest.raises(ProviderSchemaError, match="unknown fields"):
+        provider.propose_refinement_deltas(
+            interpretation,
+            question,
+            "none",
+            allowed_operations=("abstain",),
+            allowed_reading_ids=(),
+            allowed_ambiguity_ids=(),
+            allowed_ontology_ids=(),
+        )
+
+
+def test_refinement_delta_adapter_rejects_empty_batch():
+    provider = OpenAICompatibleRefinementDeltaProvider(FakeClient({"deltas": []}))
+    interpretation = InterpretationSpace(
+        "space", "The door is closed.", ConceptualDepth.Ordinary
+    )
+    question = ClarificationQuestion(
+        "question", ClarificationKind.Meaning, "Clarify", ()
+    )
+
+    with pytest.raises(ProviderSchemaError, match="non-empty JSON array"):
+        provider.propose_refinement_deltas(
+            interpretation,
+            question,
+            "none",
+            allowed_operations=("abstain",),
+            allowed_reading_ids=(),
+            allowed_ambiguity_ids=(),
+            allowed_ontology_ids=(),
+        )
+
+
+def test_refinement_delta_adapter_rejects_batch_over_host_operation_limit():
+    from onto4.providers import MAX_REFINEMENT_OPERATIONS
+
+    provider = OpenAICompatibleRefinementDeltaProvider(
+        FakeClient(
+            {
+                "deltas": [
+                    {"operation": "abstain"}
+                    for _ in range(MAX_REFINEMENT_OPERATIONS + 1)
+                ]
+            }
+        )
+    )
+    interpretation = InterpretationSpace(
+        "space", "The door is closed.", ConceptualDepth.Ordinary
+    )
+    question = ClarificationQuestion(
+        "question", ClarificationKind.Meaning, "Clarify", ()
+    )
+
+    with pytest.raises(ProviderSchemaError, match="operation limit"):
+        provider.propose_refinement_deltas(
+            interpretation,
+            question,
+            "none",
+            allowed_operations=("abstain",),
+            allowed_reading_ids=(),
+            allowed_ambiguity_ids=(),
+            allowed_ontology_ids=(),
+        )
 
 
 @pytest.mark.parametrize(

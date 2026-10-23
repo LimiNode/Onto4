@@ -19,6 +19,7 @@ from onto4.reasoning import (
     Presupposition,
     SemanticReading,
 )
+from onto4.providers.protocols import MAX_REFINEMENT_OPERATIONS
 
 
 class RefinementOperation(str, Enum):
@@ -40,6 +41,10 @@ class RefinementValidationError(ValueError):
     """A model delta cannot be admitted against the host snapshot."""
 
 
+class RefinementUnsupportedError(ValueError):
+    """The typed refinement mode has no safe operation for this question."""
+
+
 @dataclass(frozen=True)
 class RefinementDelta:
     """Model-proposed operation content; IDs are references, never inventions."""
@@ -50,12 +55,16 @@ class RefinementDelta:
     label: str | None = None
     description: str | None = None
     reason: str | None = None
+    # ``reading_id`` is intentionally separate from ``target_id``: a batch
+    # may select a reading and attach a newly admitted presupposition to that
+    # same reading without looking like a repeated target.
+    reading_id: str | None = None
     resolved_ambiguity_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.operation, RefinementOperation):
             raise RefinementValidationError("operation must be a RefinementOperation.")
-        for name in ("target_id", "text", "label", "description", "reason"):
+        for name in ("target_id", "text", "label", "description", "reason", "reading_id"):
             value = getattr(self, name)
             if value is not None and not isinstance(value, str):
                 raise RefinementValidationError(
@@ -82,6 +91,7 @@ class RefinementDelta:
             "label": self.label is not None,
             "description": self.description is not None,
             "reason": self.reason is not None,
+            "reading_id": self.reading_id is not None,
             "resolved_ambiguity_ids": bool(self.resolved_ambiguity_ids),
         }
         allowed_by_operation = {
@@ -93,7 +103,9 @@ class RefinementDelta:
                 "description",
                 "reason",
             },
-            RefinementOperation.ADD_PRESUPPOSITION: {"description", "reason"},
+            RefinementOperation.ADD_PRESUPPOSITION: {
+                "description", "reason", "reading_id"
+            },
             RefinementOperation.QUALIFY_ONTOLOGY_CANDIDATE: {
                 "target_id",
                 "description",
@@ -122,6 +134,7 @@ class RefinementDelta:
             "label",
             "description",
             "reason",
+            "reading_id",
             "resolved_ambiguity_ids",
         }
         unknown = set(value) - allowed
@@ -138,7 +151,9 @@ class RefinementDelta:
             ) from exc
         fields = {
             key: value.get(key)
-            for key in ("target_id", "text", "label", "description", "reason")
+            for key in (
+                "target_id", "text", "label", "description", "reason", "reading_id"
+            )
         }
         if any(item is not None and not isinstance(item, str) for item in fields.values()):
             raise RefinementValidationError("Refinement operation fields must be strings.")
@@ -220,6 +235,16 @@ class RefinementBatchResult:
     source_interpretation_id: str
     successor: InterpretationSpace
     commitments: tuple[RefinementCommitment, ...]
+
+
+@dataclass(frozen=True)
+class RefinementTransitionEvidence:
+    """Safe host evidence carried into progress admission and diagnostics."""
+
+    operations: tuple[RefinementOperation, ...]
+    effects: tuple[RefinementEffect, ...]
+    proposed_count: int
+    committed: bool = True
 
 
 @dataclass(frozen=True)
@@ -388,10 +413,30 @@ def apply_refinement_delta(
                 "add_presupposition requires a non-empty description."
             )
         target_id = None
+        reading_id = delta.reading_id
+        if reading_id is not None:
+            reading_id = _require_target(
+                request,
+                reading_id,
+                request.allowed_reading_ids,
+                label="reading",
+                actual=(item.id for item in interpretation.readings),
+            )
         new_id = _next_id(
             "presupposition",
             (item.id for item in interpretation.presuppositions),
         )
+        readings = interpretation.readings
+        if reading_id is not None:
+            readings = tuple(
+                replace(
+                    reading,
+                    presupposition_ids=(*reading.presupposition_ids, new_id),
+                )
+                if reading.id == reading_id
+                else reading
+                for reading in readings
+            )
         successor = replace(
             interpretation,
             id=successor_id,
@@ -399,6 +444,7 @@ def apply_refinement_delta(
                 *interpretation.presuppositions,
                 Presupposition(new_id, delta.description),
             ),
+            readings=readings,
         )
     elif operation is RefinementOperation.QUALIFY_ONTOLOGY_CANDIDATE:
         target_id = _require_target(
@@ -452,6 +498,11 @@ def apply_refinement_batch(
 
     if not deltas:
         raise RefinementValidationError("A refinement batch must not be empty.")
+    if len(deltas) > MAX_REFINEMENT_OPERATIONS:
+        raise RefinementValidationError(
+            "A refinement batch exceeds the host operation limit of "
+            f"{MAX_REFINEMENT_OPERATIONS}."
+        )
     if batch_id is not None and not batch_id.strip():
         raise RefinementValidationError("batch_id must be non-empty when supplied.")
     abstentions = [delta for delta in deltas if delta.operation is RefinementOperation.ABSTAIN]
@@ -511,6 +562,8 @@ __all__ = [
     "RefinementRequest",
     "RefinementResult",
     "RefinementValidationError",
+    "RefinementUnsupportedError",
+    "RefinementTransitionEvidence",
     "apply_refinement_batch",
     "apply_refinement_delta",
 ]

@@ -24,6 +24,7 @@ from onto4.pipeline import (
     load_clarification_corpus,
     offline_fixture_executor,
     run_interactive_dialogue,
+    TypedDeltaClarificationPolicy,
     write_markdown_report,
 )
 from onto4.pipeline.compare import compare_files
@@ -34,6 +35,7 @@ from onto4.providers import (
     OpenAICompatibleClient,
     OpenAICompatibleFormalizationProvider,
     OpenAICompatibleInterpretationProvider,
+    OpenAICompatibleRefinementDeltaProvider,
     ProviderProfile,
     ProviderStageEvent,
     ProviderSchemaError,
@@ -179,6 +181,10 @@ def _run_ask(args: argparse.Namespace) -> int:
             context_ids=tuple(contexts),
             trace=trace,
         )
+        delta_provider = OpenAICompatibleRefinementDeltaProvider(
+            client,
+            trace=trace,
+        )
         request_state = {}
         if args.interpretation_context_mode == "context_aware":
             request_state["context_projections"] = {
@@ -191,9 +197,14 @@ def _run_ask(args: argparse.Namespace) -> int:
             state=request_state,
         )
         if args.interactive:
-            dialogue_policy = ModelClarificationPolicy(
-                FixtureClarificationPolicy(),
-                interpretation_provider,
+            dialogue_policy = (
+                TypedDeltaClarificationPolicy(
+                    FixtureClarificationPolicy(), delta_provider
+                )
+                if args.refinement_mode == "typed_delta"
+                else ModelClarificationPolicy(
+                    FixtureClarificationPolicy(), interpretation_provider
+                )
             )
             dialogue = run_interactive_dialogue(
                 request,
@@ -239,6 +250,11 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
     try:
         corpus = load_clarification_corpus(args.corpus)
         digest = corpus_digest(args.corpus)
+        if args.mode == "offline" and args.refinement_mode == "typed_delta":
+            raise ValueError(
+                "offline mode does not execute typed_delta refinement; "
+                "use --refinement-mode full_snapshot or --mode model-backed."
+            )
         contexts = {}
         requested_depth = (
             None if args.depth == "auto" else ConceptualDepth(args.depth)
@@ -272,6 +288,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
             formalization_adapter = OpenAICompatibleFormalizationProvider(
                 client, context_ids=tuple(contexts)
             )
+            delta_adapter = OpenAICompatibleRefinementDeltaProvider(client)
             executor = ModelCaseExecutor(
                 interpretation_adapter,
                 formalization_adapter,
@@ -279,10 +296,15 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                 max_turns=args.max_turns,
                 requested_conceptual_depth=requested_depth,
                 interpretation_context_mode=args.interpretation_context_mode,
+                refinement_mode=args.refinement_mode,
+                refinement_delta_provider=(
+                    delta_adapter if args.refinement_mode == "typed_delta" else None
+                ),
                 trace_sink=trace,
             )
             interpretation_adapter.trace = executor.provider_trace
             formalization_adapter.trace = executor.provider_trace
+            delta_adapter.trace = executor.provider_trace
             provider = "openai-compatible"
             model = args.model
         else:
@@ -315,6 +337,7 @@ def _run_eval_corpus(args: argparse.Namespace) -> int:
                 for path in args.context or ()
             },
             interpretation_context_mode=args.interpretation_context_mode,
+            refinement_mode=args.refinement_mode,
         )
         run = SequentialEvaluationRunner(
             executor,
@@ -396,6 +419,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="context_late",
         help="Interpretation baseline: omit context or provide bounded ontology affordances.",
     )
+    ask_parser.add_argument(
+        "--refinement-mode",
+        choices=("full_snapshot", "typed_delta"),
+        default="full_snapshot",
+        help="Interactive semantic update mode; typed_delta is experimental.",
+    )
     ask_parser.add_argument("--format", choices=("text", "json"), default="text")
     ask_parser.add_argument(
         "--debug",
@@ -431,6 +460,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("auto", *(depth.value for depth in ConceptualDepth)),
         default="auto",
         help="Requested interpretation depth for model-backed runs (default: auto).",
+    )
+    corpus_parser.add_argument(
+        "--refinement-mode",
+        choices=("full_snapshot", "typed_delta"),
+        default="full_snapshot",
+        help="Dialogue refinement mode; typed_delta is experimental and recorded in the manifest.",
     )
     corpus_parser.add_argument(
         "--prompt-variant",

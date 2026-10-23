@@ -257,6 +257,13 @@ selected kind from the same provenance, the bridge fails closed; an abstention
 does not silently fall back to another question.
 `T/F/U/C` remain exclusively produced by the core evaluator.
 
+The typed-delta path is an experimental model-backed execution mode. The
+offline corpus executor records protocol coverage only and does not apply typed
+deltas; `eval-corpus --mode offline --refinement-mode typed_delta` is rejected
+instead of being recorded as if typed refinement had run. Every typed batch is
+also bounded by a host-side limit of 16 operations, enforced before any
+snapshot or commitment can change.
+
 A selected question is stored as an immutable `PendingClarification` before it
 is shown to the user. The later `apply_clarification_answer()` call uses that
 exact question and does not invoke the provider again. It checks the current
