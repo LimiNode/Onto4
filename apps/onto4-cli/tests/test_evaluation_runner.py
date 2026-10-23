@@ -110,6 +110,49 @@ def test_timeout_result_finishes_before_retry_or_next_case():
     assert run.receipts[0].attempts == 2
 
 
+def test_retry_receipt_preserves_attempt_level_accounting():
+    corpus = load_clarification_corpus(CORPUS)
+    calls = 0
+
+    def executor(case, *, request_timeout_seconds):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return CaseExecution(
+                EvaluationOutcome.REQUEST_TIMEOUT,
+                provider_calls=2,
+                stage_timings={"interpretation": 0.1},
+                stage_outcomes={"interpretation": "failed"},
+                stage_details={"interpretation": "transport"},
+                detail_code="first",
+            )
+        return CaseExecution(
+            EvaluationOutcome.ASSESSMENT_COMPLETED,
+            provider_calls=3,
+            stage_timings={"interpretation": 0.2},
+            stage_outcomes={"interpretation": "completed"},
+            stage_details={"interpretation": "schema_valid"},
+            detail_code="second",
+        )
+
+    run = SequentialEvaluationRunner(
+        executor,
+        config=EvaluationConfig(max_retries=1),
+    ).run(replace(corpus, cases=(corpus.cases[0],)), digest="digest")
+
+    receipt = run.receipts[0]
+    assert receipt.attempts == 2
+    assert receipt.provider_calls == 5
+    assert [item.outcome for item in receipt.attempt_history] == [
+        EvaluationOutcome.REQUEST_TIMEOUT,
+        EvaluationOutcome.ASSESSMENT_COMPLETED,
+    ]
+    assert receipt.provider_stage_seconds == {
+        "attempt#1:interpretation": 0.1,
+        "attempt#2:interpretation": 0.2,
+    }
+
+
 @pytest.mark.parametrize("signal", (KeyboardInterrupt, SystemExit))
 def test_process_control_signals_escape_executor_boundary(signal):
     corpus = load_clarification_corpus(CORPUS)
@@ -150,6 +193,40 @@ def test_runner_resumes_completed_receipts_without_reexecuting(tmp_path):
     assert len(calls) == first_call_count
 
 
+def test_runner_reads_legacy_receipts_without_attempt_history(tmp_path):
+    corpus = replace(
+        load_clarification_corpus(CORPUS),
+        cases=(load_clarification_corpus(CORPUS).cases[0],),
+    )
+    receipt_path = tmp_path / "receipts.jsonl"
+    calls = []
+
+    def executor(case, *, request_timeout_seconds):
+        calls.append(case.case_id)
+        return CaseExecution(EvaluationOutcome.ASSESSMENT_COMPLETED)
+
+    config = EvaluationConfig()
+    runner = SequentialEvaluationRunner(
+        executor, config=config, receipt_path=receipt_path
+    )
+    first = runner.run(corpus, digest="digest")
+    assert first.receipts[0].attempt_history
+
+    lines = receipt_path.read_text(encoding="utf-8").splitlines()
+    legacy_receipt = json.loads(lines[1])
+    legacy_receipt.pop("attempt_history", None)
+    receipt_path.write_text(
+        "\n".join([lines[0], json.dumps(legacy_receipt, sort_keys=True)]) + "\n",
+        encoding="utf-8",
+    )
+
+    resumed = runner.run(corpus, digest="digest")
+
+    assert calls == [corpus.cases[0].case_id]
+    assert resumed.receipts[0].attempt_history == ()
+    assert resumed.receipts[0].outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
+
+
 def test_runner_classifies_timeout_and_retries_only_transport_classes(tmp_path):
     corpus = load_clarification_corpus(CORPUS)
     calls = 0
@@ -172,6 +249,21 @@ def test_runner_classifies_timeout_and_retries_only_transport_classes(tmp_path):
 
     assert run.receipts[0].outcome is EvaluationOutcome.SCHEMA_INVALID
     assert run.receipts[0].attempts == 2
+
+
+def test_runner_marks_late_success_as_case_deadline_exceeded():
+    corpus = load_clarification_corpus(CORPUS)
+
+    def executor(case, *, request_timeout_seconds):
+        time.sleep(0.01)
+        return CaseExecution(EvaluationOutcome.ASSESSMENT_COMPLETED)
+
+    run = SequentialEvaluationRunner(
+        executor,
+        config=EvaluationConfig(case_deadline_seconds=0.001),
+    ).run(replace(corpus, cases=(corpus.cases[0],)), digest="digest")
+
+    assert run.receipts[0].outcome is EvaluationOutcome.CASE_DEADLINE_EXCEEDED
 
 
 @pytest.mark.parametrize(

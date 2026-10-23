@@ -67,6 +67,23 @@ def test_interpretation_adapter_parses_structured_space_and_requests_json_mode()
     assert client.messages[0]["role"] == "system"
 
 
+@pytest.mark.parametrize(
+    ("variant", "marker"),
+    (
+        ("baseline", "requested_conceptual_depth"),
+        ("explicit_depth", "Repeat the requested conceptual_depth exactly"),
+        ("compact_json", '"conceptual_depth":"ordinary"'),
+    ),
+)
+def test_interpretation_prompt_variants_are_explicitly_recordable(variant, marker):
+    client = FakeClient(interpretation_payload())
+    OpenAICompatibleInterpretationProvider(
+        client, prompt_variant=variant
+    ).interpret(InterpretationRequest("The door is closed."))
+
+    assert marker in client.messages[1]["content"]
+
+
 def test_interpretation_adapter_assigns_ids_and_ignores_model_identity_claims():
     payload = interpretation_payload()
     payload["presuppositions"] = [{"id": "model-presupposition", "description": "a door exists"}]

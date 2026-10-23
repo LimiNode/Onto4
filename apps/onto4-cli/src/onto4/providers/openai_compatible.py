@@ -12,6 +12,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from enum import Enum
+from time import monotonic
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit
 
@@ -118,6 +119,12 @@ class OpenAICompatibleClient:
         self.profile = profile
         self._bearer_token = bearer_token
         self._urlopen = _urlopen_without_redirects if urlopen is None else urlopen
+        self._deadline: float | None = None
+
+    def set_deadline(self, deadline: float | None) -> None:
+        """Set an optional monotonic deadline for all subsequent requests."""
+
+        self._deadline = deadline
 
     def list_models(self) -> tuple[str, ...]:
         """Run a non-generative connection check against ``GET /models``."""
@@ -187,7 +194,12 @@ class OpenAICompatibleClient:
             headers["Authorization"] = f"Bearer {self._bearer_token}"
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with self._urlopen(request, timeout=self.profile.timeout_seconds) as response:
+            timeout = self.profile.timeout_seconds
+            if self._deadline is not None:
+                timeout = min(timeout, self._deadline - monotonic())
+                if timeout <= 0:
+                    raise ProviderTransportError("Provider request deadline exceeded.")
+            with self._urlopen(request, timeout=timeout) as response:
                 content_length = response.headers.get("Content-Length")
                 if content_length is not None:
                     try:

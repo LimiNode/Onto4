@@ -30,6 +30,8 @@ class ClarificationQuestion:
     text: str
     target_ids: tuple[str, ...]
     choices: tuple[str, ...] = ()
+    # Host-owned semantic binding; replay must not infer it from wording.
+    target_family: str | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +164,7 @@ class FixtureClarificationPolicy:
                     kind=ClarificationKind.Meaning,
                     text=f"Что именно означает «{ambiguity.term}» в этом вопросе?",
                     target_ids=(ambiguity.id,),
+                    target_family=ambiguity.term,
                 )
                 for ambiguity in interpretation.ambiguities
             )
@@ -209,6 +212,7 @@ class FixtureClarificationPolicy:
                     kind=kind,
                     text=text,
                     target_ids=landscape.unresolved_candidate_ids,
+                    target_family="candidate",
                 )
                 for code, kind, text in question_specs
                 if code in diagnostic_codes
@@ -221,6 +225,7 @@ class FixtureClarificationPolicy:
                     kind=ClarificationKind.Formalization,
                     text="Что нужно уточнить, чтобы завершить формализацию этого чтения?",
                     target_ids=landscape.unresolved_candidate_ids,
+                    target_family="candidate",
                 ),
             )
 
@@ -233,6 +238,7 @@ class FixtureClarificationPolicy:
                     text="Какой из представленных контекстов следует использовать для оценки?",
                     target_ids=contexts,
                     choices=contexts,
+                    target_family="context",
                 ),
             )
 
@@ -252,6 +258,7 @@ class FixtureClarificationPolicy:
                         text="Какое смысловое чтение утверждения вы имеете в виду?",
                         target_ids=reading_targets,
                         choices=reading_targets,
+                        target_family="reading",
                     ),
                 )
             targets = tuple(item.candidate.id for item in context.assessments)
@@ -262,6 +269,7 @@ class FixtureClarificationPolicy:
                     text="Какой вариант формализации следует рассматривать?",
                     target_ids=targets,
                     choices=targets,
+                    target_family="candidate",
                 ),
             )
 
@@ -281,6 +289,7 @@ class FixtureClarificationPolicy:
                         text="Какое смысловое чтение утверждения вы имеете в виду?",
                         target_ids=reading_targets,
                         choices=reading_targets,
+                        target_family="reading",
                     ),
                 )
             targets = tuple(dict.fromkeys(item.candidate.id for item in context.assessments))
@@ -291,6 +300,7 @@ class FixtureClarificationPolicy:
                     text="Какой вариант формализации следует рассматривать?",
                     target_ids=targets,
                     choices=targets,
+                    target_family="candidate",
                 ),
             )
 

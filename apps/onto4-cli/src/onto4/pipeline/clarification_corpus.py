@@ -171,6 +171,27 @@ def load_clarification_corpus(path: str | Path) -> ClarificationCorpus:
                     raise ValueError(
                         f"cases[{index}].dialogue[{turn_index}].text must be non-empty."
                     )
+                if role == "assistant" and "question_kind" in turn:
+                    if turn["question_kind"] not in {
+                        "Meaning",
+                        "Ontology",
+                        "Reference",
+                        "Presupposition",
+                        "Evidence",
+                        "Perspective",
+                        "Context",
+                        "Formalization",
+                    }:
+                        raise ValueError(
+                            f"cases[{index}].dialogue[{turn_index}].question_kind is invalid."
+                        )
+                if "target_family" in turn and (
+                    not isinstance(turn["target_family"], str)
+                    or not turn["target_family"].strip()
+                ):
+                    raise ValueError(
+                        f"cases[{index}].dialogue[{turn_index}].target_family must be non-empty."
+                    )
                 dialogue.append(dict(turn))
         if version >= 2 and mode == "dialogue" and len(dialogue) < 2:
             raise ValueError(

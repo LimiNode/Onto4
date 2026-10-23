@@ -86,8 +86,9 @@ provider, prompt and transport diagnostics intact.
 
 ## Reproducible sequential runner
 
-The repository includes an offline runner that visits every corpus case with
-one worker and writes a manifest plus one receipt per case:
+The repository includes a sequential runner that visits every corpus case with
+one worker and writes a manifest plus one receipt per case. Offline mode is
+deterministic and does not contact a provider:
 
 ```text
 python -m onto4.cli.main eval-corpus \
@@ -104,10 +105,38 @@ from semantic outcomes; none is converted automatically into `T`, `F`, `U` or
 `C`. The offline fixture run therefore establishes corpus coverage and report
 reproducibility, not semantic fidelity.
 
-At present `eval-corpus` selects only this offline fixture executor. It does
-not contact Bonsai or any other model-backed endpoint. A real provider run
-requires a separate case executor with the same single-flight, manifest and
-receipt contracts.
+An opt-in model-backed mode reuses the same runner and receipt contract:
+
+```text
+python -m onto4.cli.main eval-corpus --mode model-backed \
+  --corpus eval/clarification/model-smoke.yaml \
+  --receipt artifacts/model.receipts.jsonl \
+  --report artifacts/model.report.md \
+  --endpoint http://127.0.0.1:8080/v1 \
+  --model MODEL_ID \
+  --context profiles/contexts/physical_objects.yaml
+```
+
+The model-backed executor keeps each case bound to its declared host context.
+It replays only a structurally valid scripted dialogue: the first user turn
+must equal the case utterance, roles must alternate, a scripted answer is
+consumed only after an issued question, and an exhausted script is an
+operational failure rather than an implicit `none_of_the_above`. A question
+intent mismatch is also recorded separately from a semantic verdict.
+
+The v2 corpus currently contains context specifications that are not all
+materialized as executable profiles. The available profile stems are
+`physical_objects`, `verified_physical_objects`, `continuity`,
+`identity_and_genome`, `process`, `relational_time` and `substance`. The
+remaining v2 ids — `ordinary_physical`, `fictional_character`,
+`ordinary_arithmetic`, `identity_path`, `identity_bytes`, `flash_drive_process`,
+`flash_drive_substrate`, `historical_caloric`, `modern_thermal`,
+`closed_box_unknown`, `closed_box_red_confirmed`, `ordinary_reference`,
+`fiction_holmes`, `truth_self_reference`, `quote_context`,
+`distinction_profile` and `sequence_time` — remain specification-only until
+their typed ontologies are added. The runner reports
+`context_unavailable` for a missing declared profile and never substitutes a
+different profile or treats its prose description as an executable ontology.
 
 An additional opt-in experiment, `onto4.pipeline.refinement`, exposes typed
 refinement deltas. It is intentionally separate from corpus scoring and from

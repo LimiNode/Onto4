@@ -25,6 +25,7 @@ from .clarification_corpus import (
     load_clarification_corpus,
 )
 from .evaluation import (
+    AttemptRecord,
     CaseExecution,
     CaseReceipt,
     EvaluationConfig,
@@ -36,6 +37,7 @@ from .evaluation import (
     offline_fixture_executor,
     write_markdown_report,
 )
+from .model_evaluation import ModelCaseExecutor
 from .refinement import (
     RefinementBatchResult,
     RefinementCommitLedger,
@@ -107,6 +109,7 @@ __all__ = [
     "load_clarification_corpus",
     "CaseExecution",
     "CaseReceipt",
+    "AttemptRecord",
     "EvaluationConfig",
     "EvaluationOutcome",
     "EvaluationRun",
@@ -115,6 +118,7 @@ __all__ = [
     "corpus_digest",
     "offline_fixture_executor",
     "write_markdown_report",
+    "ModelCaseExecutor",
     "RefinementCommitLedger",
     "RefinementBatchResult",
     "RefinementCommitment",

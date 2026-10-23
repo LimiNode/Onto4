@@ -28,6 +28,10 @@ from .protocols import FormalizationProvider, FormalizationRequest, Interpretati
 class ProviderSchemaError(ValueError):
     """Raised when a model response does not satisfy an adapter contract."""
 
+    def __init__(self, message: str, *, code: str = "schema_invalid") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 def _object(value: Any, path: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
@@ -279,7 +283,10 @@ def _parse_interpretation(payload: Mapping[str, Any], request: InterpretationReq
     try:
         depth = ConceptualDepth(_string(payload["conceptual_depth"], "conceptual_depth"))
     except ValueError as exc:
-        raise ProviderSchemaError("conceptual_depth is not a supported ConceptualDepth.") from exc
+        raise ProviderSchemaError(
+            "conceptual_depth is not a supported ConceptualDepth.",
+            code="unsupported_conceptual_depth",
+        ) from exc
     if request.conceptual_depth is not None and depth is not request.conceptual_depth:
         raise ProviderSchemaError(
             "Model conceptual_depth does not match the interpretation request."
@@ -451,9 +458,15 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
         client: OpenAICompatibleClient,
         *,
         trace: ProviderTrace | None = None,
+        prompt_variant: str = "baseline",
     ) -> None:
+        if prompt_variant not in {"baseline", "explicit_depth", "compact_json"}:
+            raise ValueError(
+                "prompt_variant must be baseline, explicit_depth or compact_json."
+            )
         self.client = client
         self.trace = trace
+        self.prompt_variant = prompt_variant
 
     def interpret(self, request: InterpretationRequest) -> InterpretationSpace:
         requested_depth = (
@@ -467,6 +480,18 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
             else "Select one supported ConceptualDepth; do not infer an unsupported value."
         )
         def operation() -> InterpretationSpace:
+            variant_instruction = ""
+            if self.prompt_variant == "explicit_depth":
+                variant_instruction = (
+                    "Repeat the requested conceptual_depth exactly in the output; "
+                    "do not use a synonym or a translated label. "
+                )
+            elif self.prompt_variant == "compact_json":
+                variant_instruction = (
+                    'Use this compact shape example: {"source_text":"...",'
+                    '"conceptual_depth":"ordinary","ambiguities":[],'
+                    '"presuppositions":[],"ontologies":[],"readings":[]}. '
+                )
             payload = _response_json(
                 self.client,
                 (
@@ -474,7 +499,8 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                     {
                         "role": "user",
                         "content": (
-                            "Interpret this source text into the exact JSON fields "
+                            variant_instruction
+                            + "Interpret this source text into the exact JSON fields "
                             "id, source_text, conceptual_depth, ambiguities, presuppositions, "
                             "ontologies and readings. Do not choose a verdict. "
                             f"requested_conceptual_depth: {requested_depth}. "
