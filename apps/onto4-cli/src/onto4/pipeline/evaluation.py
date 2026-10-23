@@ -97,6 +97,7 @@ class EvaluationConfig:
     requested_conceptual_depth: str = "auto"
     run_id: str | None = None
     context_profile_digests: Mapping[str, str] = field(default_factory=dict)
+    interpretation_context_mode: str = "context_late"
 
     def __post_init__(self) -> None:
         if self.request_timeout_seconds <= 0:
@@ -121,6 +122,10 @@ class EvaluationConfig:
             "ontology_sensitive",
         }:
             raise ValueError("requested_conceptual_depth must be a supported depth or auto.")
+        if self.interpretation_context_mode not in {"context_late", "context_aware"}:
+            raise ValueError(
+                "interpretation_context_mode must be context_late or context_aware."
+            )
 
 
 @dataclass(frozen=True)
@@ -397,8 +402,25 @@ def _load_existing_receipts(
         manifest = json.loads(lines[0])
     except json.JSONDecodeError as exc:
         raise ValueError("Receipt manifest is not valid JSON.") from exc
-    if manifest != dict(expected_manifest):
-        raise ValueError("Receipt manifest does not match this evaluation run.")
+    if not isinstance(manifest, Mapping):
+        raise ValueError("Receipt manifest must be a JSON object.")
+    expected = dict(expected_manifest)
+    if manifest != expected:
+        legacy_manifest = dict(manifest)
+        legacy_config = legacy_manifest.get("config")
+        expected_config = expected.get("config")
+        if (
+            isinstance(legacy_config, dict)
+            and isinstance(expected_config, dict)
+            and "interpretation_context_mode" not in legacy_config
+            and expected_config.get("interpretation_context_mode") == "context_late"
+        ):
+            legacy_manifest["config"] = {
+                **legacy_config,
+                "interpretation_context_mode": "context_late",
+            }
+        if legacy_manifest != expected:
+            raise ValueError("Receipt manifest does not match this evaluation run.")
     existing: dict[str, CaseReceipt] = {}
     for index, line in enumerate(lines[1:], start=1):
         if not line.strip():

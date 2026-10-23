@@ -27,6 +27,7 @@ from onto4.reasoning import (
     FormalizationCandidate,
     InterpretationSpace,
     PipelineDisposition,
+    Presupposition,
     SemanticReading,
 )
 
@@ -59,7 +60,15 @@ def run(space, candidates, contexts, *, source="question"):
     )
 
 
-def candidate(identifier, formalization_id, context_id, expression, *, reading_id=None):
+def candidate(
+    identifier,
+    formalization_id,
+    context_id,
+    expression,
+    *,
+    reading_id=None,
+    assumptions=(),
+):
     return FormalizationCandidate(
         id=identifier,
         label=identifier,
@@ -67,14 +76,21 @@ def candidate(identifier, formalization_id, context_id, expression, *, reading_i
         context_id=context_id,
         formalization=expression,
         reading_id=reading_id,
+        assumptions=assumptions,
     )
 
 
-def space(*, identifier="space", ambiguities=(), readings=()):
+def space(
+    *,
+    identifier="space",
+    ambiguities=(),
+    readings=(),
+    depth=ConceptualDepth.Philosophical,
+):
     return InterpretationSpace(
         id=identifier,
         source_text="question",
-        conceptual_depth=ConceptualDepth.Philosophical,
+        conceptual_depth=depth,
         ambiguities=ambiguities,
         readings=readings,
     )
@@ -102,6 +118,313 @@ def test_material_ambiguity_requests_meaning_clarification():
     assert result.disposition is PipelineDisposition.AskClarification
     assert result.clarification_question.kind is ClarificationKind.Meaning
     assert result.clarification_question.target_ids == ("identity-term",)
+
+
+def test_ambiguity_is_not_material_when_all_readings_agree_in_context():
+    readings = (
+        SemanticReading("numeric", "numeric", "numeric comparison"),
+        SemanticReading("ordinal", "ordinal", "ordinal comparison"),
+    )
+    result = run(
+        space(
+            ambiguities=(Ambiguity("greater", "больше", "quantity or order"),),
+            readings=readings,
+            depth=ConceptualDepth.Ordinary,
+        ),
+        [
+            candidate("numeric", "numeric", "fixture", atom("a"), reading_id="numeric"),
+            candidate("ordinal", "ordinal", "fixture", atom("a"), reading_id="ordinal"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.Complete
+    assert result.reason == "assessed"
+    assert result.clarification_question is None
+
+
+def test_equivalent_readings_require_equal_presupposition_commitments():
+    readings = (
+        SemanticReading("first", "first", "same AST", ("shared",)),
+        SemanticReading("second", "second", "same AST", ("shared",)),
+    )
+    result = run(
+        InterpretationSpace(
+            id="space",
+            source_text="question",
+            conceptual_depth=ConceptualDepth.Ordinary,
+            ambiguities=(Ambiguity("term", "личность", "identity criterion"),),
+            presuppositions=(Presupposition("shared", "a person is under discussion"),),
+            readings=readings,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("a"), reading_id="second"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.Complete
+
+
+def test_different_presupposition_commitments_keep_clarification():
+    readings = (
+        SemanticReading("first", "first", "same AST", ("cause",)),
+        SemanticReading("second", "second", "same AST", ("essence",)),
+    )
+    result = run(
+        InterpretationSpace(
+            id="space",
+            source_text="question",
+            conceptual_depth=ConceptualDepth.Ordinary,
+            ambiguities=(Ambiguity("term", "личность", "identity criterion"),),
+            presuppositions=(
+                Presupposition("cause", "genes influence development"),
+                Presupposition("essence", "genes carry identity essence"),
+            ),
+            readings=readings,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("a"), reading_id="second"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_duplicate_presupposition_ids_keep_clarification_fail_closed():
+    readings = (
+        SemanticReading("first", "first", "same AST", ("shared", "shared")),
+        SemanticReading("second", "second", "same AST", ("shared",)),
+    )
+    result = run(
+        InterpretationSpace(
+            id="space",
+            source_text="question",
+            conceptual_depth=ConceptualDepth.Ordinary,
+            ambiguities=(Ambiguity("term", "личность", "identity criterion"),),
+            presuppositions=(Presupposition("shared", "a person is under discussion"),),
+            readings=readings,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("a"), reading_id="second"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_missing_presupposition_reference_keeps_clarification_fail_closed():
+    readings = (
+        SemanticReading("first", "first", "same AST", ("missing",)),
+        SemanticReading("second", "second", "same AST", ()),
+    )
+    result = run(
+        InterpretationSpace(
+            id="space",
+            source_text="question",
+            conceptual_depth=ConceptualDepth.Ordinary,
+            ambiguities=(Ambiguity("term", "личность", "identity criterion"),),
+            presuppositions=(),
+            readings=readings,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("a"), reading_id="second"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_missing_declared_reading_coverage_keeps_clarification():
+    readings = (
+        SemanticReading("first", "first", "first meaning"),
+        SemanticReading("second", "second", "second meaning"),
+    )
+    result = run(
+        space(
+            ambiguities=(Ambiguity("term", "личность", "two meanings"),),
+            readings=readings,
+            depth=ConceptualDepth.Ordinary,
+        ),
+        [candidate("first", "first", "fixture", atom("a"), reading_id="first")],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_unknown_reading_id_keeps_clarification():
+    readings = (
+        SemanticReading("first", "first", "first meaning"),
+        SemanticReading("second", "second", "second meaning"),
+    )
+    interpretation = space(
+        ambiguities=(Ambiguity("term", "личность", "two meanings"),),
+        readings=readings,
+        depth=ConceptualDepth.Ordinary,
+    )
+    candidates = (
+        candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+        candidate("unknown", "unknown", "fixture", atom("a"), reading_id="not-supplied"),
+    )
+
+    class UntrustedFormalizer:
+        def formalize(self, request):
+            return candidates
+
+    result = ask(
+        InterpretationRequest("question", conceptual_depth=ConceptualDepth.Ordinary),
+        interpretation_provider=FixtureInterpretationProvider(
+            {("question", ConceptualDepth.Ordinary): interpretation}
+        ),
+        formalization_provider=UntrustedFormalizer(),
+        contexts={"fixture": context(verdicts={"a()": Verdict.T})},
+        clarification_policy=FixtureClarificationPolicy(),
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_distinct_formalizations_with_same_true_verdict_remain_material():
+    readings = (
+        SemanticReading("numeric", "numeric", "numeric comparison"),
+        SemanticReading("ordinal", "ordinal", "ordinal comparison"),
+    )
+    result = run(
+        space(
+            ambiguities=(Ambiguity("greater", "больше", "quantity or order"),),
+            readings=readings,
+            depth=ConceptualDepth.Ordinary,
+        ),
+        [
+            candidate("numeric", "numeric", "fixture", atom("a"), reading_id="numeric"),
+            candidate("ordinal", "ordinal", "fixture", atom("b"), reading_id="ordinal"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T, "b()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+    assert result.reason == "material_ambiguity"
+
+
+def test_distinct_formalizations_with_same_unknown_verdict_remain_material():
+    readings = (
+        SemanticReading("first", "first", "first meaning"),
+        SemanticReading("second", "second", "second meaning"),
+    )
+    result = run(
+        space(
+            ambiguities=(Ambiguity("term", "личность", "two meanings"),),
+            readings=readings,
+            depth=ConceptualDepth.Ordinary,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("b"), reading_id="second"),
+        ],
+        {"fixture": context()},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_distinct_category_errors_with_same_c_verdict_remain_material():
+    readings = (
+        SemanticReading("first", "first", "first category"),
+        SemanticReading("second", "second", "second category"),
+    )
+    category_context = AssessmentContext(
+        ontology=OntologyProfile(
+            name="fixture",
+            predicates={
+                "a": PredicateSignature(("PhysicalObject",)),
+                "b": PredicateSignature(("PhysicalObject",)),
+            },
+        )
+    )
+    result = run(
+        space(
+            ambiguities=(Ambiguity("term", "объект", "two categories"),),
+            readings=readings,
+            depth=ConceptualDepth.Ordinary,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("b"), reading_id="second"),
+        ],
+        {"fixture": category_context},
+    )
+
+    assert result.landscape.status is CrossCandidateStatus.StableAcrossCandidates
+    assert all(item.result.verdict is Verdict.C for item in result.assessments)
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_multiple_candidates_for_one_reading_do_not_prove_equivalence():
+    readings = (SemanticReading("one", "one", "one meaning"),)
+    result = run(
+        space(
+            ambiguities=(Ambiguity("term", "личность", "two meanings"),),
+            readings=readings,
+            depth=ConceptualDepth.Ordinary,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="one"),
+            candidate("second", "second", "fixture", atom("b"), reading_id="one"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T, "b()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_ontology_sensitive_depth_keeps_ambiguity_conservative():
+    readings = (
+        SemanticReading("first", "first", "same formal content"),
+        SemanticReading("second", "second", "same formal content"),
+    )
+    result = run(
+        space(
+            ambiguities=(Ambiguity("term", "личность", "identity criterion"),),
+            readings=readings,
+            depth=ConceptualDepth.OntologySensitive,
+        ),
+        [
+            candidate("first", "first", "fixture", atom("a"), reading_id="first"),
+            candidate("second", "second", "fixture", atom("a"), reading_id="second"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+
+
+def test_ambiguity_remains_material_when_readings_change_assessment():
+    readings = (
+        SemanticReading("numeric", "numeric", "numeric comparison"),
+        SemanticReading("ordinal", "ordinal", "ordinal comparison"),
+    )
+    result = run(
+        space(
+            ambiguities=(Ambiguity("greater", "больше", "quantity or order"),),
+            readings=readings,
+        ),
+        [
+            candidate("numeric", "numeric", "fixture", atom("a"), reading_id="numeric"),
+            candidate("ordinal", "ordinal", "fixture", atom("b"), reading_id="ordinal"),
+        ],
+        {"fixture": context(verdicts={"a()": Verdict.T, "b()": Verdict.F})},
+    )
+
+    assert result.disposition is PipelineDisposition.AskClarification
+    assert result.reason == "material_ambiguity"
 
 
 def test_context_dependence_requests_context_clarification():

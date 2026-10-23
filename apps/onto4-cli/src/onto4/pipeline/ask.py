@@ -207,7 +207,7 @@ def determine_disposition(context: ClarificationContext) -> tuple[PipelineDispos
     landscape = context.landscape
     if landscape.status is CrossCandidateStatus.InvalidRequest:
         return PipelineDisposition.CannotProceed, "invalid_request"
-    if context.interpretation.ambiguities:
+    if material_ambiguity(context):
         return PipelineDisposition.AskClarification, "material_ambiguity"
     if landscape.status is CrossCandidateStatus.FormalizationUnresolved:
         return PipelineDisposition.AskClarification, "formalization_unresolved"
@@ -235,3 +235,65 @@ def determine_disposition(context: ClarificationContext) -> tuple[PipelineDispos
     ):
         return PipelineDisposition.NeedEvidence, "insufficient_or_conflicting_evidence"
     return PipelineDisposition.Complete, "assessed"
+
+
+def material_ambiguity(context: ClarificationContext) -> bool:
+    """Return whether an interpretation ambiguity changes this assessment.
+
+    An ambiguity is not material merely because a provider listed it.  The
+    host may suppress it only when distinct readings have exactly the same
+    formal expression and assumptions in one assessed context.  Equal
+    ``T/F/U/C`` values alone are never enough: they can arise from different
+    meanings, missing evidence, or independent category errors.  With one
+    reading, repeated candidates, unresolved candidates, or a reflective/
+    philosophical depth we retain conservative clarification behaviour.
+    """
+
+    if not context.interpretation.ambiguities:
+        return False
+    if context.landscape.status is not CrossCandidateStatus.StableAcrossCandidates:
+        return True
+    interpretation = context.interpretation
+    if interpretation.conceptual_depth.value not in {"ordinary", "reflective"}:
+        return True
+    if len({item.context_id for item in context.assessments}) != 1:
+        return True
+
+    declared_readings = tuple(interpretation.readings)
+    declared_ids = tuple(reading.id for reading in declared_readings)
+    if len(set(declared_ids)) != len(declared_ids):
+        return True
+    presuppositions = {item.id: item.description for item in interpretation.presuppositions}
+    if len(presuppositions) != len(interpretation.presuppositions):
+        return True
+    by_reading: dict[str, list[CandidateAssessment]] = {}
+    for item in context.assessments:
+        reading_id = item.candidate.reading_id
+        if reading_id is None:
+            return True
+        by_reading.setdefault(reading_id, []).append(item)
+    if (
+        len(by_reading) < 2
+        or set(by_reading) != set(declared_ids)
+        or any(len(items) != 1 for items in by_reading.values())
+    ):
+        return True
+
+    if any(
+        len(reading.presupposition_ids) != len(set(reading.presupposition_ids))
+        or any(item not in presuppositions for item in reading.presupposition_ids)
+        for reading in declared_readings
+    ):
+        return True
+    footprints = []
+    for reading in declared_readings:
+        item = by_reading[reading.id][0]
+        commitments = tuple(
+            (presupposition_id, presuppositions[presupposition_id])
+            for presupposition_id in reading.presupposition_ids
+        )
+        footprints.append(
+            (item.candidate.formalization, item.candidate.assumptions, commitments)
+        )
+    baseline = footprints[0]
+    return any(footprint != baseline for footprint in footprints[1:])

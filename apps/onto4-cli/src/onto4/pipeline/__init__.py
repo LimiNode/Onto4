@@ -6,6 +6,7 @@ from .ask import (
     assess_interpretation,
     assess_interpretation_per_reading,
     formalize_per_reading_and_context,
+    material_ambiguity,
 )
 from .interactive import (
     ClarificationProgress,
@@ -106,6 +107,7 @@ __all__ = [
     "ask",
     "ask_per_reading",
     "formalize_per_reading_and_context",
+    "material_ambiguity",
     "load_clarification_corpus",
     "CaseExecution",
     "CaseReceipt",

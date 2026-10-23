@@ -479,6 +479,24 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
             if request.conceptual_depth is not None
             else "Select one supported ConceptualDepth; do not infer an unsupported value."
         )
+        context_instruction = ""
+        raw_contexts = request.state.get("context_projections")
+        if isinstance(raw_contexts, Mapping) and raw_contexts:
+            projections = {
+                str(context_id): value
+                for context_id, value in raw_contexts.items()
+                if isinstance(value, Mapping)
+            }
+            if projections:
+                context_instruction = (
+                    "A bounded ontology-only context projection is supplied below. "
+                    "Use it only to judge which distinctions are relevant to this "
+                    "utterance; it contains no evidence or verdict and must not be "
+                    "treated as one. Do not invent symbols or predicates outside it.\n"
+                    "context_projections: "
+                    + json.dumps(projections, ensure_ascii=False, sort_keys=True)
+                    + "\n"
+                )
         def operation() -> InterpretationSpace:
             variant_instruction = ""
             if self.prompt_variant == "explicit_depth":
@@ -517,6 +535,7 @@ class OpenAICompatibleInterpretationProvider(InterpretationProvider):
                         "readings:[{label,description,presupposition_indexes}]. "
                             "Do not use arrays of prose strings. "
                             "Return JSON only.\n\n"
+                            f"{context_instruction}"
                             f"source_text: {request.source_text}"
                         ),
                     },
