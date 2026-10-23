@@ -68,7 +68,7 @@ did not convert the model's refinement into a semantic receipt.
 The redaction-safe artifact is
 [pr46-interactive-prototype.json](pr46-interactive-prototype.json), and the
 runner is
-[pr46_interactive_prototype.py](/C:/_repoz/Onto4/apps/onto4-cli/research/pr46_interactive_prototype.py).
+[pr46_interactive_prototype.py](../../apps/onto4-cli/research/pr46_interactive_prototype.py).
 
 The artifact does not copy provider event details. Stage names, phases,
 finish reasons, failure labels and elapsed time are normalized through closed
