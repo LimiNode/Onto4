@@ -110,6 +110,9 @@ class BindingEvaluation:
     transition: CheckStatus
     semantic_identity: SemanticIdentityStatus
     errors: tuple[str, ...] = ()
+    evaluated_previous_snapshot_id: str | None = None
+    evaluated_current_snapshot_id: str | None = None
+    evaluated_question_id: str | None = None
 
     @property
     def structurally_admissible(self) -> bool:
@@ -345,6 +348,9 @@ def evaluate_binding_claim(
             else SemanticIdentityStatus.UNVERIFIED
         ),
         errors=tuple(errors),
+        evaluated_previous_snapshot_id=transition.previous.id,
+        evaluated_current_snapshot_id=transition.current.id,
+        evaluated_question_id=transition.question.id,
     )
 
 
@@ -376,6 +382,9 @@ def evaluate_binding_claims(
                 transition=CheckStatus.INVALID,
                 semantic_identity=evaluation.semantic_identity,
                 errors=(*evaluation.errors, "Duplicate or conflicting binding claim."),
+                evaluated_previous_snapshot_id=evaluation.evaluated_previous_snapshot_id,
+                evaluated_current_snapshot_id=evaluation.evaluated_current_snapshot_id,
+                evaluated_question_id=evaluation.evaluated_question_id,
             )
             first = evaluations[previous]
             evaluations[previous] = BindingEvaluation(
@@ -386,6 +395,9 @@ def evaluate_binding_claims(
                 transition=CheckStatus.INVALID,
                 semantic_identity=first.semantic_identity,
                 errors=(*first.errors, "Duplicate or conflicting binding claim."),
+                evaluated_previous_snapshot_id=first.evaluated_previous_snapshot_id,
+                evaluated_current_snapshot_id=first.evaluated_current_snapshot_id,
+                evaluated_question_id=first.evaluated_question_id,
             )
         else:
             seen[key] = index
