@@ -1,0 +1,118 @@
+{
+  "record_type": "pr39_target_binding_evidence",
+  "source_sha": "d969338ee040e304e4dc1afb0f3aa1a373604967",
+  "model": "bonsai2-27b-pq2_0",
+  "backend": "llama.cpp OpenAI-compatible /v1",
+  "sampling": {
+    "temperature": 0,
+    "thinking_enabled": false,
+    "max_output_tokens": 4096
+  },
+  "prompt_version": "pr39-target-binding-v1",
+  "model_artifact_digest": null,
+  "prompt_hash": null,
+  "semantic_oracle": null,
+  "evidence_kind": "curated_redacted_summary",
+  "redactions": [
+    "drop prompts and raw model payloads",
+    "drop credentials and local filesystem paths",
+    "retain safe stage outcomes, target IDs and provenance flags"
+  ],
+  "source_receipts": {
+    "e2e_report": {
+      "run_id": "pr39-bonsai-20261019-target-binding-e2e-4096-corrected",
+      "sha256": "8ec3aea7ac3f190aaed0b7ea5e47d202aa5275432218eec0502f4a17e94ac8eb",
+      "artifact": "report.json",
+      "digest_status": "computed locally; raw receipt is not published"
+    },
+    "e2e_receipts": {
+      "run_id": "pr39-bonsai-20261019-target-binding-e2e-4096-corrected",
+      "sha256": "fe3ff4e2ae252419a592cd6bc677937b1708ebf62f7344971d00a6bf0fbe9499",
+      "artifact": "receipts.jsonl",
+      "digest_status": "computed locally; raw receipt is not published"
+    },
+    "isolated_runner_output": {
+      "run_id": "pr39-bonsai-20261019-target-binding-two-turn-4096-corrected-v2",
+      "sha256": "040c685877e89adf509bed2cf9be0f490915a22b99d348c26e51d47092b16d1d",
+      "artifact": "runner-output.json",
+      "digest_status": "computed locally; raw output is not published"
+    }
+  },
+  "e2e": {
+    "run_id": "pr39-bonsai-20261019-target-binding-e2e-4096-corrected",
+    "corpus": "bounded-dialogue-v1",
+    "target_catalog": "bounded-dialogue-targets-v1",
+    "max_output_tokens": 4096,
+    "cases": 2,
+    "outcomes": {
+      "question_intent_unverified": 2,
+      "reassessment_performed": 0,
+      "semantic_comparable": 0
+    },
+    "detail_code": "family_unverified"
+  },
+  "isolated": {
+    "run_id": "pr39-bonsai-20261019-target-binding-two-turn-4096-corrected-v2",
+    "protocol": "host_bound_two_turn_full_snapshot",
+    "catalog_binding": "snapshot_bound_provider_registry",
+    "semantic_oracle": null,
+    "cases": [
+      {
+        "case_id": "genome-identity-bounded",
+        "initial": {
+          "ambiguity_target_ids": ["ambiguity-genome"],
+          "ontology_target_ids": []
+        },
+        "turns": [
+          {
+            "turn": 1,
+            "kind": "Meaning",
+            "question_target_ids": ["ambiguity-genome"],
+            "provider_successor_valid": true,
+            "host_workflow_admission": "not_evaluated",
+            "transition_provenance_valid": true,
+            "successor_ambiguity_target_ids": ["ambiguity-criterion"],
+            "target_preserved": false
+          },
+          {
+            "turn": 2,
+            "kind": "Meaning",
+            "question_target_ids": ["ambiguity-criterion"],
+            "provider_successor_valid": false,
+            "host_workflow_admission": "not_evaluated",
+            "transition_provenance_valid": false,
+            "error_code": "ProviderSchemaError"
+          }
+        ]
+      },
+      {
+        "case_id": "intrinsic-time-bounded",
+        "initial": {
+          "ambiguity_target_ids": ["ambiguity-present"],
+          "ontology_target_ids": ["ambiguity-observer"]
+        },
+        "turns": [
+          {
+            "turn": 1,
+            "kind": "Meaning",
+            "question_target_ids": ["ambiguity-present"],
+            "provider_successor_valid": true,
+            "host_workflow_admission": "not_evaluated",
+            "transition_provenance_valid": true,
+            "target_preserved": true
+          },
+          {
+            "turn": 2,
+            "kind": "Ontology",
+            "question_target_ids": ["ambiguity-observer"],
+            "provider_successor_valid": true,
+            "host_workflow_admission": "not_evaluated",
+            "transition_provenance_valid": true,
+            "target_preserved": true
+          }
+        ]
+      }
+    ]
+  },
+  "privacy": "redacted IDs and stage outcomes only; no prompts, raw model payloads or credentials"
+}
