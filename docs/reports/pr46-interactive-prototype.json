@@ -1,0 +1,200 @@
+{
+  "record_type": "pr46_redaction_safe_interactive_prototype",
+  "experiment_version": 1,
+  "case_id": "genome-identity-interactive-one-turn",
+  "source": {
+    "source_digest": "add954c4e31da903787b1c034148bb7650de34c9f48af83373984102e6072b46",
+    "source_length": 49,
+    "context_id": "identity_and_genome"
+  },
+  "answer": {
+    "fixture_id": "genome-identity-numerical-first-turn"
+  },
+  "provider": {
+    "endpoint": "http://127.0.0.1:8080",
+    "model": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+    "temperature": 0.0,
+    "max_output_tokens": 768,
+    "thinking_enabled": false
+  },
+  "stages": [
+    {
+      "stage": "interpretation",
+      "phase": "started",
+      "elapsed_seconds": 0.0,
+      "detail": ""
+    },
+    {
+      "stage": "interpretation",
+      "phase": "response_received",
+      "elapsed_seconds": 9.02,
+      "detail": "finish_reason=stop, completion_tokens=652"
+    },
+    {
+      "stage": "interpretation",
+      "phase": "json_valid",
+      "elapsed_seconds": 9.02,
+      "detail": ""
+    },
+    {
+      "stage": "interpretation",
+      "phase": "completed",
+      "elapsed_seconds": 9.02,
+      "detail": "schema_valid"
+    },
+    {
+      "stage": "formalization",
+      "phase": "started",
+      "elapsed_seconds": 0.0,
+      "detail": ""
+    },
+    {
+      "stage": "formalization",
+      "phase": "response_received",
+      "elapsed_seconds": 4.065,
+      "detail": "finish_reason=stop, completion_tokens=215"
+    },
+    {
+      "stage": "formalization",
+      "phase": "json_valid",
+      "elapsed_seconds": 4.065,
+      "detail": ""
+    },
+    {
+      "stage": "formalization",
+      "phase": "completed",
+      "elapsed_seconds": 4.065,
+      "detail": "schema_valid"
+    },
+    {
+      "stage": "formalization",
+      "phase": "started",
+      "elapsed_seconds": 0.0,
+      "detail": ""
+    },
+    {
+      "stage": "formalization",
+      "phase": "response_received",
+      "elapsed_seconds": 3.314,
+      "detail": "finish_reason=stop, completion_tokens=232"
+    },
+    {
+      "stage": "formalization",
+      "phase": "json_valid",
+      "elapsed_seconds": 3.314,
+      "detail": ""
+    },
+    {
+      "stage": "formalization",
+      "phase": "completed",
+      "elapsed_seconds": 3.314,
+      "detail": "schema_valid"
+    },
+    {
+      "stage": "refinement",
+      "phase": "started",
+      "elapsed_seconds": 0.0,
+      "detail": ""
+    },
+    {
+      "stage": "refinement",
+      "phase": "response_received",
+      "elapsed_seconds": 8.522,
+      "detail": "finish_reason=stop, completion_tokens=603"
+    },
+    {
+      "stage": "refinement",
+      "phase": "json_valid",
+      "elapsed_seconds": 8.522,
+      "detail": ""
+    },
+    {
+      "stage": "refinement",
+      "phase": "completed",
+      "elapsed_seconds": 8.522,
+      "detail": "schema_valid"
+    },
+    {
+      "stage": "formalization",
+      "phase": "started",
+      "elapsed_seconds": 0.0,
+      "detail": ""
+    },
+    {
+      "stage": "formalization",
+      "phase": "response_received",
+      "elapsed_seconds": 3.382,
+      "detail": "finish_reason=stop, completion_tokens=215"
+    },
+    {
+      "stage": "formalization",
+      "phase": "json_valid",
+      "elapsed_seconds": 3.382,
+      "detail": ""
+    },
+    {
+      "stage": "formalization",
+      "phase": "completed",
+      "elapsed_seconds": 3.382,
+      "detail": "schema_valid"
+    },
+    {
+      "stage": "formalization",
+      "phase": "started",
+      "elapsed_seconds": 0.0,
+      "detail": ""
+    },
+    {
+      "stage": "formalization",
+      "phase": "response_received",
+      "elapsed_seconds": 3.311,
+      "detail": "finish_reason=stop, completion_tokens=232"
+    },
+    {
+      "stage": "formalization",
+      "phase": "json_valid",
+      "elapsed_seconds": 3.311,
+      "detail": ""
+    },
+    {
+      "stage": "formalization",
+      "phase": "completed",
+      "elapsed_seconds": 3.311,
+      "detail": "schema_valid"
+    }
+  ],
+  "clarification_prompts_emitted": 2,
+  "turns": 1,
+  "stop_reason": "max_turns_reached",
+  "final": {
+    "interpretation_id": "interpretation-053c2fdc658dbfc0",
+    "landscape": "StableAcrossCandidates",
+    "disposition": "AskClarification",
+    "reason": "material_ambiguity",
+    "assessment_count": 2,
+    "assessment_states": [
+      "Assessed",
+      "Assessed"
+    ],
+    "assessment_verdicts": [
+      "U",
+      "U"
+    ]
+  },
+  "progress": [
+    {
+      "question_id": "meaning:ambiguity-0",
+      "kind": "structural_resolution",
+      "new_item_count": 1,
+      "new_semantic_signature_count": 4,
+      "refinement_operations": [],
+      "refinement_effects": [],
+      "refinement_committed": false
+    }
+  ],
+  "model_run_started": true,
+  "provider_payloads_recorded": false,
+  "production_admission_changed": false,
+  "semantic_adjudication_receipt_created": false,
+  "historical_pr40_semantic_identity": "not_evaluated"
+}
