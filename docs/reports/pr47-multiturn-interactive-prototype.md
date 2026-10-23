@@ -1,0 +1,73 @@
+# PR #47 — bounded multi-turn interactive prototype
+
+Это research-only прототип, продолжающий интеграционный smoke-тест из PR #46. В PR #46 ответ был заранее зафиксирован и разрешался только один ход. Здесь каждый ответ на уточняющий вопрос поступает через обычный пользовательский ввод, а число ходов ограничивается host-политикой.
+
+## Что проверяет прототип
+
+Главный вопрос — не сколько вопросов задал интерфейс, а изменилась ли структура неопределённости после ответа пользователя. Поэтому runner не сводит результат к одному числу и не объявляет исчезновение `ambiguity` доказанной семантической идентичностью.
+
+Для каждого наблюдения сохраняется redaction-safe вектор:
+
+- число `ambiguity` и `reading`;
+- число presuppositions;
+- число открытых ontology targets;
+- число assessments и unresolved assessments;
+- число `U`-вердиктов;
+- landscape, disposition и причина остановки.
+
+Structural uncertainty и неизвестность из-за недостатка evidence учитываются раздельно. Поэтому уменьшение `ambiguity_count` не означает автоматически уменьшения `unknown_verdict_count`, а `U` не превращается в семантическую ошибку.
+
+Сокращение количества `U` само по себе также не считается эпистемическим разрешением. Runner сохраняет raw delta, но сообщает `epistemic_reduction_status = established` только при сопоставимых host-bound кандидатах, для которых действительно наблюдается переход `U` в `T` или `F`. Переходы в `C` или отсутствие verdict, а также повторное использование ID для изменённой формализации, остаются `not_established` либо `not_comparable`.
+
+## Границы
+
+Runner:
+
+- принимает ответы через `input()` и ограничивает число ходов параметром `--max-turns`;
+- публикует только число полученных ответов, lifecycle events и векторные дельты;
+- не публикует текст ответов, provider payloads, credentials или исходные prompts;
+- не создаёт `SemanticAdjudicationReceipt`;
+- не меняет production admission;
+- не утверждает историческую semantic identity PR #40.
+- для произвольного `source_text` публикует только `source_kind = unidentified`; публичный `fixture_id` и длина источника появляются только для host-owned frozen fixture;
+- выставляет `model_run_started` только при явном model-backed запуске; deterministic fixture оставляет этот флаг `false`.
+- заменяет provider- и caller-controlled идентификаторы в опубликованном артефакте на host-owned aliases `snapshot-N`, `question-N` и `case-0`.
+
+Полевой Bonsai-прогон в этот increment не входит. Детерминированные тесты используют host snapshots и введённые ответы, чтобы проверить именно многотуровую механику и расчёт векторных дельт без сетевого вызова.
+
+## Наблюдаемая дельта
+
+`uncertainty_delta` содержит разности `final - initial` для каждого измерения. `observed_reduction` может иметь значения `structural`, `epistemic`, `structural_and_epistemic` или `none_observed`. Это operational evidence о состоянии host snapshot, а не универсальная оценка смысла пользовательского высказывания.
+
+В deterministic fixture один ответ удаляет одну ambiguity:
+
+| Измерение | До | После | Дельта |
+| --- | ---: | ---: | ---: |
+| `ambiguity_count` | 1 | 0 | -1 |
+| `structural_open_count` | 1 | 0 | -1 |
+| `unknown_verdict_count` | 0 | 0 | 0 |
+| ответы пользователя | 0 | 1 | +1 |
+
+Результат остаётся `semantic_identity = not_evaluated`. Тесты также покрывают два последовательных ответа: два разных вопроса, два successor transition, три непрерывных snapshot-наблюдения и остановку после второго хода. Отдельные регрессии проверяют `U→C`, `U→None`, изменённую формализацию при повторном ID и приватные идентификаторы injected provider.
+
+## Воспроизведение
+
+Детерминированная проверка выполняется без сети:
+
+```text
+cd apps/onto4-cli
+python -m pytest -q tests/test_pr47_multiturn_interactive_prototype.py
+```
+
+Для ручного bounded-прогона с реальным endpoint:
+
+```text
+python research/pr47_multiturn_interactive_prototype.py \
+  --endpoint http://127.0.0.1:8080/v1 \
+  --model Ternary-Bonsai-2-27B-PQ2_0.gguf \
+  --context profiles/contexts/identity_and_genome.yaml \
+  --max-turns 3 \
+  --output ../../docs/reports/pr47-multiturn-interactive-prototype.json
+```
+
+Путь к context должен указывать на host-owned fixture локального окружения; его содержимое и ответы пользователя в опубликованный отчёт не копируются.
