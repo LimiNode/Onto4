@@ -178,8 +178,7 @@ def test_fixture_metadata_and_model_provenance_are_explicit():
     )
 
     assert artifact["source"] == {
-        "fixture_id": "frozen-fixture",
-        "source_length": len("Claim."),
+        "source_kind": "unidentified",
     }
     assert artifact["model_run_started"] is True
 
@@ -232,9 +231,9 @@ def test_multiturn_runner_preserves_two_sequential_transitions_and_question_keys
     assert artifact["stop_reason"] == "complete"
     assert [item["ambiguity_count"] for item in artifact["uncertainty_trace"]] == [2, 1, 0]
     assert [item["interpretation_id"] for item in artifact["uncertainty_trace"]] == [
-        "initial",
-        "successor-1",
-        "successor-2",
+        "snapshot-0",
+        "snapshot-1",
+        "snapshot-2",
     ]
     assert len(artifact["progress"]) == 2
     assert artifact["progress"][0]["question_id"] != artifact["progress"][1]["question_id"]
@@ -321,3 +320,93 @@ def test_comparable_u_to_determined_transition_is_explicitly_established():
     assert delta["epistemic_reduction_observed"] is True
     assert delta["epistemic_reduction_status"] == "established"
     assert delta["observed_reduction"] == "structural_and_epistemic"
+
+
+def test_u_to_conflict_or_unresolved_verdict_is_not_epistemic():
+    fields = {
+        "ambiguity_count": 0,
+        "reading_count": 1,
+        "presupposition_count": 0,
+        "open_ontology_target_count": 0,
+        "assessment_count": 1,
+        "unresolved_assessment_count": 1,
+        "unknown_verdict_count": 1,
+        "structural_open_count": 1,
+        "disposition": "AskClarification",
+    }
+    for verdict in (Verdict.C, None):
+        initial = {**fields, "_assessment_states": (("candidate-a", Verdict.U),)}
+        final = {
+            **fields,
+            "unresolved_assessment_count": 0,
+            "unknown_verdict_count": 0,
+            "structural_open_count": 0,
+            "_assessment_states": (("candidate-a", verdict),),
+        }
+
+        delta = _SCRIPT._uncertainty_delta(initial, final)
+
+        assert delta["epistemic_reduction_observed"] is False
+        assert delta["epistemic_reduction_status"] == "not_established"
+        assert delta["observed_reduction"] == "structural"
+
+
+def test_reused_candidate_id_with_changed_formalization_is_not_comparable():
+    fields = {
+        "ambiguity_count": 0,
+        "reading_count": 1,
+        "presupposition_count": 0,
+        "open_ontology_target_count": 0,
+        "assessment_count": 1,
+        "unresolved_assessment_count": 1,
+        "unknown_verdict_count": 1,
+        "structural_open_count": 1,
+        "disposition": "AskClarification",
+    }
+    initial = {
+        **fields,
+        "_assessment_states": ((("candidate-a", "formalization-v1"), Verdict.U),),
+    }
+    final = {
+        **fields,
+        "unknown_verdict_count": 0,
+        "unresolved_assessment_count": 0,
+        "structural_open_count": 0,
+        "_assessment_states": ((("candidate-a", "formalization-v2"), Verdict.T),),
+    }
+
+    delta = _SCRIPT._uncertainty_delta(initial, final)
+
+    assert delta["epistemic_reduction_observed"] is False
+    assert delta["epistemic_reduction_status"] == "not_comparable"
+
+
+def test_provider_and_caller_identifiers_are_not_published():
+    answer = "PRIVATE_USER_ANSWER"
+    refinement = _SequentialRefinementProvider(
+        successors=(_space("PRIVATE_SUCCESSOR", ambiguity_ids=()),),
+        expected_interpretation_ids=("PRIVATE_INTERPRETATION",),
+        expected_answers=(answer,),
+    )
+    artifact = _run(
+        refinement,
+        iter((answer,)),
+        initial=_space(
+            "PRIVATE_INTERPRETATION",
+            ambiguity_ids=("PRIVATE_AMBIGUITY",),
+        ),
+        source_fixture_id="PRIVATE_FIXTURE",
+        model_backed=False,
+    )
+
+    serialized = json.dumps(artifact, ensure_ascii=False)
+    for private_value in (
+        "PRIVATE_USER_ANSWER",
+        "PRIVATE_INTERPRETATION",
+        "PRIVATE_SUCCESSOR",
+        "PRIVATE_AMBIGUITY",
+        "PRIVATE_FIXTURE",
+    ):
+        assert private_value not in serialized
+    assert artifact["case_id"] == "case-0"
+    assert artifact["progress"][0]["question_id"] == "question-0"

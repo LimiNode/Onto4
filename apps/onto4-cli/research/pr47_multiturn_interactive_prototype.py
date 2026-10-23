@@ -39,6 +39,7 @@ from onto4.reasoning import FixtureClarificationPolicy
 
 CASE_ID = "genome-identity-interactive-multiturn"
 SOURCE_TEXT = "Does sharing a genome make two people one person?"
+_PUBLIC_CASE_ALIAS = "case-0"
 
 _SAFE_STAGES = frozenset({"interpretation", "formalization", "refinement"})
 _SAFE_PHASES = frozenset(
@@ -118,7 +119,9 @@ def _uncertainty_snapshot(ask_result, *, observation_index: int) -> dict[str, An
     )
     return {
         "observation_index": observation_index,
-        "interpretation_id": interpretation.id,
+        # The provider's interpretation id remains process-local.  Public
+        # artifacts use a host-owned observation alias instead.
+        "interpretation_id": f"snapshot-{observation_index}",
         "ambiguity_count": len(interpretation.ambiguities),
         "reading_count": len(interpretation.readings),
         "presupposition_count": len(interpretation.presuppositions),
@@ -134,7 +137,18 @@ def _uncertainty_snapshot(ask_result, *, observation_index: int) -> dict[str, An
         # identifiers and verdicts must not become part of the redaction-safe
         # public artifact.
         "_assessment_states": tuple(
-            (item.candidate.id, item.result.verdict) for item in assessments
+            (
+                (
+                    item.candidate.id,
+                    item.candidate.formalization_id,
+                    item.candidate.context_id,
+                    item.candidate.reading_id,
+                    repr(item.candidate.formalization),
+                    item.candidate.assumptions,
+                ),
+                item.result.verdict,
+            )
+            for item in assessments
         ),
     }
 
@@ -169,8 +183,8 @@ def _uncertainty_delta(
     structural_reduced = delta["structural_open_count_delta"] < 0
     initial_states = tuple(initial.get("_assessment_states", ()))
     final_states = tuple(final.get("_assessment_states", ()))
-    initial_counts = Counter(candidate_id for candidate_id, _ in initial_states)
-    final_counts = Counter(candidate_id for candidate_id, _ in final_states)
+    initial_counts = Counter(identity for identity, _ in initial_states)
+    final_counts = Counter(identity for identity, _ in final_states)
     comparable = bool(initial_states and final_states) and all(
         count == 1 for count in (*initial_counts.values(), *final_counts.values())
     )
@@ -178,9 +192,9 @@ def _uncertainty_delta(
         final_verdicts = dict(final_states)
         epistemic_reduced = any(
             verdict is Verdict.U
-            and candidate_id in final_verdicts
-            and final_verdicts[candidate_id] is not Verdict.U
-            for candidate_id, verdict in initial_states
+            and identity in final_verdicts
+            and final_verdicts[identity] in {Verdict.T, Verdict.F}
+            for identity, verdict in initial_states
         )
         epistemic_status = (
             "established"
@@ -213,9 +227,9 @@ def _uncertainty_delta(
     }
 
 
-def _progress_payload(entry) -> dict[str, Any]:
+def _progress_payload(entry, *, question_index: int) -> dict[str, Any]:
     return {
-        "question_id": entry.question_id,
+        "question_id": f"question-{question_index}",
         "kind": entry.kind.value,
         "target_count": len(entry.target_ids),
         "new_item_count": len(entry.new_item_ids),
@@ -295,13 +309,13 @@ def run_bounded_dialogue(
         observations.append(final_snapshot)
     initial_snapshot = observations[0]
     source_metadata: dict[str, Any]
-    if source_fixture_id is None:
-        source_metadata = {"source_kind": "unidentified"}
-    else:
+    if source_fixture_id == CASE_ID and source_text == SOURCE_TEXT:
         source_metadata = {
-            "fixture_id": source_fixture_id,
-            "source_length": len(source_text),
+            "fixture_id": CASE_ID,
+            "source_length": len(SOURCE_TEXT),
         }
+    else:
+        source_metadata = {"source_kind": "unidentified"}
     public_trace = [
         _public_snapshot(snapshot)
         for snapshot in observations + ([final_snapshot] if observations[-1] != final_snapshot else [])
@@ -309,7 +323,7 @@ def run_bounded_dialogue(
     return {
         "record_type": "pr47_redaction_safe_multiturn_interactive_prototype",
         "experiment_version": 1,
-        "case_id": case_id,
+        "case_id": _PUBLIC_CASE_ALIAS,
         "source": source_metadata,
         "stages": events,
         "answers_consumed": answers_consumed,
@@ -317,7 +331,10 @@ def run_bounded_dialogue(
         "stop_reason": dialogue.stop_reason,
         "uncertainty_trace": public_trace,
         "uncertainty_delta": _uncertainty_delta(initial_snapshot, final_snapshot),
-        "progress": [_progress_payload(entry) for entry in dialogue.progress.entries],
+        "progress": [
+            _progress_payload(entry, question_index=index)
+            for index, entry in enumerate(dialogue.progress.entries)
+        ],
         "final": _public_snapshot(final_snapshot),
         "model_run_started": model_backed,
         "provider_payloads_recorded": False,
