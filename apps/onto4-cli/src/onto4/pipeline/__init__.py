@@ -130,6 +130,13 @@ from .semantic_basis import (
     evaluate_profile_basis,
     parse_profile_evidence,
 )
+from .semantic_normalization import (
+    EvidenceNormalizationEvaluation,
+    EvidenceNormalizationSchemaError,
+    IndependentEvidenceNormalization,
+    evaluate_independent_evidence_normalization,
+    parse_independent_evidence_normalization,
+)
 from .decision_bridge import (
     ClarificationDecisionResult,
     ClarificationQuestionDecision,
@@ -276,6 +283,11 @@ __all__ = [
     "ProfileRelativeAdjudicationBasis",
     "evaluate_profile_basis",
     "parse_profile_evidence",
+    "EvidenceNormalizationEvaluation",
+    "EvidenceNormalizationSchemaError",
+    "IndependentEvidenceNormalization",
+    "evaluate_independent_evidence_normalization",
+    "parse_independent_evidence_normalization",
     "build_clarification_request",
     "decide_clarification",
     "decide_clarification_question",
