@@ -11,7 +11,7 @@ semantic-adjudication receipt.
 from __future__ import annotations
 
 import argparse
-import hashlib
+from collections import Counter
 import json
 import math
 from pathlib import Path, PureWindowsPath
@@ -48,10 +48,6 @@ _SAFE_FINISH_REASONS = frozenset(
     {"stop", "length", "tool_calls", "function_call", "content_filter", "unknown"}
 )
 _SAFE_FAILURE_DETAILS = frozenset({"transport", "schema", "unexpected"})
-
-
-def _digest(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _safe_endpoint(base_url: str) -> str:
@@ -134,6 +130,22 @@ def _uncertainty_snapshot(ask_result, *, observation_index: int) -> dict[str, An
         "landscape": ask_result.landscape.status.value,
         "disposition": ask_result.disposition.value,
         "reason": ask_result.reason,
+        # Kept only in memory for comparable-delta classification.  Candidate
+        # identifiers and verdicts must not become part of the redaction-safe
+        # public artifact.
+        "_assessment_states": tuple(
+            (item.candidate.id, item.result.verdict) for item in assessments
+        ),
+    }
+
+
+def _public_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    """Remove in-memory comparison state before publishing an observation."""
+
+    return {
+        key: value
+        for key, value in snapshot.items()
+        if not key.startswith("_")
     }
 
 
@@ -155,7 +167,33 @@ def _uncertainty_delta(
         for field in fields
     }
     structural_reduced = delta["structural_open_count_delta"] < 0
-    epistemic_reduced = delta["unknown_verdict_count_delta"] < 0
+    initial_states = tuple(initial.get("_assessment_states", ()))
+    final_states = tuple(final.get("_assessment_states", ()))
+    initial_counts = Counter(candidate_id for candidate_id, _ in initial_states)
+    final_counts = Counter(candidate_id for candidate_id, _ in final_states)
+    comparable = bool(initial_states and final_states) and all(
+        count == 1 for count in (*initial_counts.values(), *final_counts.values())
+    )
+    if comparable:
+        final_verdicts = dict(final_states)
+        epistemic_reduced = any(
+            verdict is Verdict.U
+            and candidate_id in final_verdicts
+            and final_verdicts[candidate_id] is not Verdict.U
+            for candidate_id, verdict in initial_states
+        )
+        epistemic_status = (
+            "established"
+            if epistemic_reduced
+            else (
+                "not_established"
+                if set(initial_counts) & set(final_counts)
+                else "not_comparable"
+            )
+        )
+    else:
+        epistemic_reduced = False
+        epistemic_status = "not_comparable"
     if structural_reduced and epistemic_reduced:
         observed_reduction = "structural_and_epistemic"
     elif structural_reduced:
@@ -168,6 +206,7 @@ def _uncertainty_delta(
         **delta,
         "structural_reduction_observed": structural_reduced,
         "epistemic_reduction_observed": epistemic_reduced,
+        "epistemic_reduction_status": epistemic_status,
         "observed_reduction": observed_reduction,
         "clarification_required_initial": initial["disposition"] == "AskClarification",
         "clarification_required_final": final["disposition"] == "AskClarification",
@@ -198,6 +237,8 @@ def run_bounded_dialogue(
     output_fn: Callable[[str], None] | None = None,
     max_turns: int = 3,
     case_id: str = CASE_ID,
+    source_fixture_id: str | None = None,
+    model_backed: bool = False,
 ) -> dict[str, Any]:
     """Run a bounded dialogue while retaining only redaction-safe metadata."""
 
@@ -253,23 +294,32 @@ def run_bounded_dialogue(
     if not observations:
         observations.append(final_snapshot)
     initial_snapshot = observations[0]
+    source_metadata: dict[str, Any]
+    if source_fixture_id is None:
+        source_metadata = {"source_kind": "unidentified"}
+    else:
+        source_metadata = {
+            "fixture_id": source_fixture_id,
+            "source_length": len(source_text),
+        }
+    public_trace = [
+        _public_snapshot(snapshot)
+        for snapshot in observations + ([final_snapshot] if observations[-1] != final_snapshot else [])
+    ]
     return {
         "record_type": "pr47_redaction_safe_multiturn_interactive_prototype",
         "experiment_version": 1,
         "case_id": case_id,
-        "source": {
-            "source_digest": _digest(source_text),
-            "source_length": len(source_text),
-        },
+        "source": source_metadata,
         "stages": events,
         "answers_consumed": answers_consumed,
         "turns": dialogue.turns,
         "stop_reason": dialogue.stop_reason,
-        "uncertainty_trace": observations + ([final_snapshot] if observations[-1] != final_snapshot else []),
+        "uncertainty_trace": public_trace,
         "uncertainty_delta": _uncertainty_delta(initial_snapshot, final_snapshot),
         "progress": [_progress_payload(entry) for entry in dialogue.progress.entries],
-        "final": final_snapshot,
-        "model_run_started": True,
+        "final": _public_snapshot(final_snapshot),
+        "model_run_started": model_backed,
         "provider_payloads_recorded": False,
         "production_admission_changed": False,
         "semantic_adjudication_receipt_created": False,
@@ -319,6 +369,8 @@ def run_prototype(
         output_fn=output_fn,
         max_turns=max_turns,
         case_id=CASE_ID,
+        source_fixture_id=CASE_ID,
+        model_backed=True,
     )
     result["provider"] = {
         "endpoint": _safe_endpoint(endpoint),

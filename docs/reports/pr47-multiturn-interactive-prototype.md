@@ -17,6 +17,8 @@
 
 Structural uncertainty и неизвестность из-за недостатка evidence учитываются раздельно. Поэтому уменьшение `ambiguity_count` не означает автоматически уменьшения `unknown_verdict_count`, а `U` не превращается в семантическую ошибку.
 
+Сокращение количества `U` само по себе также не считается эпистемическим разрешением. Runner сохраняет raw delta, но сообщает `epistemic_reduction_status = established` только при сопоставимых host-bound кандидатах, для которых действительно наблюдается переход `U` в определённый вердикт. При удалении или замене кандидата статус остаётся `not_established` либо `not_comparable`.
+
 ## Границы
 
 Runner:
@@ -27,6 +29,8 @@ Runner:
 - не создаёт `SemanticAdjudicationReceipt`;
 - не меняет production admission;
 - не утверждает историческую semantic identity PR #40.
+- для произвольного `source_text` публикует только `source_kind = unidentified`; публичный `fixture_id` и длина источника появляются только для host-owned frozen fixture;
+- выставляет `model_run_started` только при явном model-backed запуске; deterministic fixture оставляет этот флаг `false`.
 
 Полевой Bonsai-прогон в этот increment не входит. Детерминированные тесты используют два host snapshot и один введённый ответ, чтобы проверить именно многотуровую механику и расчёт векторных дельт без сетевого вызова.
 
@@ -43,7 +47,7 @@ Runner:
 | `unknown_verdict_count` | 0 | 0 | 0 |
 | ответы пользователя | 0 | 1 | +1 |
 
-Результат остаётся `semantic_identity = not_evaluated`.
+Результат остаётся `semantic_identity = not_evaluated`. Тесты также покрывают два последовательных ответа: два разных вопроса, два successor transition, три непрерывных snapshot-наблюдения и остановку после второго хода.
 
 ## Воспроизведение
 
