@@ -209,6 +209,11 @@ def determine_disposition(context: ClarificationContext) -> tuple[PipelineDispos
         return PipelineDisposition.CannotProceed, "invalid_request"
     if material_ambiguity(context):
         return PipelineDisposition.AskClarification, "material_ambiguity"
+    if any(
+        candidate.target_id is not None
+        for candidate in context.interpretation.ontologies
+    ):
+        return PipelineDisposition.AskClarification, "ontology_unresolved"
     if landscape.status is CrossCandidateStatus.FormalizationUnresolved:
         return PipelineDisposition.AskClarification, "formalization_unresolved"
     if landscape.status in {

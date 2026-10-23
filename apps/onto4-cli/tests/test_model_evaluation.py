@@ -1,20 +1,31 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from onto4.cli.main import main
 from onto4.core import PredicateCall, PredicateExpr, Term
-from onto4.pipeline import ModelCaseExecutor
+from onto4.pipeline import (
+    ModelCaseExecutor,
+    host_semantic_target_bindings,
+    load_clarification_corpus,
+    load_semantic_target_catalog,
+)
+from onto4.pipeline.model_evaluation import _ReplayError, _ReplayPolicy
 from onto4.pipeline.clarification_corpus import ClarificationCorpusCase
 from onto4.pipeline.evaluation import EvaluationOutcome
 from onto4.providers import (
     FixtureFormalizationProvider,
     FixtureInterpretationProvider,
     InterpretationRequest,
+    OpenAICompatibleInterpretationProvider,
     ProviderTransportError,
 )
 from onto4.providers.diagnostics import ProviderStageEvent
 from onto4.reasoning import (
     Ambiguity,
+    ClarificationKind,
+    ClarificationQuestion,
     ConceptualDepth,
     FormalizationCandidate,
     InterpretationSpace,
@@ -66,6 +77,68 @@ def test_model_case_executor_records_safe_outcome_without_payloads():
     assert execution.outcome is EvaluationOutcome.CLARIFICATION_REQUESTED
     assert execution.semantic_verdict is None
     assert execution.detail_code == "model_backed"
+
+
+def test_replay_telemetry_does_not_call_empty_candidates_generated():
+    telemetry = {}
+
+    class EmptyPolicy:
+        def questions(self, _context):
+            return ()
+
+    policy = _ReplayPolicy(EmptyPolicy(), telemetry=telemetry)
+    assert policy.questions(object()) == ()
+    assert telemetry["question_candidate_generated"] is False
+    assert telemetry["question_candidate_count"] == 0
+
+
+def test_replay_admission_is_counted_once_for_selection_and_validation():
+    question = ClarificationQuestion(
+        "meaning:ambiguity-0",
+        ClarificationKind.Meaning,
+        "Clarify",
+        ("ambiguity-0",),
+        target_family="mass",
+    )
+    telemetry = {}
+    policy = _ReplayPolicy(
+        type("Base", (), {"questions": lambda self, _context: (question,)})(),
+        expected_intents=(
+            type("Intent", (), {
+                "kind": ClarificationKind.Meaning,
+                "target_family": "mass",
+                "target_ids": ("ambiguity-0",),
+            })(),
+        ),
+        telemetry=telemetry,
+    )
+    assert policy.questions(object()) == (question,)
+    policy.record_question_selected(question)
+    policy.validate_issued(question)
+    assert telemetry["admitted_turns"] == 1
+
+
+def test_replay_script_exhaustion_preserves_rejected_question_identity():
+    question = ClarificationQuestion(
+        "meaning:extra",
+        ClarificationKind.Meaning,
+        "Clarify one more distinction",
+        ("ambiguity-extra",),
+        target_family="extra",
+    )
+    telemetry = {}
+    policy = _ReplayPolicy(
+        type("Base", (), {"questions": lambda self, _context: (question,)})(),
+        expected_intents=(),
+        telemetry=telemetry,
+    )
+
+    with pytest.raises(_ReplayError, match="script_exhausted"):
+        policy.validate_issued(question)
+
+    assert telemetry["question_id"] == "meaning:extra"
+    assert telemetry["question_kind"] == "Meaning"
+    assert telemetry["question_target_ids"] == ("ambiguity-extra",)
 
 
 def test_model_case_executor_forwards_requested_conceptual_depth():
@@ -334,6 +407,81 @@ def test_model_case_executor_runs_dialogue_with_typed_delta_refinement():
     assert execution.diagnostics["refinement_proposed"] == 1
 
 
+def test_typed_delta_rejects_ambiguity_id_as_reading_target_and_keeps_provenance_failure():
+    context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
+    initial = InterpretationSpace(
+        "dialogue-space-invalid-delta",
+        "What is the mass of integer 7?",
+        ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-0", "mass", "physical or abstract"),),
+        readings=(SemanticReading("reading-0", "physical", "physical mass"),),
+    )
+
+    class InterpretationProvider:
+        def interpret(self, request):
+            return initial
+
+        def refine(self, *args, **kwargs):
+            raise AssertionError("full snapshot refinement must not run")
+
+    class Formalizer:
+        def formalize(self, request):
+            return (
+                FormalizationCandidate(
+                    "candidate:dialogue-space-invalid-delta",
+                    "mass",
+                    "has-mass",
+                    request.context_id,
+                    PredicateExpr(PredicateCall("has_mass", (Term("integer_7"),))),
+                    reading_id=request.reading.id,
+                ),
+            )
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **boundary):
+            return ({
+                "operation": "select_reading",
+                # This is an ambiguity structural ID, not a reading ID.
+                "target_id": "ambiguity-0",
+                "resolved_ambiguity_ids": ["ambiguity-0"],
+            },)
+
+    executor = ModelCaseExecutor(
+        InterpretationProvider(),
+        Formalizer(),
+        {"physical_objects": context},
+        refinement_mode="typed_delta",
+        refinement_delta_provider=DeltaProvider(),
+    )
+    case = ClarificationCorpusCase(
+        **{
+            **_case(mode="dialogue").__dict__,
+            "dialogue": (
+                {
+                    "turn_id": "initial",
+                    "role": "user",
+                    "text": "What is the mass of integer 7?",
+                },
+                {
+                    "turn_id": "question",
+                    "role": "assistant",
+                    "text": "Clarify mass.",
+                    "question_kind": "Meaning",
+                    "target_family": "mass",
+                    "target_ids": ["ambiguity-0"],
+                },
+                {"turn_id": "answer", "role": "user", "text": "physical mass"},
+            ),
+        }
+    )
+
+    execution = executor(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.PROVENANCE_INVALID
+    assert execution.detail_code == "RefinementValidationError"
+    assert execution.diagnostics["refinement_accepted"] is False
+
+
 def test_model_case_executor_isolates_case_context():
     context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
     interpretation = InterpretationSpace(
@@ -398,14 +546,18 @@ def _dialogue_case(*, expected_kind="Meaning", turns=None):
     )
 
 
-def _ambiguous_dialogue_executor(*, ambiguity_count=1, ambiguity_ids=None):
+def _ambiguous_dialogue_executor(
+    *, ambiguity_count=1, ambiguity_ids=None, ambiguity_terms=None,
+    semantic_target_bindings=None, grounded_target_ids=True,
+):
     context = load_context(ROOT / "profiles/contexts/physical_objects.yaml")
     ids = tuple(ambiguity_ids or (f"ambiguity-{index}" for index in range(ambiguity_count)))
+    terms = tuple(ambiguity_terms or ("mass", "identity")[:ambiguity_count])
     initial = InterpretationSpace(
         "dialogue-space", "What is the mass of integer 7?", ConceptualDepth.Ordinary,
         ambiguities=tuple(
-            Ambiguity(item_id, term, "meaning")
-            for item_id, term in zip(ids, ("mass", "identity")[:ambiguity_count])
+            Ambiguity(item_id, term, "meaning", item_id if grounded_target_ids else None)
+            for item_id, term in zip(ids, terms)
         ),
     )
     successor = InterpretationSpace(
@@ -427,6 +579,7 @@ def _ambiguous_dialogue_executor(*, ambiguity_count=1, ambiguity_ids=None):
         Provider(),
         FixtureFormalizationProvider({"dialogue-space": (candidate,), "dialogue-successor": (candidate,)}),
         {"physical_objects": context},
+        semantic_target_bindings=semantic_target_bindings or {},
     )
 
 
@@ -436,6 +589,31 @@ def test_dialogue_replay_rejects_wrong_question_intent():
     )
 
     assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
+
+
+def test_dialogue_replay_uses_host_binding_instead_of_model_ambiguity_term():
+    case = _dialogue_case()
+    case = ClarificationCorpusCase(
+        **{
+            **case.__dict__,
+            "expected_clarification": {"kind": "Meaning", "target_family": "stable-mass"},
+            "dialogue": (
+                {"turn_id": "initial", "role": "user", "text": case.utterance},
+                {
+                    "turn_id": "question", "role": "assistant", "text": "Clarify",
+                    "question_kind": "Meaning", "target_family": "stable-mass",
+                    "target_ids": ["ambiguity-0"],
+                },
+                {"turn_id": "answer", "role": "user", "text": "physical mass"},
+            ),
+        }
+    )
+    execution = _ambiguous_dialogue_executor(
+        ambiguity_terms=("free-form model wording",),
+        semantic_target_bindings={(case.case_id, "ambiguity-0"): "stable-mass"},
+    )(case, request_timeout_seconds=1.0)
+    assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
+    assert execution.diagnostics["question_target_family_match"] is True
 
 
 def test_dialogue_replay_rejects_wrong_target_family():
@@ -479,14 +657,42 @@ def test_dialogue_replay_does_not_reorder_host_questions_for_script():
     assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
 
 
-def test_dialogue_replay_allows_semantic_target_reindex_when_binding_is_unique():
+def test_dialogue_replay_rejects_wrong_semantic_target_even_when_family_is_unique():
     execution = _ambiguous_dialogue_executor(ambiguity_ids=("runtime-mass",))(
         _dialogue_case(), request_timeout_seconds=1.0
     )
 
-    assert execution.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
-    assert execution.diagnostics["question_target_family"] == "opaque"
-    assert '"question_target_family": "mass"' not in json.dumps(execution.diagnostics)
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_UNVERIFIED
+
+
+def test_model_case_executor_rejects_unscoped_semantic_binding_keys():
+    with pytest.raises(ValueError, match="case_id, target_id"):
+        _ambiguous_dialogue_executor(
+            semantic_target_bindings={"ambiguity-0": "stable-mass"},
+        )
+
+
+def test_strict_binding_does_not_ground_same_structural_id_without_host_reference():
+    case = _dialogue_case()
+    executor = _ambiguous_dialogue_executor(
+        grounded_target_ids=False,
+        semantic_target_bindings={(case.case_id, "ambiguity-0"): "stable-mass"},
+    )
+    executor.strict_semantic_target_binding = True
+
+    execution = executor(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_UNVERIFIED
+
+
+def test_strict_binding_with_empty_map_fails_closed_instead_of_using_term():
+    case = _dialogue_case()
+    executor = _ambiguous_dialogue_executor()
+    executor.strict_semantic_target_binding = True
+
+    execution = executor(case, request_timeout_seconds=1.0)
+
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_UNVERIFIED
 
 
 def test_target_family_match_uses_independent_corpus_oracle():
@@ -617,10 +823,19 @@ cases:
     )
     receipt = tmp_path / "receipts.jsonl"
     report = tmp_path / "report.md"
+    target_catalog = tmp_path / "targets.yaml"
+    target_catalog.write_text(
+        "version: 1\nname: public\ncases:\n  - case_id: safe-case\n"
+        "    targets:\n      - id: public-mass\n        kind: Meaning\n"
+        "        description: Public mass distinction.\n",
+        encoding="utf-8",
+    )
+    prompts = []
 
     class FakeClient:
         def complete(self, messages, **kwargs):
             prompt = messages[1]["content"]
+            prompts.append(prompt)
             if "Formalize the supplied interpretation" in prompt:
                 payload = {
                     "candidates": [{
@@ -648,6 +863,7 @@ cases:
         "eval-corpus",
         "--mode", "model-backed",
         "--corpus", str(corpus),
+        "--target-catalog", str(target_catalog),
         "--receipt", str(receipt),
         "--report", str(report),
         "--endpoint", "http://provider.test/v1",
@@ -662,3 +878,224 @@ cases:
     assert "What is the mass" not in safe_receipt
     assert "fake-model" not in safe_receipt.splitlines()[1]
     assert "ONTO4_API_TOKEN" not in safe_receipt
+    assert "public-mass" in prompts[0]
+
+
+def test_adapter_backed_two_turn_binding_preserves_public_catalog_and_oracle_boundary():
+    corpus = load_clarification_corpus(
+        ROOT / "eval/clarification/bounded-dialogue-v1.yaml"
+    )
+    case = next(item for item in corpus.cases if item.case_id == "intrinsic-time-bounded")
+    _, target_catalog = load_semantic_target_catalog(
+        ROOT / "eval/clarification/bounded-dialogue-targets-v1.yaml"
+    )
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+            self.prompts = []
+
+        def complete(self, messages, **kwargs):
+            self.prompts.append(messages[1]["content"])
+            payloads = (
+                {
+                    "source_text": case.utterance,
+                    "conceptual_depth": "ordinary",
+                    "ambiguities": [{
+                        "term": "intrinsic present",
+                        "description": "the phrase has more than one temporal reading",
+                        "target_id": "ambiguity-present",
+                    }],
+                    "presuppositions": [],
+                    "ontologies": [],
+                    "readings": [],
+                },
+                {
+                    "source_text": case.utterance,
+                    "conceptual_depth": "ordinary",
+                    "ambiguities": [],
+                    "presuppositions": [],
+                    "ontologies": [{
+                        "label": "observer-independent time",
+                        "description": "the sequence has a present independently of observation",
+                        "target_id": "ambiguity-observer",
+                    }],
+                    "readings": [],
+                },
+                {
+                    "source_text": case.utterance,
+                    "conceptual_depth": "ordinary",
+                    "ambiguities": [],
+                    "presuppositions": [],
+                    "ontologies": [],
+                    "readings": [],
+                },
+            )
+            payload = payloads[self.calls]
+            self.calls += 1
+            return {"choices": [{"message": {"content": json.dumps(payload)}}]}
+
+    class Formalizer:
+        def formalize(self, request):
+            return (
+                FormalizationCandidate(
+                    "time-order",
+                    "time order",
+                    "time-order",
+                    "relational_time",
+                    PredicateExpr(
+                        PredicateCall(
+                            "earlier_than",
+                            (Term("past_t"), Term("now")),
+                        )
+                    ),
+                ),
+            )
+
+    client = Client()
+    adapter = OpenAICompatibleInterpretationProvider(client)
+    executor = ModelCaseExecutor(
+        adapter,
+        Formalizer(),
+        {"relational_time": load_context(ROOT / "profiles/contexts/relational_time.yaml")},
+        semantic_target_bindings=host_semantic_target_bindings(corpus),
+        strict_semantic_target_binding=True,
+        host_target_catalog=target_catalog,
+    )
+
+    execution = executor(case, request_timeout_seconds=2.0)
+
+    assert execution.outcome is EvaluationOutcome.NEED_EVIDENCE
+    assert execution.diagnostics["questions_issued"] == 2
+    assert execution.diagnostics["answers_consumed"] == 2
+    assert execution.diagnostics["reassessment_performed"] is True
+    assert client.calls == 3
+    assert "ambiguity-present" in client.prompts[0]
+    assert "ambiguity-observer" in client.prompts[1]
+    assert "ambiguity-observer" in client.prompts[2]
+    all_prompts = "\n".join(client.prompts)
+    assert "target_family" not in all_prompts
+    assert "expected_clarification" not in all_prompts
+    assert "observer_independence" not in all_prompts
+
+
+def test_typed_delta_intrinsic_time_classifies_missing_ontology_creation_capability():
+    corpus = load_clarification_corpus(
+        ROOT / "eval/clarification/bounded-dialogue-v1.yaml"
+    )
+    case = next(item for item in corpus.cases if item.case_id == "intrinsic-time-bounded")
+    _, target_catalog = load_semantic_target_catalog(
+        ROOT / "eval/clarification/bounded-dialogue-targets-v1.yaml"
+    )
+
+    class Client:
+        def complete(self, messages, **kwargs):
+            return {"choices": [{"message": {"content": json.dumps({
+                "source_text": case.utterance,
+                "conceptual_depth": "ordinary",
+                "ambiguities": [{
+                    "term": "intrinsic present",
+                    "description": "the phrase has more than one temporal reading",
+                    "target_id": "ambiguity-present",
+                }],
+                "presuppositions": [],
+                "ontologies": [],
+                "readings": [],
+            })}}]}
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "refine_ambiguity",
+                "target_id": "ambiguity-0",
+                "text": "intrinsic present",
+                "description": "an observer-independent present",
+            },)
+
+    class Formalizer:
+        def formalize(self, request):
+            return (
+                FormalizationCandidate(
+                    "time-order", "time order", "time-order", "relational_time",
+                    PredicateExpr(PredicateCall("earlier_than", (Term("past_t"), Term("now")))),
+                ),
+            )
+
+    executor = ModelCaseExecutor(
+        OpenAICompatibleInterpretationProvider(Client()),
+        Formalizer(),
+        {"relational_time": load_context(ROOT / "profiles/contexts/relational_time.yaml")},
+        refinement_mode="typed_delta",
+        refinement_delta_provider=DeltaProvider(),
+        semantic_target_bindings=host_semantic_target_bindings(corpus),
+        strict_semantic_target_binding=True,
+        host_target_catalog=target_catalog,
+    )
+    execution = executor(case, request_timeout_seconds=2.0)
+
+    assert execution.outcome is EvaluationOutcome.UNSUPPORTED_DIALOGUE_STEP
+    assert execution.detail_code == "unsupported_transition"
+    assert execution.diagnostics["unsupported_transition"] is True
+    assert execution.diagnostics["questions_issued"] == 1
+
+
+def test_typed_delta_intrinsic_time_wrong_question_is_not_capability_failure_when_target_exists():
+    corpus = load_clarification_corpus(
+        ROOT / "eval/clarification/bounded-dialogue-v1.yaml"
+    )
+    case = next(item for item in corpus.cases if item.case_id == "intrinsic-time-bounded")
+    _, target_catalog = load_semantic_target_catalog(
+        ROOT / "eval/clarification/bounded-dialogue-targets-v1.yaml"
+    )
+
+    class Client:
+        def complete(self, messages, **kwargs):
+            return {"choices": [{"message": {"content": json.dumps({
+                "source_text": case.utterance,
+                "conceptual_depth": "ordinary",
+                "ambiguities": [{
+                    "term": "intrinsic present",
+                    "description": "the phrase has more than one temporal reading",
+                    "target_id": "ambiguity-present",
+                }],
+                "presuppositions": [],
+                "ontologies": [{
+                    "label": "observer-independent time",
+                    "description": "the sequence has a present independently of observation",
+                    "target_id": "ambiguity-observer",
+                }],
+                "readings": [],
+            })}}]}
+
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "refine_ambiguity",
+                "target_id": "ambiguity-0",
+                "text": "intrinsic present",
+                "description": "an observer-independent present",
+            },)
+
+    class Formalizer:
+        def formalize(self, request):
+            return (
+                FormalizationCandidate(
+                    "time-order", "time order", "time-order", "relational_time",
+                    PredicateExpr(PredicateCall("earlier_than", (Term("past_t"), Term("now")))),
+                ),
+            )
+
+    executor = ModelCaseExecutor(
+        OpenAICompatibleInterpretationProvider(Client()),
+        Formalizer(),
+        {"relational_time": load_context(ROOT / "profiles/contexts/relational_time.yaml")},
+        refinement_mode="typed_delta",
+        refinement_delta_provider=DeltaProvider(),
+        semantic_target_bindings=host_semantic_target_bindings(corpus),
+        strict_semantic_target_binding=True,
+        host_target_catalog=target_catalog,
+    )
+    execution = executor(case, request_timeout_seconds=2.0)
+
+    assert execution.outcome is EvaluationOutcome.QUESTION_INTENT_MISMATCH
+    assert execution.detail_code == "kind_mismatch"

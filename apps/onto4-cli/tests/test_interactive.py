@@ -21,10 +21,13 @@ from onto4.pipeline.interactive import _classify_progress
 from onto4.providers import FormalizationRequest, InterpretationRequest
 from onto4.reasoning import (
     Ambiguity,
+    AssessmentLandscape,
+    ClarificationContext,
     ClarificationKind,
     ClarificationQuestion,
     ClarificationTurn,
     ConceptualDepth,
+    CrossCandidateStatus,
     FixtureClarificationPolicy,
     FormalizationCandidate,
     InterpretationSpace,
@@ -123,6 +126,113 @@ def test_interactive_dialogue_uses_successor_and_reassessment():
     assert refinement.calls == 1
     assert any("Clarification:" in line for line in output)
     assert result.progress.entries[0].kind is ClarificationProgressKind.StructuralResolution
+
+
+def test_interactive_dialogue_executes_two_host_transitions_without_duplicate_history():
+    initial = InterpretationSpace(
+        id="initial-two-turn",
+        source_text="Claim.",
+        conceptual_depth=ConceptualDepth.Ordinary,
+        ambiguities=(
+            Ambiguity("ambiguity-0", "identity", "first criterion"),
+            Ambiguity("ambiguity-1", "continuity", "second criterion"),
+        ),
+        readings=(SemanticReading("reading-0", "identity", "identity claim"),),
+    )
+    first = InterpretationSpace(
+        id="successor-one",
+        source_text=initial.source_text,
+        conceptual_depth=initial.conceptual_depth,
+        ambiguities=(initial.ambiguities[1],),
+        readings=initial.readings,
+    )
+    second = InterpretationSpace(
+        id="successor-two",
+        source_text=initial.source_text,
+        conceptual_depth=initial.conceptual_depth,
+        readings=initial.readings,
+    )
+
+    class TwoStepRefinement:
+        def __init__(self):
+            self.calls = []
+
+        def refine(self, interpretation, question, answer):
+            self.calls.append((interpretation.id, question.id, answer))
+            return first if len(self.calls) == 1 else second
+
+    refinement = TwoStepRefinement()
+    answers = iter(("first answer", "second answer"))
+    result = run_interactive_dialogue(
+        InterpretationRequest(initial.source_text),
+        interpretation_provider=_InterpretationProvider(initial),
+        refinement_provider=refinement,
+        formalization_provider=_FormalizationProvider(),
+        contexts={"identity": _context()},
+        clarification_policy=ModelClarificationPolicy(
+            FixtureClarificationPolicy(), refinement
+        ),
+        input_fn=lambda _prompt: next(answers),
+        output_fn=lambda _line: None,
+        max_turns=3,
+    )
+
+    assert result.stop_reason == "complete"
+    assert result.turns == 2
+    assert len(result.progress.entries) == 2
+    assert len(result.session.clarification.history.turns) == 2
+    assert [turn.previous_interpretation_id for turn in result.session.clarification.history.turns] == [
+        "initial-two-turn", "successor-one"
+    ]
+    assert [turn.successor_interpretation_id for turn in result.session.clarification.history.turns] == [
+        "successor-one", "successor-two"
+    ]
+    assert len(refinement.calls) == 2
+
+
+def test_stable_target_binding_ignores_model_wording_but_keeps_goals_distinct():
+    def context_for(space):
+        return ClarificationContext(
+            interpretation=space,
+            candidates=(),
+            assessments=(),
+            landscape=AssessmentLandscape(
+                (), CrossCandidateStatus.FormalizationUnresolved
+            ),
+        )
+
+    same_goal = FixtureClarificationPolicy(
+        semantic_target_families={
+            "ambiguity-a": "identity-criterion",
+            "ambiguity-b": "identity-criterion",
+        },
+        require_semantic_target_families=True,
+    )
+    first = InterpretationSpace(
+        "wording-a", "Claim.", ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-a", "model wording one", "meaning", "ambiguity-a"),),
+    )
+    second = InterpretationSpace(
+        "wording-b", "Claim.", ConceptualDepth.Ordinary,
+        ambiguities=(Ambiguity("ambiguity-b", "model wording two", "meaning", "ambiguity-b"),),
+    )
+    first_question = same_goal.choose(context_for(first))
+    second_question = same_goal.choose(context_for(second))
+    assert first_question is not None and second_question is not None
+    assert first_question.target_family == second_question.target_family == (
+        "identity-criterion"
+    )
+
+    different_goal = FixtureClarificationPolicy(
+        semantic_target_families={
+            "ambiguity-a": "identity-criterion",
+            "ambiguity-b": "intrinsic-time",
+        },
+        require_semantic_target_families=True,
+    )
+    different_question = different_goal.choose(context_for(second))
+    assert different_question is not None
+    assert different_question.target_family != first_question.target_family
 
 
 def test_typed_delta_dialogue_uses_same_question_and_host_applies_operation():
@@ -514,6 +624,46 @@ def test_typed_delta_marks_unrelated_question_unsupported():
             answer="context-a",
         )
     assert boundaries == []
+
+
+def test_typed_delta_reports_unsupported_ontology_creation_transition():
+    initial = _space("initial", ambiguous=True)
+    class DeltaProvider:
+        def propose_refinement_deltas(self, *args, **kwargs):
+            return ({
+                "operation": "refine_ambiguity",
+                "target_id": "ambiguity-0",
+                "text": "intrinsic present",
+                "description": "an observer-independent present",
+            },)
+
+    policy = TypedDeltaClarificationPolicy(
+        FixtureClarificationPolicy(),
+        DeltaProvider(),
+    )
+    meaning = ClarificationQuestion(
+        "meaning:ambiguity-0",
+        ClarificationKind.Meaning,
+        "What does intrinsic present mean?",
+        ("ambiguity-0",),
+    )
+    successor, _ = policy.successor(
+        interpretation=initial,
+        question=meaning,
+        answer="observer-independent present",
+    )
+    question = ClarificationQuestion(
+        "ontology:new",
+        ClarificationKind.Ontology,
+        "Which ontology?",
+        ("ambiguity-0",),
+    )
+    with pytest.raises(ValueError, match="unsupported_transition"):
+        policy.successor(
+            interpretation=successor,
+            question=question,
+            answer="observer-independent time",
+        )
 
 
 def test_interactive_dialogue_completes_two_question_fixture_loop():

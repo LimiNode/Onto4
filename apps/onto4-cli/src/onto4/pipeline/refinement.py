@@ -44,6 +44,10 @@ class RefinementValidationError(ValueError):
 class RefinementUnsupportedError(ValueError):
     """The typed refinement mode has no safe operation for this question."""
 
+    def __init__(self, message: str, *, code: str = "unsupported") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 @dataclass(frozen=True)
 class RefinementDelta:

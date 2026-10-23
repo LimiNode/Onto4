@@ -9,7 +9,7 @@ from typing import Iterable, Mapping, Protocol
 from .assessment import CandidateAssessment
 from .candidates import FormalizationCandidate
 from .cross_candidate import AssessmentLandscape, CrossCandidateStatus
-from .interpretation import InterpretationSpace
+from .interpretation import Ambiguity, InterpretationSpace
 
 
 class ClarificationKind(str, Enum):
@@ -32,6 +32,10 @@ class ClarificationQuestion:
     choices: tuple[str, ...] = ()
     # Host-owned semantic binding; replay must not infer it from wording.
     target_family: str | None = None
+    # Runtime objects changed by a refinement.  ``target_ids`` above are
+    # stable semantic references when grounding exists; these IDs remain
+    # snapshot-local and are never used as semantic oracle identity.
+    structural_target_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -150,6 +154,43 @@ class FixtureClarificationPolicy:
     transitions: Mapping[tuple[str, str, str], InterpretationSpace] = field(
         default_factory=dict
     )
+    # Host-owned identity for model-produced semantic records.  Free-form
+    # labels and positional IDs are not stable semantic target identity.
+    semantic_target_families: Mapping[str, str] = field(default_factory=dict)
+    semantic_target_kinds: Mapping[str, ClarificationKind] = field(default_factory=dict)
+    require_semantic_target_families: bool = False
+
+    def __post_init__(self) -> None:
+        for target_id, target_family in self.semantic_target_families.items():
+            if not isinstance(target_id, str) or not target_id.strip():
+                raise ValueError("Semantic target binding ids must be non-empty strings.")
+            if not isinstance(target_family, str) or not target_family.strip():
+                raise ValueError("Semantic target binding families must be non-empty strings.")
+        for target_id, kind in self.semantic_target_kinds.items():
+            if not isinstance(target_id, str) or not target_id.strip():
+                raise ValueError("Semantic target kind ids must be non-empty strings.")
+            if kind not in {ClarificationKind.Meaning, ClarificationKind.Ontology}:
+                raise ValueError("Semantic target kind must be Meaning or Ontology.")
+
+    def _ambiguity_target_family(self, ambiguity: Ambiguity) -> str | None:
+        # Only an explicit host-issued reference establishes grounding.  The
+        # adapter's positional ``id`` is structural bookkeeping and must not
+        # be treated as semantic identity.
+        target_id = ambiguity.target_id
+        if target_id in self.semantic_target_families:
+            return self.semantic_target_families[target_id]
+        if self.require_semantic_target_families:
+            return None
+        return ambiguity.term
+
+    def _ambiguity_target_kind(self, ambiguity: Ambiguity) -> ClarificationKind:
+        if ambiguity.target_id in self.semantic_target_kinds:
+            return self.semantic_target_kinds[ambiguity.target_id]
+        return ClarificationKind.Meaning
+
+    @staticmethod
+    def _question_targets(ambiguity: Ambiguity) -> tuple[str, ...]:
+        return (ambiguity.target_id or ambiguity.id,)
 
     def questions(
         self, context: ClarificationContext
@@ -157,16 +198,44 @@ class FixtureClarificationPolicy:
         """List deterministic questions justified by the supplied provenance."""
 
         interpretation = context.interpretation
-        if interpretation.ambiguities:
+        meaning_ambiguities = tuple(
+            ambiguity
+            for ambiguity in interpretation.ambiguities
+            if self._ambiguity_target_kind(ambiguity) is ClarificationKind.Meaning
+        )
+        if meaning_ambiguities:
             return tuple(
                 ClarificationQuestion(
-                    id=f"meaning:{ambiguity.id}",
+                    id=f"meaning:{ambiguity.target_id or ambiguity.id}",
                     kind=ClarificationKind.Meaning,
                     text=f"Что именно означает «{ambiguity.term}» в этом вопросе?",
-                    target_ids=(ambiguity.id,),
-                    target_family=ambiguity.term,
+                    target_ids=self._question_targets(ambiguity),
+                    target_family=self._ambiguity_target_family(ambiguity),
+                    structural_target_ids=(ambiguity.id,),
                 )
-                for ambiguity in interpretation.ambiguities
+                for ambiguity in meaning_ambiguities
+            )
+
+        grounded_ontologies = tuple(
+            ontology
+            for ontology in interpretation.ontologies
+            if ontology.target_id is not None
+            and self.semantic_target_kinds.get(ontology.target_id)
+            is ClarificationKind.Ontology
+        )
+        if grounded_ontologies:
+            return tuple(
+                ClarificationQuestion(
+                    id=f"ontology:{ontology.target_id}",
+                    kind=ClarificationKind.Ontology,
+                    text="Какие онтологические допущения следует использовать?",
+                    target_ids=(ontology.target_id,),
+                    target_family=self.semantic_target_families.get(
+                        ontology.target_id
+                    ),
+                    structural_target_ids=(ontology.id,),
+                )
+                for ontology in grounded_ontologies
             )
 
         landscape = context.landscape
@@ -212,7 +281,10 @@ class FixtureClarificationPolicy:
                     kind=kind,
                     text=text,
                     target_ids=landscape.unresolved_candidate_ids,
-                    target_family="candidate",
+                    target_family=(
+                        None if self.require_semantic_target_families else "candidate"
+                    ),
+                    structural_target_ids=landscape.unresolved_candidate_ids,
                 )
                 for code, kind, text in question_specs
                 if code in diagnostic_codes

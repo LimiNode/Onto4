@@ -391,9 +391,14 @@ safe workflow diagnostics and the exact run configurations. An omitted
 prompt-token costs are never inferred.
 
 For a true refinement comparison, use the isolated protocol API
-`run_isolated_refinement_pair()`: one immutable initial snapshot, one
-host-issued question and one scripted answer are passed independently to the
-full-snapshot and typed-delta transitions. Their accepted transitions and
+`run_model_backed_isolated_refinement_pair()`. This is the
+`provider_isolated_refinement` protocol: one immutable initial snapshot, one
+question and one scripted answer are passed independently to the two
+providers. It does not prove that the question was issued by a live session.
+For that stronger claim use
+`run_session_bound_isolated_refinement_pair()`, which requires a current host
+assessment and its immutable `PendingClarification`; arbitrary reconstructed
+questions are rejected. Their accepted transitions and
 semantic-obligation digests are reported separately from E2E metrics.
 
 Reports should include a source SHA, model artifact digest, prompt
@@ -407,6 +412,35 @@ The benchmark does not turn a model response into an Onto4 verdict. `T`, `F`,
 fidelity claim is made without an oracle comparison. The command also writes a
 safe per-case diagnostics report; it contains stages, counts, provenance
 codes and failure classes, never prompts, raw model payloads or credentials.
+
+### Bounded multi-turn research
+
+`eval/clarification/bounded-dialogue-v1.yaml` is a dialogue-only research
+corpus for the genome-identity and intrinsic-time cases. Each scenario allows
+two bounded clarification questions. The research helper
+`run_bounded_dialogue_research()` reports the stages independently:
+
+```text
+question candidate generated
+    -> question selected
+    -> intent admitted
+    -> question issued
+    -> answer consumed
+    -> refinement accepted
+    -> reassessment performed
+```
+
+An incomplete or unknown stage is not promoted to a completed dialogue or a
+semantic success. A corpus must be preflighted against host-owned intents
+(`discover_host_question_intents()` and
+`validate_dialogue_intent_manifest()`); the preflight is a frozen binding and
+does not rewrite the oracle after a scored run. For a model-backed refinement comparison,
+the report also keeps `required_turns`, `admitted_turns`, `answered_turns`,
+`accepted_refinements` and `completed_reassessments`; one completed turn cannot
+be reported as a completed two-turn dialogue.
+`run_model_backed_isolated_refinement_pair()` sends the same immutable initial
+snapshot, question and answer to Full Snapshot and Typed Delta providers; the
+host still owns IDs, transition provenance and all Onto4 assessment semantics.
 
 ## Interactive evaluation corpus
 

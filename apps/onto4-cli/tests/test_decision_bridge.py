@@ -40,6 +40,7 @@ from onto4.reasoning import (
     FormalizationCandidate,
     FixtureClarificationPolicy,
     InterpretationSpace,
+    OntologyCandidate,
     PipelineDisposition,
     SemanticReading,
 )
@@ -412,6 +413,90 @@ def test_unresolved_diagnostic_exposes_matching_refinement(
     )
     request = build_clarification_request(unresolved, decision_profile)
     assert request.choices == (expected_choice,)
+
+
+def test_ontology_question_uses_grounded_semantic_and_structural_targets():
+    unresolved = context(
+        status=CrossCandidateStatus.FormalizationUnresolved,
+        result=AssessmentResult(
+            state=AssessmentState.FormalizationUnresolved,
+            semantic_status=None,
+            verdict=None,
+            evidence=None,
+            diagnostics=(Diagnostic("ontology_unresolved", "ontology missing"),),
+        ),
+        unresolved_candidate_ids=("candidate",),
+    )
+    unresolved = replace(
+        unresolved,
+        interpretation=replace(
+            unresolved.interpretation,
+            ontologies=(
+                OntologyCandidate(
+                    "ontology-0",
+                    "observer-independent time",
+                    "ontology commitment",
+                    "ambiguity-observer",
+                ),
+            ),
+        ),
+    )
+    policy = FixtureClarificationPolicy(
+        semantic_target_families={
+            "ambiguity-observer": "observer_independence"
+        },
+        semantic_target_kinds={
+            "ambiguity-observer": ClarificationKind.Ontology
+        },
+        require_semantic_target_families=True,
+    )
+
+    question = policy.choose_for_kind(unresolved, ClarificationKind.Ontology)
+
+    assert question is not None
+    assert question.kind is ClarificationKind.Ontology
+    assert question.target_family == "observer_independence"
+    assert question.target_ids == ("ambiguity-observer",)
+    assert question.structural_target_ids == ("ontology-0",)
+
+
+def test_ontology_question_without_grounded_family_stays_unverified():
+    unresolved = context(
+        status=CrossCandidateStatus.FormalizationUnresolved,
+        result=AssessmentResult(
+            state=AssessmentState.FormalizationUnresolved,
+            semantic_status=None,
+            verdict=None,
+            evidence=None,
+            diagnostics=(Diagnostic("ontology_unresolved", "ontology missing"),),
+        ),
+        unresolved_candidate_ids=("candidate",),
+    )
+    unresolved = replace(
+        unresolved,
+        interpretation=replace(
+            unresolved.interpretation,
+            ontologies=(
+                OntologyCandidate(
+                    "ontology-0",
+                    "observer-independent time",
+                    "ontology commitment",
+                    "ambiguity-observer",
+                ),
+            ),
+        ),
+    )
+    policy = FixtureClarificationPolicy(
+        semantic_target_kinds={
+            "ambiguity-observer": ClarificationKind.Ontology
+        },
+        require_semantic_target_families=True,
+    )
+
+    question = policy.choose_for_kind(unresolved, ClarificationKind.Ontology)
+
+    assert question is not None
+    assert question.target_family is None
 
 
 def test_bare_unresolved_formalization_exposes_formalization_refinement():

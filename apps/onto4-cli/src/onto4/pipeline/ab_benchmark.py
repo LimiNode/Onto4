@@ -74,6 +74,101 @@ class ReceiptProvenanceError(ValueError):
     """Receipt artifacts cannot be trusted for paired re-scoring."""
 
 
+def _scripted_question_intents(
+    case: ClarificationCorpusCase,
+) -> tuple[tuple[str | None, str | None, tuple[str, ...] | None], ...]:
+    """Extract the host-owned question contract from the public dialogue script."""
+
+    intents: list[tuple[str | None, str | None, tuple[str, ...] | None]] = []
+    for turn in case.dialogue:
+        if turn.get("role") != "assistant":
+            continue
+        if not any(key in turn for key in ("question_kind", "target_family", "target_ids")):
+            continue
+        raw_ids = turn.get("target_ids")
+        target_ids = (
+            tuple(raw_ids)
+            if isinstance(raw_ids, list)
+            and all(isinstance(item, str) and item for item in raw_ids)
+            else None
+        )
+        intents.append(
+            (
+                turn.get("question_kind") if isinstance(turn.get("question_kind"), str) else None,
+                turn.get("target_family") if isinstance(turn.get("target_family"), str) else None,
+                target_ids,
+            )
+        )
+    return tuple(intents)
+
+
+def _target_family_digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _scripted_question_records_status(
+    case: ClarificationCorpusCase,
+    diagnostics: Mapping[str, object],
+) -> bool | None:
+    """Compare every recorded question with the immutable corpus script.
+
+    ``None`` means that required evidence is missing; ``False`` means a
+    present, comparable record demonstrably contradicts the script.
+    """
+
+    expected = _scripted_question_intents(case)
+    records = diagnostics.get("question_records")
+    if not expected:
+        return None
+    if not isinstance(records, list):
+        return None
+    if len(records) > len(expected):
+        return False
+    comparable_count = min(len(records), len(expected))
+    for index, (expected_kind, expected_family, expected_ids) in enumerate(
+        expected[:comparable_count]
+    ):
+        record = records[index]
+        if not isinstance(record, Mapping):
+            return None
+        turn_index = record.get("turn_index")
+        if turn_index is None or isinstance(turn_index, bool) or not isinstance(turn_index, int):
+            return None
+        if turn_index != index:
+            return False
+        actual_kind = record.get("question_kind")
+        actual_ids = record.get("question_target_ids")
+        if expected_kind is None or expected_family is None or expected_ids is None:
+            return None
+        family_match = record.get("question_script_target_family_match")
+        family_digest = record.get("question_target_family_digest")
+        if not isinstance(actual_kind, str) or not actual_kind.strip():
+            return None
+        if not isinstance(actual_ids, (list, tuple)):
+            return None
+        if any(not isinstance(item, str) or not item for item in actual_ids):
+            return None
+        if family_match is None or not isinstance(family_match, bool):
+            return None
+        if family_match is not True:
+            return False
+        if actual_kind != expected_kind:
+            return False
+        if (
+            family_digest is None
+            or not isinstance(family_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", family_digest) is None
+        ):
+            return None
+        if family_digest != _target_family_digest(expected_family):
+            return False
+        if tuple(actual_ids) != expected_ids:
+            return False
+    if len(records) < len(expected):
+        return None
+    return True
+
+
 @dataclass(frozen=True)
 class BenchmarkCondition:
     """One cell in the frozen 2x2 interpretation/refinement design."""
@@ -168,6 +263,7 @@ class IsolatedRefinementRun:
     answer: str
     initial_snapshot_digest: str
     cells: tuple[IsolatedRefinementCell, ...]
+    protocol: str = "provider_isolated_refinement"
 
 
 def _execution_status(outcome: EvaluationOutcome) -> ExecutionStatus:
@@ -202,21 +298,52 @@ def _workflow_status(
         elif expected_disposition == "clarification_required":
             checks.append(receipt.outcome is EvaluationOutcome.CLARIFICATION_REQUESTED)
         elif expected_disposition == "dialogue_reassessment_required":
-            required = (
+            expected_intents = _scripted_question_intents(case)
+            expected_turn_count = len(expected_intents)
+            required_turns = diagnostics.get("required_turns")
+            counters = (
                 diagnostics.get("questions_issued"),
                 diagnostics.get("answers_consumed"),
+                diagnostics.get("admitted_turns"),
+                diagnostics.get("answered_turns"),
+                diagnostics.get("accepted_refinements"),
+                diagnostics.get("completed_reassessments"),
+            )
+            required = counters + (
                 diagnostics.get("refinement_accepted"),
                 diagnostics.get("reassessment_performed"),
             )
-            if any(value is None for value in required):
+            record_status = _scripted_question_records_status(case, diagnostics)
+            if receipt.outcome in {
+                EvaluationOutcome.DIALOGUE_INCOMPLETE,
+                EvaluationOutcome.SCRIPT_EXHAUSTED,
+            }:
+                checks.append(False)
+            elif not expected_intents:
+                checks.append(None)
+            elif any(value is None for value in required):
+                checks.append(None)
+            elif any(type(value) is not int for value in counters):
+                checks.append(None)
+            elif type(required_turns) is not int:
+                checks.append(None)
+            elif required_turns != expected_turn_count:
+                checks.append(False)
+            elif record_status is None:
                 checks.append(None)
             else:
                 checks.append(
-                    receipt.outcome is EvaluationOutcome.ASSESSMENT_COMPLETED
-                    and all(
-                        bool(value) for value in required[:3]
+                    (
+                    receipt.outcome in {
+                        EvaluationOutcome.ASSESSMENT_COMPLETED,
+                        EvaluationOutcome.NEED_EVIDENCE,
+                        EvaluationOutcome.CANNOT_PROCEED,
+                    }
+                    and all(int(value) >= required_turns for value in counters)
+                    and bool(required[-2])
+                    and bool(required[-1])
+                    and record_status
                     )
-                    and bool(required[3])
                 )
         else:
             checks.append(None)
@@ -224,14 +351,28 @@ def _workflow_status(
     expected_clarification = case.expected_clarification
     if isinstance(expected_clarification, Mapping):
         expected_kind = expected_clarification.get("kind")
-        observed_kind = receipt.diagnostics.get("question_kind")
+        records = receipt.diagnostics.get("question_records")
+        first_record = records[0] if isinstance(records, list) and records else None
+        if case.mode == "dialogue" and first_record is None:
+            observed_kind = None
+            observed_match = None
+        else:
+            observed_kind = (
+                first_record.get("question_kind")
+                if isinstance(first_record, Mapping)
+                else receipt.diagnostics.get("question_kind")
+            )
+            observed_match = (
+                first_record.get("question_target_family_match")
+                if isinstance(first_record, Mapping)
+                else receipt.diagnostics.get("question_target_family_match")
+            )
         if isinstance(expected_kind, str):
             checks.append(
                 observed_kind == expected_kind if observed_kind is not None else None
             )
         expected_target_family = expected_clarification.get("target_family")
         if isinstance(expected_target_family, str):
-            observed_match = receipt.diagnostics.get("question_target_family_match")
             checks.append(observed_match if isinstance(observed_match, bool) else None)
 
     if not checks:
@@ -283,14 +424,28 @@ def _cell(
         else None
     )
     diagnostic_keys = {
+        "detail_code",
+        "question_candidate_generated",
+        "question_candidate_count",
+        "question_selected",
+        "intent_admitted",
+        "required_turns",
+        "admitted_turns",
+        "answered_turns",
+        "accepted_refinements",
+        "completed_reassessments",
+        "question_intent_failure_reason",
+        "unsupported_transition",
         "last_stage",
         "questions_issued",
         "answers_consumed",
         "question_id",
         "question_kind",
         "question_target_family",
+        "question_target_family_digest",
         "question_target_family_match",
         "question_target_ids",
+        "question_records",
         "refinement_accepted",
         "reassessment_performed",
         "clarification_turns_known",
@@ -300,6 +455,8 @@ def _cell(
         for key in diagnostic_keys
         if key in receipt.diagnostics
     }
+    if receipt.detail_code is not None:
+        diagnostics["detail_code"] = receipt.detail_code
     return BenchmarkCell(
         condition=condition.name,
         case_id=case.case_id,
@@ -550,6 +707,8 @@ def run_paired_benchmark(
         "priced" if output_cost_per_million is not None else "not_priced",
     )
     report_metadata.setdefault("output_cost_per_million", output_cost_per_million)
+    report_metadata.setdefault("target_catalog_version", config.target_catalog_version)
+    report_metadata.setdefault("target_catalog_digest", config.target_catalog_digest)
     return PairedBenchmarkRun(
         corpus_name=corpus.name,
         corpus_version=corpus.version,
@@ -879,6 +1038,8 @@ def rescore_paired_receipts(
         "priced" if output_cost_per_million is not None else "not_priced",
     )
     report_metadata.setdefault("output_cost_per_million", output_cost_per_million)
+    report_metadata.setdefault("target_catalog_version", baseline_config.target_catalog_version)
+    report_metadata.setdefault("target_catalog_digest", baseline_config.target_catalog_digest)
     cell_tuple = tuple(cells)
     return PairedBenchmarkRun(
         corpus_name=corpus.name,
