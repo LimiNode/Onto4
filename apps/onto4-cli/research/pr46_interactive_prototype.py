@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -53,7 +53,9 @@ def _safe_endpoint(base_url: str) -> str:
 
 
 def _safe_model(model: str) -> str:
-    return Path(model).name if ("\\" in model or "/" in model) else model
+    if "\\" in model:
+        return PureWindowsPath(model).name
+    return Path(model).name if "/" in model else model
 
 
 def _event_payload(event: ProviderStageEvent) -> dict[str, Any]:
