@@ -1,52 +1,93 @@
 # PR #49 — controlled clarification strategy experiment
 
-Этот research-only increment проверяет источник structural churn, наблюдавшегося в live baseline PR #48. Сравниваются две стратегии на одних и тех же immutable snapshots:
+Это research-only offline-эксперимент. Он проверяет, как меняется выбор
+уточняющего вопроса, когда host явно связывает snapshot-local ambiguity со
+стабильной semantic target. Эксперимент не объявляет semantic identity,
+epistemic progress или production admission.
+
+Сравниваются две стратегии:
 
 - **A** — текущая `FixtureClarificationPolicy`;
-- **B** — минимальная host policy с явной привязкой snapshot-local ambiguity к host-owned semantic target family.
+- **B** — минимальная host-owned policy с явным ledger уже обработанных
+  semantic targets.
 
-Ни одна стратегия не получает target binding из текста, позиции объекта или похожести терминов. Если B не находит явной привязки, она останавливается fail-closed.
+Обе стратегии работают с одной и той же immutable последовательностью
+synthetic snapshots. Ни одна стратегия не получает binding из позиции объекта,
+структурного ID, label или текстовой похожести.
 
-## Offline gate
+## Что изменено в offline gate
 
-Запущены шесть paired fixtures:
+Добавлен один comparable positive control. В нём initial snapshot содержит
+явный host-issued `target_id`, а политика A получает для этого target такую же
+проверенную provenance, как и B. Поэтому обе стратегии могут задать один и тот
+же вопрос. Это контроль корректности сравнения, а не доказательство
+преимущества какой-либо стратегии.
 
-1. повторная структурная перерегистрация одной host semantic target;
+Для B добавлен минимальный ledger выбранных targets. Он:
+
+- сохраняет target при structural reindex;
+- не задаёт вопрос повторно для уже обработанного target без нового основания;
+- ищет следующую bound ambiguity после первой unbound ambiguity;
+- допускает новый явно связанный target;
+- останавливается с `unbound_target`, если grounding отсутствует полностью;
+- останавливается с `no_new_admissible_target`, если новые допустимые targets
+  закончились.
+
+`no_new_admissible_target`, `unbound_target`, `question_intent_mismatch` и
+`no_progress` не считаются semantic resolution.
+
+## Fixtures
+
+Offline gate содержит восемь paired fixtures:
+
+1. повторная структурная перерегистрация одного host target;
 2. изменение structural signature при сохранении target;
 3. исчезновение ambiguity;
-4. появление новой, не привязанной ambiguity;
+4. появление нового явно связанного target;
 5. отсутствие host grounding;
-6. отсутствие перехода snapshot.
+6. отсутствие перехода snapshot;
+7. unbound ambiguity перед bound ambiguity;
+8. comparable positive control с общей host provenance.
 
-Обе стратегии получают один и тот же initial snapshot. Ответы заданы как внутренние fixture obligations, связанные с host target; их текст не публикуется.
+Публичный artifact содержит только aliases, outcomes и числовые метрики:
+[pr49-offline-ab-20261024.json](pr49-offline-ab-20261024.json). Prompts,
+answers, provider payloads и private target IDs не публикуются.
 
-Публичный redacted artifact: [pr49-offline-ab-20261024.json](pr49-offline-ab-20261024.json).
+## Результат
 
-## Результаты
+После corrective pass runner воспроизводит:
 
-| Case | B target observation | Structural result | Stop reason | Pair verdict |
-| --- | --- | --- | --- | --- |
-| `case-0` | target preserved 3 раза, повтор выбранного target 2 раза | churn, reduction нет | `max_turns_reached` | `not_comparable` |
-| `case-1` | target preserved при изменении signature | reduction есть | `no_admissible_question` | `not_comparable` |
-| `case-2` | target исчезает вместе с ambiguity | reduction есть | `no_admissible_question` | `not_comparable` |
-| `case-3` | новая ambiguity не имеет binding | fail-closed | `unbound_target` | `not_comparable` |
-| `case-4` | initial target не имеет binding | fail-closed | `unbound_target` | `not_comparable` |
-| `case-5` | snapshot не изменился | reduction нет, churn нет | `no_progress` | `not_comparable` |
+- `8` paired rows;
+- `1` comparable pair — positive control, `no_observed_difference`;
+- `7` non-comparable diagnostics;
+- `1` fail-closed pair из-за полного отсутствия grounding;
+- aggregate verdict: `not_comparable`.
 
-В условии A все scripted host-target answers получают `question_intent_mismatch`: текущая policy выдаёт структурные target IDs без проверенной semantic binding. Поэтому нельзя подать один и тот же ответ как будто он относится к тому же host target в обеих условиях. Это намеренно оставляет paired verdict `not_comparable`, а не создаёт искусственное преимущество B.
+Структурные метрики показывают поведение fixtures, но не semantic progress.
+В частности, `target_preservation_count` означает непрерывность заранее
+заданной host binding map на synthetic snapshots. Это не наблюдение, что
+модель или production host самостоятельно сохранили binding.
 
-Агрегированный offline verdict: `not_comparable`.
+В comparable control обе стратегии задают один host-grounded вопрос и затем
+наблюдают одинаковое структурное уменьшение ambiguity. Это подтверждает, что
+сам механизм сопоставления способен обработать честную positive pair. Для
+остальных fixtures сравнение остаётся `not_comparable`, поскольку одна из
+стратегий останавливается на mismatch или fail-closed boundary.
 
-Это не означает, что B лучше или хуже. Offline gate подтверждает механику сравнения: target preservation, повторный выбор, structural churn, structural reduction, fail-closed для unbound target и остановку без прогресса измеряются раздельно.
-
-## Границы
+## Ограничения
 
 - live Bonsai в этом offline increment не запускался;
 - semantic identity: `not_evaluated`;
-- epistemic `U → T/F` transitions не оценивались;
+- epistemic переходы `U → T/F` не оценивались;
+- semantic oracle отсутствует;
+- structural reduction не повышается до semantic verdict;
 - production admission не менялся;
 - `SemanticAdjudicationReceipt` не создавался;
 - PR #39 не изменялся;
-- prompts, answers, provider payloads и target IDs в artifact не публикуются.
+- prompts, answers, provider payloads и target IDs в artifact отсутствуют.
 
-Следующий matched live pilot возможен только после содержательного ревью offline gate. Он должен использовать те же source, context, model, temperature, token budget и `max_turns` для A/B и отдельно отмечать `question_intent_mismatch`.
+Следующий matched live A/B pilot допустим только после отдельного
+содержательного review этого offline gate. Он должен использовать один и тот
+же source, context, model, temperature, token budget и `max_turns` для обеих
+стратегий, а `question_intent_mismatch`, unsupported и fail-closed исходы
+должны оставаться отдельными результатами.

@@ -2,9 +2,12 @@
 
 Condition A uses the current ``FixtureClarificationPolicy``.  Condition B
 uses an explicit host-owned binding from snapshot-local ambiguity ids to a
-stable semantic target family.  The harness is deliberately offline and
-research-only: it records target relations and structural metrics, but never
-publishes target ids, prompts, answers or semantic adjudication receipts.
+stable semantic target family.  One positive-control fixture gives both
+conditions the same explicit host provenance; the remaining fixtures keep
+their deliberately non-comparable and fail-closed diagnostics.  The harness
+is deliberately offline and research-only: it records target relations and
+structural metrics, but never publishes target ids, prompts, answers or
+semantic adjudication receipts.
 """
 
 from __future__ import annotations
@@ -37,7 +40,14 @@ PUBLIC_CASE_ALIASES = {
     "new_ambiguity": "case-3",
     "unbound": "case-4",
     "no_progress": "case-5",
+    "mixed_unbound": "case-6",
+    "comparable_control": "case-7",
 }
+
+A_HOST_POLICY = FixtureClarificationPolicy(
+    semantic_target_families={"target-identity": TARGET_FAMILY},
+    require_semantic_target_families=True,
+)
 
 
 @dataclass(frozen=True)
@@ -60,7 +70,7 @@ def _space(identifier: str, ambiguities: tuple[Ambiguity, ...]) -> Interpretatio
 
 
 def default_cases() -> tuple[FixtureCase, ...]:
-    """Return paired immutable fixtures with explicit B-only host bindings."""
+    """Return paired immutable fixtures with explicit host provenance."""
 
     return (
         FixtureCase(
@@ -108,9 +118,12 @@ def default_cases() -> tuple[FixtureCase, ...]:
                 _space("new-1", (Ambiguity("amb-new", "identity", "new"),)),
                 _space("new-2", (Ambiguity("amb-new", "identity", "new"),)),
             ),
-            answer_target_ids=("target-identity", "target-identity"),
+            answer_target_ids=("target-identity", "target-new"),
             target_family=TARGET_FAMILY,
-            host_bindings={"amb-0": ("target-identity", TARGET_FAMILY)},
+            host_bindings={
+                "amb-0": ("target-identity", TARGET_FAMILY),
+                "amb-new": ("target-new", TARGET_FAMILY),
+            },
         ),
         FixtureCase(
             "unbound",
@@ -131,6 +144,44 @@ def default_cases() -> tuple[FixtureCase, ...]:
             target_family=TARGET_FAMILY,
             host_bindings={"amb-0": ("target-identity", TARGET_FAMILY)},
         ),
+        FixtureCase(
+            "mixed_unbound",
+            snapshots=(
+                _space(
+                    "mixed-0",
+                    (
+                        Ambiguity("amb-unbound", "identity", "unbound first"),
+                        Ambiguity("amb-bound", "identity", "bound second"),
+                    ),
+                ),
+                _space("mixed-1", ()),
+            ),
+            answer_target_ids=("target-bound",),
+            target_family=TARGET_FAMILY,
+            host_bindings={"amb-bound": ("target-bound", TARGET_FAMILY)},
+        ),
+        FixtureCase(
+            "comparable_control",
+            snapshots=(
+                _space(
+                    "comparable-0",
+                    (
+                        Ambiguity(
+                            "amb-comparable",
+                            "identity",
+                            "host-grounded",
+                            target_id="target-identity",
+                        ),
+                    ),
+                ),
+                _space("comparable-1", ()),
+            ),
+            answer_target_ids=("target-identity",),
+            target_family=TARGET_FAMILY,
+            host_bindings={
+                "amb-comparable": ("target-identity", TARGET_FAMILY),
+            },
+        ),
     )
 
 
@@ -148,41 +199,82 @@ def _context(snapshot: InterpretationSpace) -> ClarificationContext:
 
 
 def _fixture_question(snapshot: InterpretationSpace) -> ClarificationQuestion | None:
-    questions = FixtureClarificationPolicy().questions(_context(snapshot))
+    questions = A_HOST_POLICY.questions(_context(snapshot))
     return questions[0] if questions else None
 
 
 def _bound_question(
     snapshot: InterpretationSpace,
     bindings: Mapping[str, tuple[str, str]],
+    selected_targets: set[str],
 ) -> ClarificationQuestion | None:
-    if not snapshot.ambiguities:
-        return None
-    ambiguity = snapshot.ambiguities[0]
-    binding = bindings.get(ambiguity.id)
-    if binding is None:
-        return None
-    target_id, target_family = binding
-    return ClarificationQuestion(
-        id=f"host:{target_family}",
-        kind=ClarificationKind.Meaning,
-        text="Host-bound identity clarification",
-        target_ids=(target_id,),
-        target_family=target_family,
-        structural_target_ids=(ambiguity.id,),
+    for ambiguity in snapshot.ambiguities:
+        binding = bindings.get(ambiguity.id)
+        if binding is None:
+            continue
+        target_id, target_family = binding
+        if target_id in selected_targets:
+            continue
+        return ClarificationQuestion(
+            id=f"host:{target_id}",
+            kind=ClarificationKind.Meaning,
+            text="Host-bound identity clarification",
+            target_ids=(target_id,),
+            target_family=target_family,
+            structural_target_ids=(ambiguity.id,),
+        )
+    return None
+
+
+def _target(
+    snapshot: InterpretationSpace,
+    bindings: Mapping[str, tuple[str, str]],
+) -> str | None:
+    for ambiguity in snapshot.ambiguities:
+        binding = bindings.get(ambiguity.id)
+        if binding is not None:
+            return binding[0]
+    return None
+
+
+def _question_target(
+    snapshot: InterpretationSpace,
+    question: ClarificationQuestion,
+    bindings: Mapping[str, tuple[str, str]],
+) -> str | None:
+    """Return only explicitly host-grounded identity for the selected question."""
+
+    structural_id = (
+        question.structural_target_ids[0]
+        if question.structural_target_ids
+        else None
     )
+    if structural_id is not None and structural_id in bindings:
+        return bindings[structural_id][0]
+    if structural_id is not None:
+        ambiguity = next(
+            (item for item in snapshot.ambiguities if item.id == structural_id),
+            None,
+        )
+        if ambiguity is not None:
+            return ambiguity.target_id
+    return None
 
 
-def _target(snapshot: InterpretationSpace, bindings: Mapping[str, tuple[str, str]]) -> str | None:
-    if not snapshot.ambiguities:
-        return None
-    binding = bindings.get(snapshot.ambiguities[0].id)
-    return binding[0] if binding is not None else None
+def _bound_target_count(
+    snapshot: InterpretationSpace,
+    bindings: Mapping[str, tuple[str, str]],
+) -> int:
+    return sum(ambiguity.id in bindings for ambiguity in snapshot.ambiguities)
 
 
 def _run_condition(case: FixtureCase, condition: str) -> dict[str, Any]:
     bindings = {} if condition == "A" else case.host_bindings
-    selector = _fixture_question if condition == "A" else lambda snapshot: _bound_question(snapshot, bindings)
+    selector = (
+        _fixture_question
+        if condition == "A"
+        else lambda snapshot: _bound_question(snapshot, bindings, set(selected_targets))
+    )
     current_index = 0
     turns = 0
     selected_targets: list[str] = []
@@ -195,7 +287,14 @@ def _run_condition(case: FixtureCase, condition: str) -> dict[str, Any]:
         snapshot = case.snapshots[current_index]
         question = selector(snapshot)
         if question is None:
-            stop_reason = "unbound_target" if condition == "B" and snapshot.ambiguities else "no_admissible_question"
+            if condition == "B" and snapshot.ambiguities:
+                stop_reason = (
+                    "no_new_admissible_target"
+                    if _bound_target_count(snapshot, bindings)
+                    else "unbound_target"
+                )
+            else:
+                stop_reason = "no_admissible_question"
             unbound = stop_reason == "unbound_target"
             break
         expected_target = (
@@ -208,21 +307,21 @@ def _run_condition(case: FixtureCase, condition: str) -> dict[str, Any]:
             and question.target_family == case.target_family
             and question.target_ids == (expected_target,)
         )
+        selected_target = _question_target(snapshot, question, bindings)
         event: dict[str, Any] = {
             "turn_index": turns,
             "question_alias": f"question-{turns}",
             "snapshot_alias": f"snapshot-{current_index}",
             "question_intent_match": intent_match,
             "question_intent_mismatch": not intent_match,
-            "target_status": "preserve" if _target(snapshot, bindings) else "unbound",
-            "repeated_target": bool(_target(snapshot, bindings) in selected_targets),
+            "target_status": "preserve" if selected_target else "unbound",
+            "repeated_target": bool(selected_target in selected_targets),
         }
         events.append(event)
         if not intent_match:
             mismatch = True
             stop_reason = "question_intent_mismatch"
             break
-        selected_target = _target(snapshot, bindings)
         if selected_target is not None:
             selected_targets.append(selected_target)
         turns += 1
@@ -230,7 +329,7 @@ def _run_condition(case: FixtureCase, condition: str) -> dict[str, Any]:
             stop_reason = "complete"
             break
         next_snapshot = case.snapshots[current_index + 1]
-        current_target = _target(snapshot, bindings)
+        current_target = selected_target
         next_target = _target(next_snapshot, bindings)
         relation = (
             "preserve"
@@ -268,18 +367,38 @@ def _run_condition(case: FixtureCase, condition: str) -> dict[str, Any]:
         "final_ambiguity_count": final_count,
         "structural_reduction_observed": final_count < initial_count,
         "structural_churn_observed": changed and final_count >= initial_count,
+        # This offline harness has no semantic oracle; structural reduction is
+        # intentionally never promoted to semantic progress.
+        "semantic_reduction_observed": False,
         "events": events,
     }
 
 
 def _comparison_verdict(a: Mapping[str, Any], b: Mapping[str, Any]) -> str:
-    if a["question_intent_mismatch"] or b["question_intent_mismatch"]:
+    if (
+        a["question_intent_mismatch"]
+        or b["question_intent_mismatch"]
+        or a["unsupported_or_unbound"]
+        or b["unsupported_or_unbound"]
+        or a["question_count"] == 0
+        or b["question_count"] == 0
+    ):
         return "not_comparable"
     a_reduction = a["structural_reduction_observed"]
     b_reduction = b["structural_reduction_observed"]
     if b_reduction and not a_reduction:
+        if not (
+            a["semantic_reduction_observed"]
+            and b["semantic_reduction_observed"]
+        ):
+            return "not_comparable"
         return "B_better_observed"
     if a_reduction and not b_reduction:
+        if not (
+            a["semantic_reduction_observed"]
+            and b["semantic_reduction_observed"]
+        ):
+            return "not_comparable"
         return "A_better_observed"
     if a_reduction == b_reduction:
         return "no_observed_difference"
@@ -292,12 +411,18 @@ def run_offline_experiment(cases: tuple[FixtureCase, ...] | None = None) -> dict
     for case in cases:
         a = _run_condition(case, "A")
         b = _run_condition(case, "B")
+        comparison_verdict = _comparison_verdict(a, b)
         rows.append(
             {
                 "case_alias": PUBLIC_CASE_ALIASES[case.case_id],
                 "A": a,
                 "B": b,
-                "comparison_verdict": _comparison_verdict(a, b),
+                "comparison_verdict": comparison_verdict,
+                "comparison_class": (
+                    "comparable"
+                    if comparison_verdict != "not_comparable"
+                    else "non_comparable"
+                ),
             }
         )
     verdicts = [row["comparison_verdict"] for row in rows]
@@ -308,11 +433,22 @@ def run_offline_experiment(cases: tuple[FixtureCase, ...] | None = None) -> dict
         aggregate = "not_comparable"
     return {
         "record_type": "pr49_redaction_safe_controlled_clarification_offline",
-        "experiment_version": 1,
+        "experiment_version": 2,
         "conditions": {"A": "fixture_policy", "B": "host_bound_target_policy"},
         "max_turns": MAX_TURNS,
         "paired_initial_snapshot": True,
         "rows": rows,
+        "comparable_pair_count": sum(
+            row["comparison_class"] == "comparable" for row in rows
+        ),
+        "non_comparable_pair_count": sum(
+            row["comparison_class"] == "non_comparable" for row in rows
+        ),
+        "fail_closed_pair_count": sum(
+            row["A"]["unsupported_or_unbound"]
+            or row["B"]["unsupported_or_unbound"]
+            for row in rows
+        ),
         "aggregate_verdict": aggregate,
         "live_run_performed": False,
         "production_admission_changed": False,
