@@ -48,9 +48,9 @@
 - `turns`: `3`;
 - `stop_reason`: `max_turns_reached`.
 
-Модель трижды вернула уточнение того же общего типа. Между ходами изменилось число presuppositions, но ambiguity и число неизвестных вердиктов не уменьшились. Поэтому этот прогон не показывает устранения исходной неопределённости.
+Host policy выдала три clarification turns через `FixtureClarificationPolicy`; Bonsai в этих turns создавал или изменял interpretation/refinement snapshots. Redacted trace не содержит текстов вопросов и не доказывает, что все три хода относились к одному semantic target. Между ходами изменилось число presuppositions, но ambiguity и число неизвестных вердиктов не уменьшились.
 
-Progress ledger содержит три host-admitted transition entries, но `refinement_committed` остаётся `false`, а structural vector не уменьшается. Это различие важно: наличие перехода snapshot не равно разрешению пользовательского смысла.
+Progress ledger содержит три host-admitted transition entries, но `refinement_committed` остаётся `false`, а structural vector не уменьшается. Это наблюдаемый structural churn: отдельные snapshot targets менялись, но суммарная structural uncertainty не сократилась. Наличие перехода snapshot не равно ни structural reduction, ни semantic resolution; сопоставимого epistemic observation здесь также нет.
 
 ## Границы и артефакт
 
@@ -65,6 +65,6 @@ Progress ledger содержит три host-admitted transition entries, но `
 
 ## Вывод
 
-Bounded multi-turn loop на реальном Bonsai endpoint технически прошёл три хода и корректно остановился по host limit. В этом конкретном прогоне модель не уменьшила наблюдаемую structural или epistemic uncertainty: она продолжила возвращать уточнение, не зафиксировав проверяемое разрешение исходной ambiguity.
+Bounded multi-turn loop на реальном Bonsai endpoint технически прошёл три хода и корректно остановился по host limit. В этом конкретном прогоне наблюдался structural churn без structural reduction. Нельзя приписывать повторный выбор вопросов непосредственно Bonsai: выбор делает host policy, а модель отвечает за interpretation/refinement snapshots. Semantic resolution не оценивалась, а epistemic transition остался `not_comparable`.
 
 Следующий эксперимент, если потребуется, должен менять только host fixture или стратегию вопросов и сравнивать такие redacted traces. Нельзя трактовать этот результат как semantic failure или как доказательство неверности исходного пользовательского смысла: semantic adjudication здесь намеренно не выполнялась.
