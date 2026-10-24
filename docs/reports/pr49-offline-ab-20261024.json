@@ -236,7 +236,7 @@
         "question_intent_mismatch": false,
         "unsupported_or_unbound": false,
         "target_preservation_count": 1,
-        "retarget_count": 1,
+        "retarget_count": 0,
         "repeated_target_count": 0,
         "initial_ambiguity_count": 1,
         "final_ambiguity_count": 1,
@@ -252,7 +252,7 @@
             "question_intent_mismatch": false,
             "target_status": "preserve",
             "repeated_target": false,
-            "transition_relation": "retarget",
+            "transition_relation": "unverified_retarget",
             "structural_changed": true
           },
           {

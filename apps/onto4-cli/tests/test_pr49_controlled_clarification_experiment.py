@@ -192,3 +192,17 @@ def test_public_offline_artifact_contains_no_fixture_answers_or_target_ids():
         "fixture-answer",
     ):
         assert private_value not in serialized
+
+
+def test_committed_offline_evidence_matches_current_runner_exactly():
+    evidence_path = (
+        Path(__file__).parents[3]
+        / "docs"
+        / "reports"
+        / "pr49-offline-ab-20261024.json"
+    )
+    expected = _SCRIPT.run_offline_experiment()
+    committed_text = evidence_path.read_text(encoding="utf-8")
+
+    assert json.loads(committed_text) == expected
+    assert committed_text == json.dumps(expected, ensure_ascii=False, indent=2) + "\n"

@@ -67,6 +67,9 @@ answers, provider payloads и private target IDs не публикуются.
 В частности, `target_preservation_count` означает непрерывность заранее
 заданной host binding map на synthetic snapshots. Это не наблюдение, что
 модель или production host самостоятельно сохранили binding.
+Если выбранная target исчезает, но в следующем snapshot остаётся другая
+host-bound target, переход помечается `unverified_retarget`: наличие другой
+допустимой target само по себе не доказывает корректное переназначение.
 
 В comparable control обе стратегии задают один host-grounded вопрос и затем
 наблюдают одинаковое структурное уменьшение ambiguity. Это подтверждает, что
