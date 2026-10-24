@@ -226,15 +226,17 @@ def _bound_question(
     return None
 
 
-def _target(
+def _bound_targets(
     snapshot: InterpretationSpace,
     bindings: Mapping[str, tuple[str, str]],
-) -> str | None:
-    for ambiguity in snapshot.ambiguities:
-        binding = bindings.get(ambiguity.id)
-        if binding is not None:
-            return binding[0]
-    return None
+) -> tuple[str, ...]:
+    """Return host-bound semantic targets without using ambiguity order."""
+
+    return tuple(
+        bindings[ambiguity.id][0]
+        for ambiguity in snapshot.ambiguities
+        if ambiguity.id in bindings
+    )
 
 
 def _question_target(
@@ -330,12 +332,12 @@ def _run_condition(case: FixtureCase, condition: str) -> dict[str, Any]:
             break
         next_snapshot = case.snapshots[current_index + 1]
         current_target = selected_target
-        next_target = _target(next_snapshot, bindings)
+        next_targets = _bound_targets(next_snapshot, bindings)
         relation = (
             "preserve"
-            if current_target is not None and current_target == next_target
-            else "retarget"
-            if next_target is not None
+            if current_target is not None and current_target in next_targets
+            else "unverified_retarget"
+            if current_target is not None and next_targets
             else "unbound"
         )
         event["transition_relation"] = relation

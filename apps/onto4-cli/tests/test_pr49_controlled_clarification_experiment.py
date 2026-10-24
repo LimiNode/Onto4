@@ -116,6 +116,67 @@ def test_no_progress_is_not_counted_as_reduction():
     assert row["B"]["structural_churn_observed"] is False
 
 
+def test_selected_target_is_preserved_when_bound_targets_are_reordered():
+    fixture = _SCRIPT.FixtureCase(
+        "comparable_control",
+        snapshots=(
+            _SCRIPT._space(
+                "reordered-0",
+                (
+                    _SCRIPT.Ambiguity("amb-a", "identity", "A"),
+                    _SCRIPT.Ambiguity("amb-b", "identity", "B"),
+                ),
+            ),
+            _SCRIPT._space(
+                "reordered-1",
+                (
+                    _SCRIPT.Ambiguity("amb-b", "identity", "B"),
+                    _SCRIPT.Ambiguity("amb-a", "identity", "A"),
+                ),
+            ),
+        ),
+        answer_target_ids=("target-a", "target-b"),
+        target_family=_SCRIPT.TARGET_FAMILY,
+        host_bindings={
+            "amb-a": ("target-a", _SCRIPT.TARGET_FAMILY),
+            "amb-b": ("target-b", _SCRIPT.TARGET_FAMILY),
+        },
+    )
+
+    result = _SCRIPT._run_condition(fixture, "B")
+
+    assert result["events"][0]["transition_relation"] == "preserve"
+    assert result["target_preservation_count"] == 1
+    assert result["retarget_count"] == 0
+
+
+def test_disappearing_selected_target_is_not_proven_retarget():
+    fixture = _SCRIPT.FixtureCase(
+        "comparable_control",
+        snapshots=(
+            _SCRIPT._space(
+                "unverified-0",
+                (_SCRIPT.Ambiguity("amb-a", "identity", "A"),),
+            ),
+            _SCRIPT._space(
+                "unverified-1",
+                (_SCRIPT.Ambiguity("amb-b", "identity", "B"),),
+            ),
+        ),
+        answer_target_ids=("target-a", "target-b"),
+        target_family=_SCRIPT.TARGET_FAMILY,
+        host_bindings={
+            "amb-a": ("target-a", _SCRIPT.TARGET_FAMILY),
+            "amb-b": ("target-b", _SCRIPT.TARGET_FAMILY),
+        },
+    )
+
+    result = _SCRIPT._run_condition(fixture, "B")
+
+    assert result["events"][0]["transition_relation"] == "unverified_retarget"
+    assert result["retarget_count"] == 0
+
+
 def test_public_offline_artifact_contains_no_fixture_answers_or_target_ids():
     serialized = json.dumps(_SCRIPT.run_offline_experiment(), ensure_ascii=False)
 
