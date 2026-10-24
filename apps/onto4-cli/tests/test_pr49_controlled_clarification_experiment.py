@@ -89,6 +89,24 @@ def test_unbound_target_stays_fail_closed_and_is_not_comparable():
     assert row["comparison_class"] == "non_comparable"
 
 
+def test_same_structural_reduction_with_different_lifecycle_is_not_no_difference():
+    base = {
+        "question_intent_mismatch": False,
+        "unsupported_or_unbound": False,
+        "question_count": 1,
+        "structural_reduction_observed": True,
+        "turns": 1,
+        "stop_reason": "no_admissible_question",
+        "target_preservation_count": 0,
+        "retarget_count": 0,
+        "repeated_target_count": 0,
+        "structural_churn_observed": False,
+    }
+    changed = {**base, "stop_reason": "complete"}
+
+    assert _SCRIPT._comparison_verdict(base, changed) == "not_comparable"
+
+
 def test_no_progress_is_not_counted_as_reduction():
     artifact = _SCRIPT.run_offline_experiment()
     row = next(item for item in artifact["rows"] if item["case_alias"] == "case-5")

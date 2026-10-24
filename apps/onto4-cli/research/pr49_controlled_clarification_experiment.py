@@ -401,7 +401,17 @@ def _comparison_verdict(a: Mapping[str, Any], b: Mapping[str, Any]) -> str:
             return "not_comparable"
         return "A_better_observed"
     if a_reduction == b_reduction:
-        return "no_observed_difference"
+        comparable_metrics = (
+            "turns",
+            "stop_reason",
+            "target_preservation_count",
+            "retarget_count",
+            "repeated_target_count",
+            "structural_churn_observed",
+        )
+        if all(a[key] == b[key] for key in comparable_metrics):
+            return "no_observed_difference"
+        return "not_comparable"
     return "inconclusive"
 
 
