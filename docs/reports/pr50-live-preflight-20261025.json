@@ -1,6 +1,6 @@
 {
   "record_type": "pr50_redaction_safe_live_paired_preflight",
-  "experiment_version": 1,
+  "experiment_version": 2,
   "conditions": {
     "full_snapshot": "full_snapshot",
     "explicit_binding": "explicit_binding"
@@ -19,6 +19,12 @@
         "same_initial_snapshot": true,
         "same_question": true,
         "same_answer": true,
+        "same_case_context": true,
+        "initial_snapshot_digest": "88bd16f5368d6781a97473856c3f7a170b6c73d7a99feaf1ab0dd29a496a312f",
+        "question_digest": "faa4eeb24148a2782c861940a5bae2f85c6c85babdae7eea27b898f3d05932ca",
+        "answer_obligation_digest": "022867e7b0d3934988148425d11dc9763d9823e40eebfcad4d841e4796607b1d",
+        "context_binding_digest": "e67f8be676053111246609f1652aaf17c72d4569c8959d7d72d4f4e8db0d1336",
+        "contract_digest": "5cbb19087a476bae60c279ec040f437fdb2f7b0a1db1608156396ccf2a9fe23b",
         "status": "host_verified"
       },
       "comparison_verdict": "not_comparable",
@@ -29,6 +35,7 @@
           "provider_successor_valid": true,
           "transition_provenance_valid": true,
           "target_present_in_successor": false,
+          "binding_claim_mode": "no_binding_by_protocol",
           "binding": {
             "schema": "valid",
             "catalog": "valid",
@@ -36,7 +43,7 @@
             "transition": "valid",
             "semantic_identity": "not_comparable",
             "structurally_admissible": false,
-            "errors": []
+            "error_codes": []
           }
         },
         {
@@ -44,6 +51,7 @@
           "provider_successor_valid": true,
           "transition_provenance_valid": true,
           "target_present_in_successor": true,
+          "binding_claim_mode": "provider_binding_claim",
           "binding": {
             "schema": "valid",
             "catalog": "valid",
@@ -51,7 +59,7 @@
             "transition": "valid",
             "semantic_identity": "unverified",
             "structurally_admissible": true,
-            "errors": []
+            "error_codes": []
           }
         }
       ]
@@ -66,6 +74,8 @@
   "run_id": "pr50-bonsai-20261025-preflight-01",
   "source_sha": "e897eaf0ed3450de30cefcfe34b011d7b4936093",
   "runner_source_sha": "e897eaf0ed3450de30cefcfe34b011d7b4936093",
+  "reused_pr40_runner_revision": "d969338ee040e304e4dc1afb0f3aa1a373604967",
+  "preflight_type": "provider_protocol",
   "model": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
   "model_artifact_digest": null,
   "backend": "llama.cpp OpenAI-compatible /v1",

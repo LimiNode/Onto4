@@ -50,7 +50,15 @@ def test_public_case_redacts_targets_and_requires_both_conditions():
         ],
     }
 
-    public = _SCRIPT._public_case(raw, alias="case-0")
+    contract = {
+        "same_initial_snapshot": True,
+        "same_question": True,
+        "same_answer": True,
+        "same_case_context": True,
+        "contract_digest": "a" * 64,
+        "status": "host_verified",
+    }
+    public = _SCRIPT._public_case(raw, alias="case-0", host_contract=contract)
     serialized = json.dumps(public, ensure_ascii=False)
 
     assert public["host_input_contract"]["status"] == "host_verified"
@@ -76,6 +84,56 @@ def test_public_case_is_not_host_verified_when_a_condition_is_missing():
 
     assert public["host_input_contract"]["status"] == "not_verified"
     assert public["comparison_verdict"] == "not_comparable"
+
+
+def test_host_contract_mismatch_fails_closed():
+    left = {
+        "initial_snapshot_digest": "a",
+        "question_digest": "b",
+        "answer_obligation_digest": "c",
+        "context_binding_digest": "d",
+        "contract_digest": "e",
+    }
+    right = {**left, "question_digest": "changed"}
+
+    verified = _SCRIPT._verify_host_input_contract(left, left)
+    rejected = _SCRIPT._verify_host_input_contract(left, right)
+
+    assert verified["status"] == "host_verified"
+    assert rejected["status"] == "not_verified"
+    assert rejected["contract_digest"] is None
+
+
+def test_public_cell_allowlist_redacts_private_diagnostics_and_paths():
+    cell = {
+        "condition": "explicit_binding",
+        "provider_successor_valid": False,
+        "transition_provenance_valid": False,
+        "target_present_in_successor": None,
+        "outcome": "PRIVATE_TARGET_ID / C:\\secret\\prompt.txt",
+        "detail_code": "PRIVATE_ANSWER",
+        "binding": {
+            "schema": "invalid",
+            "catalog": "invalid",
+            "lineage": "invalid",
+            "transition": "invalid",
+            "semantic_identity": "unverified",
+            "structurally_admissible": False,
+            "errors": ["PRIVATE_TARGET_ID", "private answer text"],
+        },
+    }
+
+    serialized = json.dumps(_SCRIPT._public_cell(cell), ensure_ascii=False)
+
+    assert "PRIVATE_TARGET_ID" not in serialized
+    assert "PRIVATE_ANSWER" not in serialized
+    assert "secret" not in serialized
+    assert "binding_error" in serialized
+
+
+def test_safe_model_strips_windows_and_posix_paths():
+    assert _SCRIPT._safe_model(r"F:\\AI\\models\\bonsai\\model.gguf") == "model.gguf"
+    assert _SCRIPT._safe_model("/srv/models/model.gguf") == "model.gguf"
 
 
 def test_committed_preflight_artifact_is_redaction_safe_and_non_semantic():
