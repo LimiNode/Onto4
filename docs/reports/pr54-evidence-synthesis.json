@@ -2,6 +2,16 @@
   "record_type": "pr54_research_evidence_synthesis",
   "synthesis_version": "pr54-evidence-synthesis-v2",
   "source_sha": "df9a16d",
+  "integration_status": {
+    "main_sha": "dd4933b091aad475541f23951d3d763fe2249a60",
+    "merged_prs": [49, 50, 51, 52, 53, 54],
+    "open_draft_prs": [39]
+  },
+  "matched_contract": {
+    "current_version": "pr51-matched-clarification-v2",
+    "historical_receipt_version": "pr51-matched-clarification-v1",
+    "provider_context_independently_verified": false
+  },
   "overall_verdict": "not_comparable",
   "semantic_identity": "not_evaluated",
   "evidence": [

@@ -60,10 +60,10 @@ def _context(snapshot):
     )
 
 
-def _policy(spec, condition: str):
-    family = f"host:{spec.case_id}"
+def _policy(spec, condition: str, scenario):
+    target_family = scenario.target_family if scenario is not None else f"host:{spec.case_id}"
     base_policy = FixtureClarificationPolicy(
-        semantic_target_families={spec.target_id: family},
+        semantic_target_families={spec.target_id: target_family},
         require_semantic_target_families=True,
     )
     selected: set[str] = set()
@@ -131,7 +131,12 @@ def run_condition(
 ) -> dict[str, Any]:
     initial = base._initial(spec)
     catalog = base.CATALOGS[spec.case_id]
-    choose, selected = _policy(spec, condition)
+    if scenario is not None:
+        if spec.source_text != scenario.source_text:
+            raise contract_module.ContractError("Runner source does not match frozen scenario.")
+        if not scenario.context_id:
+            raise contract_module.ContractError("Runner context identity is missing.")
+    choose, selected = _policy(spec, condition, scenario)
     current = initial
     events: list[dict[str, Any]] = []
     stop_reason = "max_turns_reached"
@@ -159,7 +164,8 @@ def run_condition(
         if scenario is not None and adapter is not None:
             question_intent_status = adapter.validate_issued_question(
                 scenario,
-                target_family=question.kind.value,
+                question_kind=question.kind.value,
+                target_family=question.target_family,
                 target_ids=tuple(question.target_ids),
             )
             if question_intent_status != "question_intent_match":
@@ -280,15 +286,21 @@ def _pair_comparability(a: dict[str, Any], b: dict[str, Any]) -> str:
 def run_pilot(client: OpenAICompatibleClient) -> dict[str, Any]:
     conditions, scenarios = contract_module.default_contract()
     adapter = contract_module.MatchedContractAdapter(conditions, scenarios)
-    adapter.validate_runner_inputs(
-        condition_names=CONDITION_ORDER,
-        source_ids=("shared-source", "shared-source"),
-        context_ids=("shared-context", "shared-context"),
-        max_turns=MAX_TURNS,
-    )
     rows = []
     for index, spec in enumerate(base.CASES[:2]):
         scenario = scenarios[index]
+        input_attestation = adapter.validate_runner_inputs(
+            condition_names=CONDITION_ORDER,
+            source_ids=(spec.source_text, spec.source_text),
+            context_ids=(scenario.context_id, scenario.context_id),
+            expected_source_id=scenario.source_text,
+            expected_context_id=scenario.context_id,
+            max_turns=MAX_TURNS,
+            invocation_inputs=(
+                {"condition": "A", "source_text": spec.source_text, "context_id": scenario.context_id},
+                {"condition": "B", "source_text": spec.source_text, "context_id": scenario.context_id},
+            ),
+        )
         result_a = run_condition(client, spec, "A", scenario=scenario, adapter=adapter)
         result_b = run_condition(client, spec, "B", scenario=scenario, adapter=adapter)
         rows.append(
@@ -296,6 +308,7 @@ def run_pilot(client: OpenAICompatibleClient) -> dict[str, Any]:
                 "case_alias": f"case-{index}",
                 "A": result_a,
                 "B": result_b,
+                "input_attestation": input_attestation,
                 "pair_comparability": _pair_comparability(result_a, result_b),
                 "semantic_oracle": "none",
             }

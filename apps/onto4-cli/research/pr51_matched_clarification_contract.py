@@ -17,9 +17,14 @@ from typing import Any, Mapping
 
 
 SOURCE_SHA = "a6ed465b25e3dd249d4cf259395fe9b1633f901c"
-PROTOCOL_VERSION = "pr51-matched-clarification-v1"
+PROTOCOL_VERSION = "pr51-matched-clarification-v2"
+PREVIOUS_PROTOCOL_VERSION = "pr51-matched-clarification-v1"
 PROVIDER_PROTOCOL_VERSION = "shared-fixture-refinement-v1"
 MAX_TURNS = 3
+LEGACY_V1_SCENARIO_DIGESTS = {
+    "case-0": "9eb676f8fb94871c0479730039db5ceddf2ff79d787550fe97f14b8572cd2e51",
+    "case-1": "545fa39e634f4e003cfc504dc936470e7af3ca198020e6cb95cae312ac9ee207",
+}
 
 
 class ContractError(ValueError):
@@ -50,9 +55,15 @@ class ScenarioSpec:
     context_id: str
     target_family: str
     target_id: str
-    target_kind: str
+    question_kind: str
     answer_obligations: tuple[str, ...]
     max_turns: int = MAX_TURNS
+
+    @property
+    def target_kind(self) -> str:
+        """Compatibility alias for pre-v2 callers; not a second field."""
+
+        return self.question_kind
 
 
 class MatchedContractAdapter:
@@ -98,15 +109,19 @@ class MatchedContractAdapter:
         self,
         scenario: ScenarioSpec,
         *,
+        question_kind: str | None,
         target_family: str | None,
         target_ids: tuple[str, ...] | None,
     ) -> str:
-        return classify_question_intent(
-            expected_target_family=scenario.target_family,
-            actual_target_family=target_family,
-            expected_target_id=scenario.target_id,
-            actual_target_ids=target_ids,
-        )
+        if question_kind is None or target_family is None or target_ids is None:
+            return "question_intent_unverified"
+        if (
+            question_kind != scenario.question_kind
+            or target_family != scenario.target_family
+            or target_ids != (scenario.target_id,)
+        ):
+            return "question_intent_mismatch"
+        return "question_intent_match"
 
     def validate_runner_inputs(
         self,
@@ -114,18 +129,47 @@ class MatchedContractAdapter:
         condition_names: tuple[str, ...],
         source_ids: tuple[str, ...],
         context_ids: tuple[str, ...],
+        expected_source_id: str,
+        expected_context_id: str,
         max_turns: int,
-    ) -> None:
+        invocation_inputs: tuple[Mapping[str, Any], ...] = (),
+    ) -> dict[str, Any]:
         if condition_names != ("A", "B"):
             raise ContractError("Runner must execute conditions A then B exactly once.")
-        if len(set(source_ids)) != 1 or len(set(context_ids)) != 1:
-            raise ContractError("Conditions must share source and context identity.")
+        if (
+            not expected_source_id
+            or not expected_context_id
+            or len(source_ids) != 2
+            or len(context_ids) != 2
+            or any(value != expected_source_id for value in source_ids)
+            or any(value != expected_context_id for value in context_ids)
+        ):
+            raise ContractError("Conditions must use the actual frozen source and context identity.")
         if max_turns != MAX_TURNS:
             raise ContractError("Runner max_turns must match the frozen contract.")
+        if invocation_inputs and len(invocation_inputs) != 2:
+            raise ContractError("Runner must provide two invocation input snapshots.")
+        host_consistent = all(
+            snapshot.get("source_text") == expected_source_id
+            and snapshot.get("context_id") == expected_context_id
+            for snapshot in invocation_inputs
+        ) if invocation_inputs else True
+        if not host_consistent:
+            raise ContractError("Provider invocation inputs do not match frozen source/context.")
+        provider_attested = bool(invocation_inputs) and all(
+            snapshot.get("provider_input_attested") is True
+            for snapshot in invocation_inputs
+        )
+        return {
+            "host_scenario_consistent": True,
+            "provider_invocation_inputs_verified": provider_attested,
+            "provider_context_not_independently_verified": not provider_attested,
+        }
 
     def safe_manifest_metadata(self) -> dict[str, Any]:
         return {
             "contract_version": PROTOCOL_VERSION,
+            "previous_contract_version": PREVIOUS_PROTOCOL_VERSION,
             "provider_protocol_version": self.provider_protocol.version,
             "scenario_count": len(self.scenarios),
             "scenario_digests": [host_input_digest(scenario) for scenario in self.scenarios],
@@ -155,7 +199,7 @@ def default_contract() -> tuple[tuple[ConditionSpec, ...], tuple[ScenarioSpec, .
             "case-0",
             "Does sharing a genome make two people one person?",
             "identity_and_genome",
-            "Meaning",
+            "numerical_identity",
             "ambiguity-genome",
             "Meaning",
             (
@@ -169,7 +213,7 @@ def default_contract() -> tuple[tuple[ConditionSpec, ...], tuple[ScenarioSpec, .
             "case-1",
             "Does the sequence have an intrinsic present?",
             "intrinsic_time",
-            "Meaning",
+            "observer_independent_present",
             "ambiguity-present",
             "Meaning",
             (
@@ -221,7 +265,7 @@ def host_input_digest(scenario: ScenarioSpec) -> str:
             "context_id": scenario.context_id,
             "target_family": scenario.target_family,
             "target_id": scenario.target_id,
-            "target_kind": scenario.target_kind,
+            "question_kind": scenario.question_kind,
             "answer_obligations": scenario.answer_obligations,
             "max_turns": scenario.max_turns,
         }
@@ -255,8 +299,10 @@ def public_manifest(
     protocol = conditions[0].provider_protocol
     return {
         "record_type": "pr51_matched_clarification_contract",
-        "experiment_version": 1,
+        "experiment_version": 2,
         "protocol_version": PROTOCOL_VERSION,
+        "previous_protocol_version": PREVIOUS_PROTOCOL_VERSION,
+        "previous_contract_source_sha": SOURCE_SHA,
         "source_sha": SOURCE_SHA,
         "provider_protocol": asdict(protocol),
         "conditions": [
@@ -270,10 +316,13 @@ def public_manifest(
         "scenarios": [
             {
                 "case_alias": scenario.public_alias,
-                "target_kind": scenario.target_kind,
+                "question_kind": scenario.question_kind,
                 "max_turns": scenario.max_turns,
                 "answer_obligation_count": len(scenario.answer_obligations),
                 "host_input_digest": host_input_digest(scenario),
+                "previous_v1_host_input_digest": LEGACY_V1_SCENARIO_DIGESTS.get(
+                    scenario.public_alias
+                ),
                 "permitted_outcomes": [
                     "comparable",
                     "question_intent_mismatch",

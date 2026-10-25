@@ -5,6 +5,19 @@
 `not_comparable`; semantic identity во всех live-артефактах остаётся
 `not_evaluated`.
 
+## Текущий статус интеграции
+
+PR #49–#54 объединены в `main` (`dd4933b091aad475541f23951d3d763fe2249a60`).
+PR #39 остаётся открытым Draft и в этот research stack не входит. Исторические
+выводы экспериментов ниже не меняются из-за последующего merge.
+
+Текущий frozen contract имеет версию `pr51-matched-clarification-v2`.
+Исторические PR #53 receipts относятся к v1 и не переатрибутируются к v2.
+Проверка входов runner теперь различает `host_scenario_consistent` и
+`provider_invocation_inputs_verified`; поскольку provider API не выдаёт
+независимый context identity, последняя величина остаётся `false`, а
+`provider_context_not_independently_verified` — `true`.
+
 ## Что действительно измерено
 
 | Этап | Что измерялось | Результат |
