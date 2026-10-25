@@ -41,6 +41,11 @@ _PROTOCOL_SPEC.loader.exec_module(protocol)
 SOURCE_SHA = "8450d2ffe4bd09642426d8777f99b1eb0f52e0a1"
 PILOT_VERSION = "pr58-binding-live-pilot-v1"
 CONDITIONS = ("A", "B", "C")
+_EXPECTED_SETTINGS = {"temperature": 0, "max_output_tokens": 1024, "disable_thinking": True}
+_FROZEN_SCENARIO_DIGESTS = {
+    "genome-identity-bounded": "3eb82b0c0380b13c3398817fd40ffe4ace2addc6a2d89cf80aaf047ee664ffb6",
+    "intrinsic-time-bounded": "cf23933e575a7b391c0c93cc7ce30961873abe959cecb79abfa177507941b5c8",
+}
 
 _MINIMAL_SYSTEM = "Return only the requested JSON object."
 _MINIMAL_TEMPLATE = (
@@ -60,6 +65,65 @@ def _safe_error(exc: Exception) -> str:
     if "timeout" in value or "transport" in value or "connection" in value:
         return "transport_failure"
     return "provider_failure"
+
+
+class _CallCountingClient:
+    """Host-side counter; provider payloads remain inaccessible to receipts."""
+
+    def __init__(self, client: OpenAICompatibleClient) -> None:
+        self.client = client
+        self.profile = client.profile
+        self.actual_calls = 0
+
+    def complete(self, messages: Any, *, response_format: Any) -> Any:
+        self.actual_calls += 1
+        return self.client.complete(messages, response_format=response_format)
+
+
+def _scenario_for_spec(spec: base.CaseSpec) -> Any:
+    _, scenarios = protocol.default_protocol()
+    matches = [scenario for scenario in scenarios if scenario.case_id == spec.case_id]
+    if len(matches) != 1:
+        raise ValueError("Frozen scenario case_id does not match the selected case.")
+    return matches[0]
+
+
+def _condition_for_name(name: str) -> Any:
+    conditions, _ = protocol.default_protocol()
+    matches = [condition for condition in conditions if condition.name == name]
+    if len(matches) != 1:
+        raise ValueError("Unknown frozen protocol condition.")
+    return matches[0]
+
+
+def _validate_frozen_invocation(
+    spec: base.CaseSpec,
+    scenario: Any,
+    question: Any,
+    condition: Any,
+    client: OpenAICompatibleClient,
+) -> None:
+    if spec.case_id != scenario.case_id:
+        raise ValueError("Scenario case_id mismatch.")
+    if spec.source_text != scenario.source_text or spec.answer != scenario.answer:
+        raise ValueError("Frozen source or answer mismatch.")
+    if spec.target_id != scenario.target_id:
+        raise ValueError("Frozen target_id mismatch.")
+    if question.kind.value != scenario.question_kind or question.target_ids != (scenario.target_id,):
+        raise ValueError("Frozen question provenance mismatch.")
+    if question.target_family != scenario.target_family:
+        raise ValueError("Frozen target family mismatch.")
+    if condition.name not in CONDITIONS:
+        raise ValueError("Condition is not part of the frozen protocol.")
+    settings = {
+        "temperature": client.profile.temperature,
+        "max_output_tokens": client.profile.max_output_tokens,
+        "disable_thinking": client.profile.disable_thinking,
+    }
+    if settings != _EXPECTED_SETTINGS:
+        raise ValueError("Decoding settings do not match the frozen pilot.")
+    if protocol.scenario_digest(scenario) != _FROZEN_SCENARIO_DIGESTS.get(scenario.case_id):
+        raise ValueError("Frozen scenario digest mismatch.")
 
 
 def _minimal_binding(
@@ -100,16 +164,20 @@ def _minimal_binding(
 def _cell(client: OpenAICompatibleClient, spec: base.CaseSpec, condition: str) -> dict[str, Any]:
     initial = base._initial(spec)
     question = base._question(spec)
-    scenario = protocol.default_protocol()[1][0 if spec.case_id.startswith("genome") else 1]
+    scenario = _scenario_for_spec(spec)
     question = replace(question, target_family=scenario.target_family)
     catalog = base.CATALOGS[spec.case_id]
+    frozen_condition = _condition_for_name(condition)
+    _validate_frozen_invocation(spec, scenario, question, frozen_condition, client)
+    counting_client = _CallCountingClient(client)
     started = time.perf_counter()
     try:
         runner = {"A": base._full_snapshot, "B": base._explicit_binding, "C": _minimal_binding}[condition]
-        successor, evaluation = runner(client, spec, initial, question, catalog)
+        successor, evaluation = runner(counting_client, spec, initial, question, catalog)
         return {
             "condition": condition,
-            "model_calls": 1,
+            "attempted_invocations": 1,
+            "actual_provider_calls": counting_client.actual_calls,
             "provider_successor_valid": True,
             "schema": evaluation.schema.value,
             "catalog": evaluation.catalog.value,
@@ -122,7 +190,8 @@ def _cell(client: OpenAICompatibleClient, spec: base.CaseSpec, condition: str) -
     except Exception as exc:
         return {
             "condition": condition,
-            "model_calls": 1,
+            "attempted_invocations": 1,
+            "actual_provider_calls": counting_client.actual_calls,
             "provider_successor_valid": False,
             "failure": _safe_error(exc),
             "literal_target_preserved": None,
