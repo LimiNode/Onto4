@@ -1,0 +1,80 @@
+{
+  "record_type": "pr50_redaction_safe_live_paired_preflight",
+  "experiment_version": 1,
+  "conditions": {
+    "full_snapshot": "full_snapshot",
+    "explicit_binding": "explicit_binding"
+  },
+  "condition_order": [
+    "full_snapshot",
+    "explicit_binding"
+  ],
+  "max_turns": 1,
+  "cases": [
+    {
+      "case_alias": "case-0",
+      "question_kind": "Meaning",
+      "question_target_count": 1,
+      "host_input_contract": {
+        "same_initial_snapshot": true,
+        "same_question": true,
+        "same_answer": true,
+        "status": "host_verified"
+      },
+      "comparison_verdict": "not_comparable",
+      "semantic_oracle": "none",
+      "cells": [
+        {
+          "condition": "full_snapshot",
+          "provider_successor_valid": true,
+          "transition_provenance_valid": true,
+          "target_present_in_successor": false,
+          "binding": {
+            "schema": "valid",
+            "catalog": "valid",
+            "lineage": "valid",
+            "transition": "valid",
+            "semantic_identity": "not_comparable",
+            "structurally_admissible": false,
+            "errors": []
+          }
+        },
+        {
+          "condition": "explicit_binding",
+          "provider_successor_valid": true,
+          "transition_provenance_valid": true,
+          "target_present_in_successor": true,
+          "binding": {
+            "schema": "valid",
+            "catalog": "valid",
+            "lineage": "valid",
+            "transition": "valid",
+            "semantic_identity": "unverified",
+            "structurally_admissible": true,
+            "errors": []
+          }
+        }
+      ]
+    }
+  ],
+  "aggregate_verdict": "not_comparable",
+  "semantic_identity": "not_evaluated",
+  "host_workflow_admission": "not_evaluated",
+  "production_admission_changed": false,
+  "semantic_adjudication_receipt_created": false,
+  "provider_payloads_recorded": false,
+  "run_id": "pr50-bonsai-20261025-preflight-01",
+  "source_sha": "e897eaf0ed3450de30cefcfe34b011d7b4936093",
+  "runner_source_sha": "e897eaf0ed3450de30cefcfe34b011d7b4936093",
+  "model": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+  "model_artifact_digest": null,
+  "backend": "llama.cpp OpenAI-compatible /v1",
+  "endpoint": "http://127.0.0.1:8080",
+  "sampling": {
+    "temperature": 0,
+    "thinking_enabled": false,
+    "max_output_tokens": 1024
+  },
+  "prompt_version": "pr40-semantic-binding-v3",
+  "prompt_hash": "e8207f76868b0062658a44ddfade292350c2d86a7f25c174acd3d833db0fb202"
+}
