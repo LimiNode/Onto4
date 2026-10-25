@@ -1,8 +1,8 @@
 {
   "record_type": "pr57_redaction_safe_binding_conformance",
   "gate_version": "pr57-binding-conformance-v1",
-  "source_sha": "d6622ce",
-  "protocol_version": "pr56-target-binding-v1",
+  "source_sha": "370a274",
+  "protocol_version": "pr56-target-binding-v2",
   "scenario_count": 2,
   "rows": [
     {
@@ -13,7 +13,8 @@
       "transition": "valid",
       "semantic_identity": "unverified",
       "structurally_admissible": true,
-      "error_count": 0
+      "error_count": 0,
+      "rejection_category": "none"
     },
     {
       "fixture": "target_reorder",
@@ -23,7 +24,8 @@
       "transition": "valid",
       "semantic_identity": "unverified",
       "structurally_admissible": true,
-      "error_count": 0
+      "error_count": 0,
+      "rejection_category": "none"
     },
     {
       "fixture": "missing_target_id",
@@ -33,7 +35,8 @@
       "transition": "not_applicable",
       "semantic_identity": "unverified",
       "structurally_admissible": false,
-      "error_count": 1
+      "error_count": 1,
+      "rejection_category": "schema"
     },
     {
       "fixture": "unknown_target_id",
@@ -43,7 +46,8 @@
       "transition": "invalid",
       "semantic_identity": "unverified",
       "structurally_admissible": false,
-      "error_count": 2
+      "error_count": 2,
+      "rejection_category": "catalog"
     },
     {
       "fixture": "catalog_valid_wrong_target",
@@ -53,7 +57,8 @@
       "transition": "invalid",
       "semantic_identity": "unverified",
       "structurally_admissible": false,
-      "error_count": 1
+      "error_count": 1,
+      "rejection_category": "transition"
     },
     {
       "fixture": "correct_id_wrong_object",
@@ -63,7 +68,8 @@
       "transition": "invalid",
       "semantic_identity": "unverified",
       "structurally_admissible": false,
-      "error_count": 1
+      "error_count": 1,
+      "rejection_category": "transition"
     },
     {
       "fixture": "stale_lineage",
@@ -73,7 +79,8 @@
       "transition": "valid",
       "semantic_identity": "unverified",
       "structurally_admissible": false,
-      "error_count": 1
+      "error_count": 1,
+      "rejection_category": "lineage"
     },
     {
       "fixture": "structurally_resolved_ambiguity",
@@ -83,7 +90,8 @@
       "transition": "invalid",
       "semantic_identity": "unverified",
       "structurally_admissible": false,
-      "error_count": 1
+      "error_count": 1,
+      "rejection_category": "transition"
     },
     {
       "fixture": "unsupported_relation",
@@ -93,7 +101,8 @@
       "transition": "not_applicable",
       "semantic_identity": "unverified",
       "structurally_admissible": false,
-      "error_count": 1
+      "error_count": 1,
+      "rejection_category": "schema"
     },
     {
       "fixture": "duplicate_claims",
@@ -103,7 +112,30 @@
       "transition": "invalid",
       "semantic_identity": "unverified",
       "structurally_admissible": false,
-      "error_count": 2
+      "error_count": 2,
+      "rejection_category": "transition"
+    },
+    {
+      "fixture": "malformed_envelope",
+      "schema": "invalid",
+      "catalog": "not_applicable",
+      "lineage": "not_applicable",
+      "transition": "not_applicable",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 1,
+      "rejection_category": "schema"
+    },
+    {
+      "fixture": "injected_provider_output",
+      "schema": "invalid",
+      "catalog": "not_applicable",
+      "lineage": "not_applicable",
+      "transition": "not_applicable",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 1,
+      "rejection_category": "schema"
     }
   ],
   "offline_gate_passed": true,
