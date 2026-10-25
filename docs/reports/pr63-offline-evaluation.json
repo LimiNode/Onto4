@@ -28,10 +28,12 @@
     "frozen_rubric": true,
     "independent_gold_available": false,
     "independent_reviewer_count": 0,
+    "no_unresolved_disagreement": true,
     "private_holdout_ready": false,
     "ready_for_live_evaluation": false,
     "real_model_calls": false,
-    "status": "pending_independent_annotations"
+    "status": "pending_independent_annotations",
+    "verified_reviewer_count": 0
   },
   "real_model_calls": false,
   "record_type": "pr63_offline_evaluation",

@@ -24,11 +24,17 @@ semantic_target_alignment: numerator 0 / denominator 0 / missing 12
 status: not_evaluated
 readiness: pending_independent_annotations
 private_holdout_ready: false
+verified_reviewer_count: 0
+no_unresolved_disagreement: true
 ```
 
 The runner accepts annotation records only when a host registry verifies the
-reviewer identity, assignment, exact packet digest, rubric and evidence. It
-computes reviewer counts, accepted/rejected attestations, disagreement and
-metric denominators from those records rather than constants. This is a
-readiness result, not a semantic score. The live-evaluation gate is false, no
-Bonsai calls were made, and production authority is unchanged.
+reviewer identity, assignment, exact packet digest, rubric and evidence. A
+reviewer may contribute at most one accepted submission per packet; duplicate
+submissions are rejected. The trusted reviewer count is derived from distinct
+stable identities represented by accepted attestations, not from registry
+membership or caller-supplied aliases. The runner computes reviewer counts,
+accepted/rejected attestations, disagreement and metric denominators from
+those records rather than constants. This is a readiness result, not a
+semantic score. The live-evaluation gate is false, no Bonsai calls were made,
+and production authority is unchanged.

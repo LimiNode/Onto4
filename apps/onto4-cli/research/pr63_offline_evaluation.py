@@ -136,23 +136,35 @@ def evaluate_annotations(
     packet_map = {packet.case_alias: packet for packet in packets}
     if not packet_map:
         packet_map = {packet.case_alias: packet for packet in _default_packets().values()}
-    record_map = {(record.packet_id, record.annotation_digest): record for record in verification_records}
+    record_map: dict[tuple[str, str], list[Any]] = {}
+    for record in verification_records:
+        record_map.setdefault((record.packet_id, record.annotation_digest), []).append(record)
     accepted: list[Any] = []
     rejected = 0
+    seen_submission_keys: set[tuple[str, str]] = set()
     for annotation in annotations:
         packet = packet_map.get(annotation.case_alias)
         if packet is None or registry is None:
             rejected += 1
             continue
-        record = next((value for (packet_id, digest), value in record_map.items() if packet_id == packet.packet_id and digest == _PR62.annotation_digest(annotation)), None)
-        if record is None:
+        submission_key = (packet.packet_id, annotation.reviewer_alias)
+        if submission_key in seen_submission_keys:
+            # A reviewer may not inflate metrics by submitting the same packet
+            # more than once.  Keep the first exact, host-verified submission.
             rejected += 1
             continue
+        digest = _PR62.annotation_digest(annotation)
+        records = record_map.get((packet.packet_id, digest), ())
+        if len(records) != 1:
+            rejected += 1
+            continue
+        record = records[0]
         try:
             _PR62.attest_host_annotation(record, packet=packet, annotation=annotation, registry=registry)
         except ValueError:
             rejected += 1
         else:
+            seen_submission_keys.add(submission_key)
             accepted.append(annotation)
     return {"accepted": tuple(accepted), "rejected": rejected, "attestation_accepted": len(accepted), "attestation_rejected": rejected}
 
@@ -161,6 +173,25 @@ def _metric(accepted: list[Any], field: str, value: str, development_count: int)
     reviewable = {record.case_alias for record in accepted if not record.abstained and getattr(record, field) == value and record.evidence_sufficiency == "sufficient"}
     denominator = len({record.case_alias for record in accepted if not record.abstained and record.evidence_sufficiency == "sufficient"})
     return {"numerator": len(reviewable), "denominator": denominator, "missing": max(0, development_count - denominator)}
+
+
+def _verified_reviewer_count(accepted: Iterable[Any], registry: Any | None) -> int:
+    """Count identities represented by accepted host-verified annotations.
+
+    Registry membership alone is only a configured capability, not evidence that
+    a reviewer actually supplied an admissible annotation.  Aliases are mapped
+    back to stable identity keys and duplicate identity keys fail closed.
+    """
+
+    if registry is None:
+        return 0
+    identities = {
+        reviewer.reviewer_alias: reviewer.identity_key
+        for reviewer in registry.reviewers
+        if reviewer.independent and reviewer.approved
+    }
+    keys = {identities[record.reviewer_alias] for record in accepted if record.reviewer_alias in identities}
+    return len(keys) if len(keys) == len({record.reviewer_alias for record in accepted if record.reviewer_alias in identities}) else 0
 
 
 def run_offline_evaluation(
@@ -180,11 +211,12 @@ def run_offline_evaluation(
     accepted = list(accepted_data["accepted"])
     alignment = _metric(accepted, "semantic_alignment", "aligned", len(development))
     resolution = _metric(accepted, "ambiguity_resolution", "resolved", len(development))
-    reviewers = registry.independent_reviewer_count() if registry is not None else 0
+    reviewers = _verified_reviewer_count(accepted, registry)
     disagreement = _PR62.compare_reviewers(accepted)
     private_ready = _PR61.holdout_manifest()["private_holdout_ready"] if private_holdout_ready is None else private_holdout_ready
     negative_passed = all(control["passed"] for control in controls)
-    ready = bool(private_ready and reviewers >= 2 and negative_passed and accepted)
+    no_unresolved_disagreement = not any(item["unresolved_disagreement"] for item in disagreement)
+    ready = bool(private_ready and reviewers >= 2 and negative_passed and no_unresolved_disagreement and accepted)
     return {
         "record_type": "pr63_offline_evaluation",
         "protocol_version": PROTOCOL_VERSION,
@@ -217,8 +249,10 @@ def run_offline_evaluation(
             "condition_leakage_tested": True,
             "independent_gold_available": False,
             "independent_reviewer_count": reviewers,
+            "verified_reviewer_count": reviewers,
             "private_holdout_ready": bool(private_ready),
             "attestation_integrity": accepted_data["rejected"] == 0,
+            "no_unresolved_disagreement": no_unresolved_disagreement,
             "real_model_calls": False,
             "ready_for_live_evaluation": ready,
         },

@@ -1,5 +1,6 @@
 import importlib.util
 import json
+from dataclasses import replace
 from pathlib import Path
 import sys
 
@@ -50,6 +51,8 @@ def test_readiness_gate_stops_before_live_evaluation_without_independent_reviewe
     assert readiness["attestation_integrity"] is True
     assert readiness["independent_gold_available"] is False
     assert readiness["independent_reviewer_count"] == 0
+    assert readiness["verified_reviewer_count"] == 0
+    assert readiness["no_unresolved_disagreement"] is True
     assert readiness["ready_for_live_evaluation"] is False
     assert readiness["status"] == "pending_independent_annotations"
 
@@ -99,4 +102,96 @@ def test_readiness_metrics_are_computed_from_registry_verified_annotation():
     assert report["primary_metric"]["denominator"] == 1
     assert report["primary_metric"]["missing"] == 11
     assert report["readiness"]["independent_reviewer_count"] == 1
+    assert report["readiness"]["verified_reviewer_count"] == 1
     assert report["readiness"]["ready_for_live_evaluation"] is False
+
+
+def _verified_pair(*, disagree=False):
+    case = _MODULE._PR61.development_cases()[0]
+    packet = _MODULE._PR62.make_blinded_packet(case)
+    first = _MODULE._PR62.AnnotationRecord(
+        "reviewer-a", packet.case_alias, packet.content_digest, packet.rubric_version,
+        packet.packet_version, "aligned", "resolved", "sufficient", 0.9,
+        annotation_kind=_MODULE._PR62.AnnotationKind.INDEPENDENT,
+    )
+    second = replace(
+        first,
+        reviewer_alias="reviewer-b",
+        semantic_alignment="misaligned" if disagree else "aligned",
+    )
+    annotations = (first, second)
+    identities = (
+        _MODULE._PR62.ReviewerIdentity("reviewer-a", "person-a", True),
+        _MODULE._PR62.ReviewerIdentity("reviewer-b", "person-b", True),
+    )
+    assignments = tuple(
+        _MODULE._PR62.PacketAssignment(packet.packet_id, packet.content_digest, annotation.reviewer_alias)
+        for annotation in annotations
+    )
+    evidence = tuple(
+        _MODULE._PR62.VerifiedEvidenceRecord(
+            packet.packet_id, packet.content_digest, annotation.reviewer_alias,
+            _MODULE._PR62.annotation_digest(annotation), packet.rubric_version,
+            "source", "normalizer", "v1", True,
+        )
+        for annotation in annotations
+    )
+    registry = _MODULE._PR62.HostRegistry("registry-2", identities, assignments, evidence)
+    records = tuple(
+        _MODULE._PR62.HostVerificationRecord(
+            packet.packet_id, packet.content_digest, _MODULE._PR62.annotation_digest(annotation),
+            packet.rubric_version, annotation.reviewer_alias, "source", "normalizer", "v1",
+            _MODULE._PR62.VerificationStage.EVIDENCE_VERIFIED, "independent source",
+        )
+        for annotation in annotations
+    )
+    return packet, annotations, registry, records
+
+
+def test_readiness_requires_two_verified_reviewer_identities_and_accepts_positive_gate():
+    _packet, annotations, registry, records = _verified_pair()
+    report = _MODULE.run_offline_evaluation(
+        annotations, registry=registry, verification_records=records, private_holdout_ready=True
+    )
+    assert report["readiness"]["independent_reviewer_count"] == 2
+    assert report["readiness"]["verified_reviewer_count"] == 2
+    assert report["readiness"]["no_unresolved_disagreement"] is True
+    assert report["readiness"]["ready_for_live_evaluation"] is True
+
+
+def test_unresolved_disagreement_blocks_readiness_even_with_two_verified_reviewers():
+    _packet, annotations, registry, records = _verified_pair(disagree=True)
+    report = _MODULE.run_offline_evaluation(
+        annotations, registry=registry, verification_records=records, private_holdout_ready=True
+    )
+    assert report["readiness"]["verified_reviewer_count"] == 2
+    assert report["readiness"]["no_unresolved_disagreement"] is False
+    assert report["readiness"]["ready_for_live_evaluation"] is False
+
+
+def test_duplicate_submission_by_one_reviewer_is_rejected_and_cannot_inflate_gate():
+    packet, annotations, registry, records = _verified_pair()
+    duplicate = replace(annotations[0], ambiguity_resolution="not_resolved")
+    duplicate_record = replace(
+        records[0], annotation_digest=_MODULE._PR62.annotation_digest(duplicate)
+    )
+    registry = replace(
+        registry,
+        evidence=registry.evidence + (
+            _MODULE._PR62.VerifiedEvidenceRecord(
+                packet.packet_id, packet.content_digest, "reviewer-a",
+                _MODULE._PR62.annotation_digest(duplicate), packet.rubric_version,
+                "source", "normalizer", "v1", True,
+            ),
+        ),
+    )
+    report = _MODULE.run_offline_evaluation(
+        (annotations[0], duplicate, annotations[1]),
+        registry=registry,
+        verification_records=(records[0], duplicate_record, records[1]),
+        private_holdout_ready=True,
+    )
+    assert report["annotation_counts"]["accepted"] == 2
+    assert report["annotation_counts"]["rejected"] == 1
+    assert report["readiness"]["verified_reviewer_count"] == 2
+    assert report["readiness"]["attestation_integrity"] is False
