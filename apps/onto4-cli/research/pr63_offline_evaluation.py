@@ -216,7 +216,15 @@ def run_offline_evaluation(
     private_ready = _PR61.holdout_manifest()["private_holdout_ready"] if private_holdout_ready is None else private_holdout_ready
     negative_passed = all(control["passed"] for control in controls)
     no_unresolved_disagreement = not any(item["unresolved_disagreement"] for item in disagreement)
-    ready = bool(private_ready and reviewers >= 2 and negative_passed and no_unresolved_disagreement and accepted)
+    attestation_integrity = accepted_data["rejected"] == 0
+    ready = bool(
+        private_ready
+        and reviewers >= 2
+        and negative_passed
+        and no_unresolved_disagreement
+        and attestation_integrity
+        and accepted
+    )
     return {
         "record_type": "pr63_offline_evaluation",
         "protocol_version": PROTOCOL_VERSION,
@@ -251,7 +259,7 @@ def run_offline_evaluation(
             "independent_reviewer_count": reviewers,
             "verified_reviewer_count": reviewers,
             "private_holdout_ready": bool(private_ready),
-            "attestation_integrity": accepted_data["rejected"] == 0,
+            "attestation_integrity": attestation_integrity,
             "no_unresolved_disagreement": no_unresolved_disagreement,
             "real_model_calls": False,
             "ready_for_live_evaluation": ready,

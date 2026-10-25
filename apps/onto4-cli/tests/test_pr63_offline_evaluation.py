@@ -195,3 +195,4 @@ def test_duplicate_submission_by_one_reviewer_is_rejected_and_cannot_inflate_gat
     assert report["annotation_counts"]["rejected"] == 1
     assert report["readiness"]["verified_reviewer_count"] == 2
     assert report["readiness"]["attestation_integrity"] is False
+    assert report["readiness"]["ready_for_live_evaluation"] is False
