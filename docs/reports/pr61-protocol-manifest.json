@@ -1,0 +1,47 @@
+{
+  "record_type": "pr61_semantic_evaluation_protocol",
+  "protocol_version": "pr61-semantic-evaluation-protocol-v2",
+  "corpus_version": "pr61-corpus-v2",
+  "case_count": 16,
+  "development_count": 12,
+  "disclosed_fixture_count": 4,
+  "private_holdout_ready": false,
+  "families": ["genome_identity", "intrinsic_time"],
+  "case_classes": [
+    "ambiguous_undecidable_successor",
+    "contradictory_interpretation",
+    "genuinely_resolved_ambiguity",
+    "merely_omitted_ambiguity",
+    "partial_clarification",
+    "same_semantics_different_id",
+    "same_semantics_same_id",
+    "structurally_changed_equivalent",
+    "unrelated_valid_refinement",
+    "unsupported_ontological_assertion",
+    "wrong_semantics_correct_id",
+    "wrong_semantics_different_id"
+  ],
+  "independent_gold_available": false,
+  "real_model_calls": false,
+  "production_authority_changed": false,
+  "holdout_manifest": {
+    "record_type": "pr61_holdout_integrity_manifest",
+    "protocol_version": "pr61-semantic-evaluation-protocol-v2",
+    "corpus_version": "pr61-corpus-v2",
+    "historical_corpus_version": "pr61-corpus-v1",
+    "private_holdout_ready": false,
+    "private_holdout_size": 0,
+    "holdout_case_aliases": [],
+    "disclosed_fixture_count": 4,
+    "disclosed_fixture_aliases": ["time-holdout-01", "time-holdout-02", "genome-holdout-01", "genome-holdout-02"],
+    "disclosed_fixture_commitments": [
+      "e395093228fba35a3431f698c3b92928548e5ffa02b7d06ed02de89ec56c5820",
+      "a181cbe4469f8f114f617240839a6aebf6dc8eb2d1c95bf7fb6797a0a1539e77",
+      "a8532aaf550f951817d040b24ede92e2ecaac32996b949e00763ca76823d3399",
+      "e0dbee1b97654c988e967b2617f694f616c5c1821654da5db35f4ce01b8e514d"
+    ],
+    "labels_published": true,
+    "raw_text_published": true,
+    "independent_gold_available": false
+  }
+}

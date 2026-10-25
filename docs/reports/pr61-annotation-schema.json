@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://onto4.invalid/research/pr61/annotation.schema.json",
+  "title": "Onto4 PR61 blinded semantic annotation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_type",
+    "reviewer_alias",
+    "case_alias",
+    "rubric_version",
+    "packet_version",
+  "semantic_alignment",
+    "ambiguity_resolution",
+    "evidence_sufficiency",
+    "confidence",
+    "abstained"
+  ],
+  "properties": {
+    "record_type": {"const": "pr61_blinded_annotation"},
+    "reviewer_alias": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$"},
+    "case_alias": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$"},
+    "rubric_version": {"type": "string", "minLength": 1},
+    "packet_version": {"type": "string", "minLength": 1},
+    "semantic_alignment": {"enum": ["aligned", "misaligned", "indeterminate"]},
+    "ambiguity_resolution": {"enum": ["resolved", "not_resolved", "merely_omitted", "indeterminate"]},
+    "evidence_sufficiency": {"enum": ["sufficient", "insufficient", "contradictory", "not_available"]},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "abstained": {"type": "boolean"},
+    "abstention_reason": {"type": "string"},
+    "rationale_span_refs": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "annotation_kind": {"enum": ["candidate_annotation", "independent_annotation", "adjudicated_annotation"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"abstained": {"const": true}}},
+      "then": {"required": ["abstention_reason"], "properties": {"abstention_reason": {"minLength": 1}}}
+    }
+  ]
+}
