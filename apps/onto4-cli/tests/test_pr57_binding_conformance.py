@@ -32,3 +32,14 @@ def test_gate_rejects_unexpected_validator_outcome():
     tampered = [dict(row) for row in rows]
     tampered[0]["transition"] = "invalid"
     assert _MODULE.validate_gate_rows(tampered) is False
+
+
+def test_named_fixtures_construct_their_claimed_shapes():
+    reordered, _ = _MODULE._transition(0, mode="reordered")
+    assert len(reordered.previous.ambiguities) == 2
+    assert tuple(item.target_id for item in reordered.previous.ambiguities) != tuple(
+        item.target_id for item in reordered.current.ambiguities
+    )
+    wrong_object, target_id = _MODULE._transition(0, mode="wrong_object")
+    assert not any(item.target_id == target_id for item in wrong_object.current.ambiguities)
+    assert any(item.target_id == target_id for item in wrong_object.current.ontologies)

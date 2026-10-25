@@ -38,8 +38,9 @@ _PROTOCOL_SPEC.loader.exec_module(protocol)
 
 # Exact source revision for reproducibility; this pilot is deliberately tied to
 # the reviewed conformance gate rather than to a moving branch label.
-SOURCE_SHA = "a557cf7bb55bf0c5ca56294c5fcb789351b13184"
-PILOT_VERSION = "pr58-binding-live-pilot-v1"
+SOURCE_SHA = "0463972fe5751bab812105bd2a2297196eaa9f1b"
+HISTORICAL_PILOT_VERSION = "pr58-binding-live-pilot-v1"
+PILOT_VERSION = "pr58-binding-live-pilot-v2-runner"
 CONDITIONS = ("A", "B", "C")
 _EXPECTED_SETTINGS = {"temperature": 0, "max_output_tokens": 1024, "disable_thinking": True}
 _FROZEN_SCENARIO_DIGESTS = {
@@ -74,10 +75,13 @@ class _CallCountingClient:
         self.client = client
         self.profile = client.profile
         self.actual_calls = 0
+        self.completed_calls = 0
 
     def complete(self, messages: Any, *, response_format: Any) -> Any:
         self.actual_calls += 1
-        return self.client.complete(messages, response_format=response_format)
+        result = self.client.complete(messages, response_format=response_format)
+        self.completed_calls += 1
+        return result
 
 
 def _scenario_for_spec(spec: base.CaseSpec) -> Any:
@@ -177,7 +181,8 @@ def _cell(client: OpenAICompatibleClient, spec: base.CaseSpec, condition: str) -
         return {
             "condition": condition,
             "attempted_invocations": 1,
-            "actual_provider_calls": counting_client.actual_calls,
+            "actual_client_invocation_attempts": counting_client.actual_calls,
+            "completed_provider_executions": counting_client.completed_calls,
             "provider_successor_valid": True,
             "schema": evaluation.schema.value,
             "catalog": evaluation.catalog.value,
@@ -191,7 +196,8 @@ def _cell(client: OpenAICompatibleClient, spec: base.CaseSpec, condition: str) -
         return {
             "condition": condition,
             "attempted_invocations": 1,
-            "actual_provider_calls": counting_client.actual_calls,
+            "actual_client_invocation_attempts": counting_client.actual_calls,
+            "completed_provider_executions": counting_client.completed_calls,
             "provider_successor_valid": False,
             "failure": _safe_error(exc),
             "literal_target_preserved": None,
@@ -215,12 +221,19 @@ def run_pilot(client: OpenAICompatibleClient) -> dict[str, Any]:
     return {
         "record_type": "pr58_redaction_safe_binding_live_pilot",
         "pilot_version": PILOT_VERSION,
+        "historical_receipt_version": HISTORICAL_PILOT_VERSION,
+        "historical_receipt_unchanged": True,
         "source_sha": SOURCE_SHA,
         "protocol_version": protocol.PROTOCOL_VERSION,
         "condition_order": list(CONDITIONS),
         "scenario_order": [scenario.public_alias for scenario in scenarios],
         "max_cases": 2,
         "calls_per_condition_and_case": 1,
+        "call_accounting": {
+            "attempted": "host client.complete invocations",
+            "completed": "client.complete returned a response envelope",
+            "provider_side_execution_attested": False,
+        },
         "sampling_settings": {
             "temperature": client.profile.temperature,
             "max_output_tokens": client.profile.max_output_tokens,
