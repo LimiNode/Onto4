@@ -75,7 +75,7 @@ def test_pilot_is_bounded_to_six_calls_and_keeps_semantics_unverified():
     assert all(len(case["cells"]) == 3 for case in result["cases"])
     assert all(cell["attempted_invocations"] == 1 for case in result["cases"] for cell in case["cells"])
     assert all(cell["actual_client_invocation_attempts"] == 1 for case in result["cases"] for cell in case["cells"])
-    assert all(cell["completed_provider_executions"] == 1 for case in result["cases"] for cell in case["cells"])
+    assert all(cell["completed_client_responses"] == 1 for case in result["cases"] for cell in case["cells"])
     assert result["semantic_correctness"] == "not_evaluated"
     assert result["aggregate_verdict"] == "not_comparable"
 
@@ -85,7 +85,7 @@ def test_pilot_output_is_redaction_safe_and_reproducible():
     result = _MODULE.run_pilot(client)
     serialized = json.dumps(result, ensure_ascii=False)
     assert result["historical_receipt_version"] == "pr58-binding-live-pilot-v1"
-    assert result["pilot_version"] == "pr58-binding-live-pilot-v2-runner"
+    assert result["pilot_version"] == "pr58-binding-live-pilot-v3-runner"
     assert result["protocol_version"] == "pr56-target-binding-v2"
     assert result["historical_receipt_unchanged"] is True
     assert result["sampling_settings"]["temperature"] == 0
@@ -106,7 +106,7 @@ def test_cell_records_provider_failure_without_claiming_semantic_failure():
     row = _MODULE._cell(Broken(), spec, "A")
     assert row["attempted_invocations"] == 1
     assert row["actual_client_invocation_attempts"] == 1
-    assert row["completed_provider_executions"] == 0
+    assert row["completed_client_responses"] == 0
     assert row["provider_successor_valid"] is False
     assert row["semantic_correctness"] == "not_evaluated"
     assert row["literal_target_preserved"] is None

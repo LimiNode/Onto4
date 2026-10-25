@@ -40,7 +40,7 @@ _PROTOCOL_SPEC.loader.exec_module(protocol)
 # the reviewed conformance gate rather than to a moving branch label.
 SOURCE_SHA = "0463972fe5751bab812105bd2a2297196eaa9f1b"
 HISTORICAL_PILOT_VERSION = "pr58-binding-live-pilot-v1"
-PILOT_VERSION = "pr58-binding-live-pilot-v2-runner"
+PILOT_VERSION = "pr58-binding-live-pilot-v3-runner"
 CONDITIONS = ("A", "B", "C")
 _EXPECTED_SETTINGS = {"temperature": 0, "max_output_tokens": 1024, "disable_thinking": True}
 _FROZEN_SCENARIO_DIGESTS = {
@@ -182,7 +182,7 @@ def _cell(client: OpenAICompatibleClient, spec: base.CaseSpec, condition: str) -
             "condition": condition,
             "attempted_invocations": 1,
             "actual_client_invocation_attempts": counting_client.actual_calls,
-            "completed_provider_executions": counting_client.completed_calls,
+            "completed_client_responses": counting_client.completed_calls,
             "provider_successor_valid": True,
             "schema": evaluation.schema.value,
             "catalog": evaluation.catalog.value,
@@ -197,7 +197,7 @@ def _cell(client: OpenAICompatibleClient, spec: base.CaseSpec, condition: str) -
             "condition": condition,
             "attempted_invocations": 1,
             "actual_client_invocation_attempts": counting_client.actual_calls,
-            "completed_provider_executions": counting_client.completed_calls,
+            "completed_client_responses": counting_client.completed_calls,
             "provider_successor_valid": False,
             "failure": _safe_error(exc),
             "literal_target_preserved": None,
@@ -231,7 +231,7 @@ def run_pilot(client: OpenAICompatibleClient) -> dict[str, Any]:
         "calls_per_condition_and_case": 1,
         "call_accounting": {
             "attempted": "host client.complete invocations",
-            "completed": "client.complete returned a response envelope",
+            "completed_client_responses": "client.complete returned a response envelope",
             "provider_side_execution_attested": False,
         },
         "sampling_settings": {
