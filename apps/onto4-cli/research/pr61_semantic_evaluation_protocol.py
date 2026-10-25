@@ -14,8 +14,9 @@ import json
 from typing import Any
 
 
-PROTOCOL_VERSION = "pr61-semantic-evaluation-protocol-v1"
-CORPUS_VERSION = "pr61-corpus-v1"
+PROTOCOL_VERSION = "pr61-semantic-evaluation-protocol-v2"
+CORPUS_VERSION = "pr61-corpus-v2"
+HISTORICAL_CORPUS_VERSION = "pr61-corpus-v1"
 
 
 class TargetAlignment(str, Enum):
@@ -63,10 +64,13 @@ class EvaluationCase:
     intended_target_key: str
     intended_target_id: str
     proposed_successor: str
+    observed_successor_target_key: str | None
+    observed_successor_target_id: str | None
     expected_alignment: TargetAlignment
     expected_resolution: AmbiguityResolution
     expected_evidence: EvidenceSufficiency
     holdout: bool = False
+    previously_published: bool = False
 
 
 def _case(
@@ -82,8 +86,25 @@ def _case(
     resolution: AmbiguityResolution,
     evidence: EvidenceSufficiency,
     *,
+    observed_key: str | None = None,
+    observed_id: str | None = None,
     holdout: bool = False,
+    previously_published: bool = False,
 ) -> EvaluationCase:
+    if observed_key is None:
+        observed_key = (
+            target_key
+            if alignment is TargetAlignment.ALIGNED
+            else None
+            if alignment is TargetAlignment.INDETERMINATE
+            else f"unrelated:{target_key}"
+        )
+    if observed_id is None and observed_key is not None:
+        observed_id = target_id
+    if case_class is CaseClass.SAME_SEMANTICS_DIFFERENT_ID:
+        observed_id = f"{target_id}-successor"
+    elif case_class is CaseClass.WRONG_SEMANTICS_DIFFERENT_ID:
+        observed_id = f"{target_id}-other"
     return EvaluationCase(
         case_id,
         family,
@@ -93,10 +114,13 @@ def _case(
         target_key,
         target_id,
         successor,
+        observed_key,
+        observed_id,
         alignment,
         resolution,
         evidence,
         holdout,
+        previously_published,
     )
 
 
@@ -209,7 +233,7 @@ def corpus() -> tuple[EvaluationCase, ...]:
             time_target, "time-holdout-01",
             "The sequence has an intrinsic present even though its technical identifier changes.",
             TargetAlignment.ALIGNED, AmbiguityResolution.RESOLVED, EvidenceSufficiency.SUFFICIENT,
-            holdout=True,
+            holdout=True, previously_published=True,
         ),
         _case(
             "time-holdout-02", "intrinsic_time", CaseClass.WRONG_SEMANTICS_CORRECT_ID,
@@ -218,7 +242,7 @@ def corpus() -> tuple[EvaluationCase, ...]:
             time_target, "time-holdout-02",
             "The observer's clock supplies the only meaning of present.",
             TargetAlignment.MISALIGNED, AmbiguityResolution.NOT_RESOLVED, EvidenceSufficiency.SUFFICIENT,
-            holdout=True,
+            holdout=True, previously_published=True,
         ),
         _case(
             "genome-holdout-01", "genome_identity", CaseClass.MERELY_OMITTED_AMBIGUITY,
@@ -227,7 +251,7 @@ def corpus() -> tuple[EvaluationCase, ...]:
             genome_target, "genome-holdout-01",
             "The successor says only that the genome is shared.",
             TargetAlignment.ALIGNED, AmbiguityResolution.MERELY_OMITTED, EvidenceSufficiency.INSUFFICIENT,
-            holdout=True,
+            holdout=True, previously_published=True,
         ),
         _case(
             "genome-holdout-02", "genome_identity", CaseClass.AMBIGUOUS_UNDECIDABLE_SUCCESSOR,
@@ -236,7 +260,7 @@ def corpus() -> tuple[EvaluationCase, ...]:
             genome_target, "genome-holdout-02",
             "The organisms are one and not one depending on the relevant sense.",
             TargetAlignment.INDETERMINATE, AmbiguityResolution.INDETERMINATE, EvidenceSufficiency.NOT_AVAILABLE,
-            holdout=True,
+            holdout=True, previously_published=True,
         ),
     )
 
@@ -257,6 +281,17 @@ def validate_case(case: EvaluationCase) -> None:
         raise ValueError("evaluation case id must be scoped to a corpus family")
     if case.family not in {"genome_identity", "intrinsic_time"}:
         raise ValueError("unsupported evaluation family")
+    if case.case_class is CaseClass.SAME_SEMANTICS_DIFFERENT_ID and (
+        not case.observed_successor_target_id
+        or case.observed_successor_target_id == case.intended_target_id
+        or case.observed_successor_target_key != case.intended_target_key
+    ):
+        raise ValueError("same-semantics/different-id fixture lacks a distinct observed ID")
+    if case.case_class is CaseClass.WRONG_SEMANTICS_CORRECT_ID and (
+        case.observed_successor_target_id != case.intended_target_id
+        or case.observed_successor_target_key == case.intended_target_key
+    ):
+        raise ValueError("wrong-semantics/correct-id fixture is not represented explicitly")
 
 
 def canonical_case(case: EvaluationCase) -> dict[str, Any]:
@@ -274,20 +309,32 @@ def case_commitment(case: EvaluationCase) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def development_cases() -> tuple[EvaluationCase, ...]:
+    return tuple(case for case in corpus() if not case.previously_published)
+
+
+def disclosed_historical_cases() -> tuple[EvaluationCase, ...]:
+    return tuple(case for case in corpus() if case.previously_published)
+
+
 def holdout_manifest() -> dict[str, Any]:
     cases = corpus()
     for case in cases:
         validate_case(case)
-    holdout = [case for case in cases if case.holdout]
+    disclosed = disclosed_historical_cases()
     return {
-        "record_type": "pr61_frozen_holdout_manifest",
+        "record_type": "pr61_holdout_integrity_manifest",
         "protocol_version": PROTOCOL_VERSION,
         "corpus_version": CORPUS_VERSION,
-        "holdout_size": len(holdout),
-        "holdout_case_aliases": [case.case_id for case in holdout],
-        "commitments": [case_commitment(case) for case in holdout],
-        "labels_published": False,
-        "raw_text_published": False,
+        "historical_corpus_version": HISTORICAL_CORPUS_VERSION,
+        "private_holdout_ready": False,
+        "private_holdout_size": 0,
+        "holdout_case_aliases": [],
+        "disclosed_fixture_count": len(disclosed),
+        "disclosed_fixture_aliases": [case.case_id for case in disclosed],
+        "disclosed_fixture_commitments": [case_commitment(case) for case in disclosed],
+        "labels_published": True,
+        "raw_text_published": True,
         "independent_gold_available": False,
     }
 
@@ -296,14 +343,16 @@ def protocol_artifact() -> dict[str, Any]:
     cases = corpus()
     for case in cases:
         validate_case(case)
-    development = [case for case in cases if not case.holdout]
+    development = development_cases()
+    disclosed = disclosed_historical_cases()
     return {
         "record_type": "pr61_semantic_evaluation_protocol",
         "protocol_version": PROTOCOL_VERSION,
         "corpus_version": CORPUS_VERSION,
         "case_count": len(cases),
         "development_count": len(development),
-        "holdout_count": len(cases) - len(development),
+        "disclosed_fixture_count": len(disclosed),
+        "private_holdout_ready": False,
         "families": sorted({case.family for case in cases}),
         "case_classes": sorted({case.case_class.value for case in cases}),
         "independent_gold_available": False,

@@ -48,3 +48,7 @@ The machine-readable shape is
 `docs/reports/pr61-annotation-schema.json`. Raw responses and reviewer notes
 must remain in an approved private store; public artifacts contain aliases,
 aggregates and provenance only.
+
+The four historical cases named `*-holdout-*` are disclosed synthetic
+fixtures, not blind holdout material. A private holdout is a separate
+prerequisite for independent live evaluation.

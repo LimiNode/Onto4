@@ -13,17 +13,17 @@ sys.modules[_SPEC.name] = _MODULE
 _SPEC.loader.exec_module(_MODULE)
 
 
-def test_protocol_corpus_has_two_families_and_frozen_holdout():
+def test_protocol_corpus_has_two_families_and_disclosed_historical_fixtures():
     cases = _MODULE.corpus()
     assert len(cases) == 16
     assert {case.family for case in cases} == {"genome_identity", "intrinsic_time"}
-    assert sum(case.holdout for case in cases) == 4
-    assert sum(not case.holdout for case in cases) == 12
+    assert sum(case.previously_published for case in cases) == 4
+    assert len(_MODULE.development_cases()) == 12
     assert all(case.case_id for case in cases)
 
 
 def test_development_corpus_covers_all_required_classes():
-    classes = {case.case_class.value for case in _MODULE.corpus() if not case.holdout}
+    classes = {case.case_class.value for case in _MODULE.corpus() if not case.previously_published}
     assert classes == {
         "same_semantics_same_id",
         "same_semantics_different_id",
@@ -40,14 +40,16 @@ def test_development_corpus_covers_all_required_classes():
     }
 
 
-def test_holdout_manifest_publishes_no_labels_or_raw_text():
+def test_holdout_manifest_marks_disclosed_fixtures_and_missing_private_holdout():
     manifest = _MODULE.holdout_manifest()
-    assert manifest["holdout_size"] == 4
-    assert manifest["labels_published"] is False
-    assert manifest["raw_text_published"] is False
+    assert manifest["private_holdout_size"] == 0
+    assert manifest["private_holdout_ready"] is False
+    assert manifest["disclosed_fixture_count"] == 4
+    assert manifest["labels_published"] is True
+    assert manifest["raw_text_published"] is True
     assert manifest["independent_gold_available"] is False
-    assert len(manifest["commitments"]) == 4
-    assert all(len(commitment) == 64 for commitment in manifest["commitments"])
+    assert len(manifest["disclosed_fixture_commitments"]) == 4
+    assert all(len(commitment) == 64 for commitment in manifest["disclosed_fixture_commitments"])
 
 
 def test_case_validation_rejects_empty_or_unknown_scope():
@@ -84,12 +86,14 @@ def test_public_development_index_matches_fixture_cases():
             "family": case.family,
             "case_class": case.case_class.value,
             "target_key": case.intended_target_key,
+            "observed_target_key": case.observed_successor_target_key,
+            "observed_target_id": case.observed_successor_target_id,
             "alignment": case.expected_alignment.value,
             "resolution": case.expected_resolution.value,
             "evidence": case.expected_evidence.value,
         }
         for case in _MODULE.corpus()
-        if not case.holdout
+        if not case.previously_published
     ]
     assert index["cases"] == expected
     assert index["labels_are_independent_gold"] is False

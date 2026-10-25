@@ -15,11 +15,12 @@ references, not independently established semantic gold.
 
 ## Frozen scope
 
-The corpus has 16 cases from two families:
+The historical fixture corpus has 16 cases from two families:
 
 - seven genome-sharing / numerical-identity development cases;
 - five intrinsic-present / observer-independent-time development cases;
-- four holdout cases, two per family.
+- four cases that were originally labelled holdout but are now explicitly
+  marked `previously_published` and `not_blind_holdout`.
 
 The required classes cover same and changed IDs, aligned and misaligned
 successors, genuine resolution, mere omission, partial clarification,
@@ -27,9 +28,15 @@ unsupported ontological assertions, unrelated refinements, undecidable and
 contradictory successors, and structurally changed but semantically equivalent
 successors.
 
-The holdout manifest publishes only aliases and integrity commitments. It does
-not publish holdout text or expected labels. The holdout is frozen before any
-later evaluator is adjusted against model output.
+The original four holdout cases are already present in public Git history, so
+they are retained only as disclosed synthetic fixtures. They are not a blind
+holdout. No private holdout is currently available; the manifest therefore
+reports `private_holdout_ready=false`. A genuine holdout must be created in a
+controlled private store before live evaluation.
+
+The fixtures also carry intended and observed successor target identities. This
+makes ID retention an explicit measured field rather than an inference from a
+case class.
 
 ## Outcomes and abstention
 

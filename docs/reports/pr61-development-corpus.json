@@ -1,21 +1,22 @@
 {
   "record_type": "pr61_development_corpus_index",
-  "protocol_version": "pr61-semantic-evaluation-protocol-v1",
+  "protocol_version": "pr61-semantic-evaluation-protocol-v2",
+  "corpus_version": "pr61-corpus-v2",
   "corpus_source": "apps/onto4-cli/research/pr61_semantic_evaluation_protocol.py",
   "raw_text_public": true,
   "labels_are_independent_gold": false,
   "cases": [
-    {"case_id":"genome-dev-01","family":"genome_identity","case_class":"same_semantics_same_id","target_key":"genome_numerical_identity","alignment":"aligned","resolution":"resolved","evidence":"sufficient"},
-    {"case_id":"genome-dev-02","family":"genome_identity","case_class":"same_semantics_different_id","target_key":"genome_numerical_identity","alignment":"aligned","resolution":"resolved","evidence":"sufficient"},
-    {"case_id":"genome-dev-03","family":"genome_identity","case_class":"wrong_semantics_correct_id","target_key":"genome_numerical_identity","alignment":"misaligned","resolution":"not_resolved","evidence":"sufficient"},
-    {"case_id":"genome-dev-04","family":"genome_identity","case_class":"wrong_semantics_different_id","target_key":"genome_numerical_identity","alignment":"misaligned","resolution":"not_resolved","evidence":"sufficient"},
-    {"case_id":"genome-dev-05","family":"genome_identity","case_class":"genuinely_resolved_ambiguity","target_key":"genome_numerical_identity","alignment":"aligned","resolution":"resolved","evidence":"sufficient"},
-    {"case_id":"genome-dev-06","family":"genome_identity","case_class":"merely_omitted_ambiguity","target_key":"genome_numerical_identity","alignment":"aligned","resolution":"merely_omitted","evidence":"insufficient"},
-    {"case_id":"genome-dev-07","family":"genome_identity","case_class":"unrelated_valid_refinement","target_key":"genome_numerical_identity","alignment":"misaligned","resolution":"not_resolved","evidence":"sufficient"},
-    {"case_id":"time-dev-01","family":"intrinsic_time","case_class":"partial_clarification","target_key":"intrinsic_present","alignment":"aligned","resolution":"not_resolved","evidence":"insufficient"},
-    {"case_id":"time-dev-02","family":"intrinsic_time","case_class":"unsupported_ontological_assertion","target_key":"intrinsic_present","alignment":"misaligned","resolution":"not_resolved","evidence":"insufficient"},
-    {"case_id":"time-dev-03","family":"intrinsic_time","case_class":"ambiguous_undecidable_successor","target_key":"intrinsic_present","alignment":"indeterminate","resolution":"indeterminate","evidence":"not_available"},
-    {"case_id":"time-dev-04","family":"intrinsic_time","case_class":"contradictory_interpretation","target_key":"intrinsic_present","alignment":"indeterminate","resolution":"indeterminate","evidence":"contradictory"},
-    {"case_id":"time-dev-05","family":"intrinsic_time","case_class":"structurally_changed_equivalent","target_key":"intrinsic_present","alignment":"aligned","resolution":"resolved","evidence":"sufficient"}
+    {"case_id":"genome-dev-01","family":"genome_identity","case_class":"same_semantics_same_id","target_key":"genome_numerical_identity","observed_target_key":"genome_numerical_identity","observed_target_id":"genome-target-01","alignment":"aligned","resolution":"resolved","evidence":"sufficient"},
+    {"case_id":"genome-dev-02","family":"genome_identity","case_class":"same_semantics_different_id","target_key":"genome_numerical_identity","observed_target_key":"genome_numerical_identity","observed_target_id":"genome-target-02-successor","alignment":"aligned","resolution":"resolved","evidence":"sufficient"},
+    {"case_id":"genome-dev-03","family":"genome_identity","case_class":"wrong_semantics_correct_id","target_key":"genome_numerical_identity","observed_target_key":"unrelated:genome_numerical_identity","observed_target_id":"genome-target-03","alignment":"misaligned","resolution":"not_resolved","evidence":"sufficient"},
+    {"case_id":"genome-dev-04","family":"genome_identity","case_class":"wrong_semantics_different_id","target_key":"genome_numerical_identity","observed_target_key":"unrelated:genome_numerical_identity","observed_target_id":"genome-target-04-other","alignment":"misaligned","resolution":"not_resolved","evidence":"sufficient"},
+    {"case_id":"genome-dev-05","family":"genome_identity","case_class":"genuinely_resolved_ambiguity","target_key":"genome_numerical_identity","observed_target_key":"genome_numerical_identity","observed_target_id":"genome-target-05","alignment":"aligned","resolution":"resolved","evidence":"sufficient"},
+    {"case_id":"genome-dev-06","family":"genome_identity","case_class":"merely_omitted_ambiguity","target_key":"genome_numerical_identity","observed_target_key":"genome_numerical_identity","observed_target_id":"genome-target-06","alignment":"aligned","resolution":"merely_omitted","evidence":"insufficient"},
+    {"case_id":"genome-dev-07","family":"genome_identity","case_class":"unrelated_valid_refinement","target_key":"genome_numerical_identity","observed_target_key":"unrelated:genome_numerical_identity","observed_target_id":"genome-target-07","alignment":"misaligned","resolution":"not_resolved","evidence":"sufficient"},
+    {"case_id":"time-dev-01","family":"intrinsic_time","case_class":"partial_clarification","target_key":"intrinsic_present","observed_target_key":"intrinsic_present","observed_target_id":"time-target-01","alignment":"aligned","resolution":"not_resolved","evidence":"insufficient"},
+    {"case_id":"time-dev-02","family":"intrinsic_time","case_class":"unsupported_ontological_assertion","target_key":"intrinsic_present","observed_target_key":"unrelated:intrinsic_present","observed_target_id":"time-target-02","alignment":"misaligned","resolution":"not_resolved","evidence":"insufficient"},
+    {"case_id":"time-dev-03","family":"intrinsic_time","case_class":"ambiguous_undecidable_successor","target_key":"intrinsic_present","observed_target_key":null,"observed_target_id":null,"alignment":"indeterminate","resolution":"indeterminate","evidence":"not_available"},
+    {"case_id":"time-dev-04","family":"intrinsic_time","case_class":"contradictory_interpretation","target_key":"intrinsic_present","observed_target_key":null,"observed_target_id":null,"alignment":"indeterminate","resolution":"indeterminate","evidence":"contradictory"},
+    {"case_id":"time-dev-05","family":"intrinsic_time","case_class":"structurally_changed_equivalent","target_key":"intrinsic_present","observed_target_key":"intrinsic_present","observed_target_id":"time-target-05","alignment":"aligned","resolution":"resolved","evidence":"sufficient"}
   ]
 }
