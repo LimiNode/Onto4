@@ -1,0 +1,117 @@
+{
+  "record_type": "pr60_independent_semantic_verification_protocol",
+  "protocol_version": "pr60-independent-semantic-verification-v1",
+  "source_sha": "dd7be787408090ae5b7e5a381c0dbb406cc94648",
+  "rows": [
+    {
+      "fixture": "same_semantics_same_id",
+      "semantic_alignment": "correct",
+      "literal_id_retention": true,
+      "ambiguity_resolution": "correct",
+      "reason": "resolved with independent evidence",
+      "result_scope": "synthetic_oracle_fixture",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "same_semantics_different_id",
+      "semantic_alignment": "correct",
+      "literal_id_retention": false,
+      "ambiguity_resolution": "correct",
+      "reason": "resolved with independent evidence",
+      "result_scope": "synthetic_oracle_fixture",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "wrong_semantics_correct_id",
+      "semantic_alignment": "incorrect",
+      "literal_id_retention": true,
+      "ambiguity_resolution": "incorrect",
+      "reason": "observed semantic target differs from the frozen expectation",
+      "result_scope": "synthetic_oracle_fixture",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "ambiguity_genuinely_resolved",
+      "semantic_alignment": "correct",
+      "literal_id_retention": true,
+      "ambiguity_resolution": "correct",
+      "reason": "resolved with independent evidence",
+      "result_scope": "synthetic_oracle_fixture",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "ambiguity_merely_omitted",
+      "semantic_alignment": "correct",
+      "literal_id_retention": true,
+      "ambiguity_resolution": "unverified",
+      "reason": "ambiguity omitted without evidence of resolution",
+      "result_scope": "synthetic_oracle_fixture",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "semantic_relationship_indeterminate",
+      "semantic_alignment": "correct",
+      "literal_id_retention": true,
+      "ambiguity_resolution": "unverified",
+      "reason": "ambiguity resolution is indeterminate",
+      "result_scope": "synthetic_oracle_fixture",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "untrusted_observation",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "observation lacks verified independent provenance",
+      "result_scope": "unverified",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "provider_self_report_without_evidence",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "observation lacks verified independent provenance",
+      "result_scope": "unverified",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "missing_normalizer_provenance",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "observation lacks verified independent provenance",
+      "result_scope": "unverified",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "duplicate_evidence_source",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "evidence sources are not independently distinct",
+      "result_scope": "unverified",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "contradictory_evidence",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "evidence is contradictory",
+      "result_scope": "unverified",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "apparent_resolution_without_evidence",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "observation lacks verified independent provenance",
+      "result_scope": "unverified",
+      "synthetic_oracle_fixture": true
+    }
+  ],
+  "semantic_adjudication_receipt_created": false,
+  "production_admission_changed": false
+}
