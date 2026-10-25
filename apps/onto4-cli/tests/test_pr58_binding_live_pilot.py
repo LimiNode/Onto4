@@ -86,6 +86,8 @@ def test_pilot_output_is_redaction_safe_and_reproducible():
     serialized = json.dumps(result, ensure_ascii=False)
     assert result["historical_receipt_version"] == "pr58-binding-live-pilot-v1"
     assert result["pilot_version"] == "pr58-binding-live-pilot-v2-runner"
+    assert result["protocol_version"] == "pr56-target-binding-v2"
+    assert result["historical_receipt_unchanged"] is True
     assert result["sampling_settings"]["temperature"] == 0
     assert "ambiguity-genome" not in serialized
     assert "identity_and_genome" not in serialized
