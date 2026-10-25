@@ -3,12 +3,62 @@
   "protocol_version": "pr60-independent-semantic-verification-v1",
   "source_sha": "efacadadda84c84dc1c4ada37cb44fb216c70fcf",
   "rows": [
-    {"fixture": "same_semantics_same_id", "semantic_alignment": "correct", "literal_id_retention": true, "ambiguity_resolution": "correct", "reason": "resolved with independent evidence"},
-    {"fixture": "same_semantics_different_id", "semantic_alignment": "correct", "literal_id_retention": false, "ambiguity_resolution": "correct", "reason": "resolved with independent evidence"},
-    {"fixture": "wrong_semantics_correct_id", "semantic_alignment": "incorrect", "literal_id_retention": true, "ambiguity_resolution": "incorrect", "reason": "observed semantic target differs from the frozen expectation"},
-    {"fixture": "ambiguity_genuinely_resolved", "semantic_alignment": "correct", "literal_id_retention": true, "ambiguity_resolution": "correct", "reason": "resolved with independent evidence"},
-    {"fixture": "ambiguity_merely_omitted", "semantic_alignment": "correct", "literal_id_retention": true, "ambiguity_resolution": "unverified", "reason": "ambiguity omitted without evidence of resolution"},
-    {"fixture": "semantic_relationship_indeterminate", "semantic_alignment": "correct", "literal_id_retention": true, "ambiguity_resolution": "unverified", "reason": "ambiguity resolution is indeterminate"}
+    {
+      "fixture": "same_semantics_same_id",
+      "semantic_alignment": "correct",
+      "literal_id_retention": true,
+      "ambiguity_resolution": "correct",
+      "reason": "resolved with independent evidence",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "same_semantics_different_id",
+      "semantic_alignment": "correct",
+      "literal_id_retention": false,
+      "ambiguity_resolution": "correct",
+      "reason": "resolved with independent evidence",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "wrong_semantics_correct_id",
+      "semantic_alignment": "incorrect",
+      "literal_id_retention": true,
+      "ambiguity_resolution": "incorrect",
+      "reason": "observed semantic target differs from the frozen expectation",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "ambiguity_genuinely_resolved",
+      "semantic_alignment": "correct",
+      "literal_id_retention": true,
+      "ambiguity_resolution": "correct",
+      "reason": "resolved with independent evidence",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "ambiguity_merely_omitted",
+      "semantic_alignment": "correct",
+      "literal_id_retention": true,
+      "ambiguity_resolution": "unverified",
+      "reason": "ambiguity omitted without evidence of resolution",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "semantic_relationship_indeterminate",
+      "semantic_alignment": "correct",
+      "literal_id_retention": true,
+      "ambiguity_resolution": "unverified",
+      "reason": "ambiguity resolution is indeterminate",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "untrusted_observation",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "observation lacks verified independent provenance",
+      "synthetic_oracle_fixture": true
+    }
   ],
   "semantic_adjudication_receipt_created": false,
   "production_admission_changed": false

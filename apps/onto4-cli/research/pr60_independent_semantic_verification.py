@@ -29,6 +29,35 @@ class ResolutionStatus(str, Enum):
     INDETERMINATE = "indeterminate"
 
 
+class EvidenceAuthority(str, Enum):
+    HOST_INDEPENDENT = "host_independent"
+    PROVIDER = "provider"
+    UNKNOWN = "unknown"
+
+
+class EvidenceStatus(str, Enum):
+    VERIFIED = "verified"
+    UNVERIFIED = "unverified"
+    CONTRADICTORY = "contradictory"
+
+
+@dataclass(frozen=True)
+class EvidenceReference:
+    source_id: str
+    authority: EvidenceAuthority
+    status: EvidenceStatus
+    statement_key: str
+
+
+@dataclass(frozen=True)
+class ObservationProvenance:
+    observation_id: str
+    normalizer_id: str
+    normalizer_version: str
+    source_id: str
+    authority: EvidenceAuthority
+
+
 @dataclass(frozen=True)
 class SemanticExpectation:
     target_key: str
@@ -38,12 +67,13 @@ class SemanticExpectation:
 
 @dataclass(frozen=True)
 class ObservedSemanticSnapshot:
-    """Host-normalized observation; provider claims are not represented."""
+    """Observation plus an auditable provenance boundary."""
 
     target_key: str | None
     target_id: str | None
     resolution: ResolutionStatus
-    evidence: tuple[str, ...] = ()
+    evidence: tuple[EvidenceReference, ...] = ()
+    provenance: ObservationProvenance | None = None
 
 
 @dataclass(frozen=True)
@@ -77,6 +107,41 @@ def verify_independent(
             SemanticStatus.UNVERIFIED,
             "observed semantic target is absent",
         )
+    provenance = observed.provenance
+    if provenance is None or not all(
+        (provenance.observation_id, provenance.normalizer_id, provenance.normalizer_version, provenance.source_id)
+    ) or provenance.authority is not EvidenceAuthority.HOST_INDEPENDENT:
+        return VerificationResult(
+            SemanticStatus.UNVERIFIED,
+            None,
+            SemanticStatus.UNVERIFIED,
+            "observation lacks verified independent provenance",
+        )
+    if not observed.evidence or any(
+        evidence.authority is not EvidenceAuthority.HOST_INDEPENDENT
+        or evidence.status is not EvidenceStatus.VERIFIED
+        for evidence in observed.evidence
+    ):
+        return VerificationResult(
+            SemanticStatus.UNVERIFIED,
+            None,
+            SemanticStatus.UNVERIFIED,
+            "evidence is absent or not independently verified",
+        )
+    if len({evidence.source_id for evidence in observed.evidence}) != len(observed.evidence):
+        return VerificationResult(
+            SemanticStatus.UNVERIFIED,
+            None,
+            SemanticStatus.UNVERIFIED,
+            "evidence sources are not independently distinct",
+        )
+    if any(evidence.status is EvidenceStatus.CONTRADICTORY for evidence in observed.evidence):
+        return VerificationResult(
+            SemanticStatus.UNVERIFIED,
+            None,
+            SemanticStatus.UNVERIFIED,
+            "evidence is contradictory",
+        )
     alignment = (
         SemanticStatus.CORRECT
         if observed.target_key == expected.target_key
@@ -87,7 +152,8 @@ def verify_independent(
         resolution = SemanticStatus.INCORRECT
         reason = "observed semantic target differs from the frozen expectation"
     elif observed.resolution is ResolutionStatus.RESOLVED:
-        missing = set(expected.required_evidence) - set(observed.evidence)
+        available = {evidence.statement_key for evidence in observed.evidence}
+        missing = set(expected.required_evidence) - available
         resolution = SemanticStatus.CORRECT if not missing else SemanticStatus.UNVERIFIED
         reason = "resolved with independent evidence" if not missing else "resolution evidence is incomplete"
     elif observed.resolution is ResolutionStatus.OMITTED:
@@ -101,13 +167,24 @@ def verify_independent(
 
 def fixture_matrix() -> tuple[dict[str, Any], ...]:
     expected = SemanticExpectation("genome_identity", "target-a", ("identity-criterion",))
+    provenance = ObservationProvenance("observation-1", "host-normalizer", "v1", "evidence-a", EvidenceAuthority.HOST_INDEPENDENT)
+    evidence = (EvidenceReference("evidence-a", EvidenceAuthority.HOST_INDEPENDENT, EvidenceStatus.VERIFIED, "identity-criterion"),)
+    def observed(key: str | None, target_id: str | None, resolution: ResolutionStatus, *, verified: bool = True, source: str = "evidence-a") -> ObservedSemanticSnapshot:
+        return ObservedSemanticSnapshot(
+            key,
+            target_id,
+            resolution,
+            evidence if verified else (),
+            provenance if verified else None,
+        )
     return (
-        {"name": "same_semantics_same_id", "expected": expected, "observed": ObservedSemanticSnapshot("genome_identity", "target-a", ResolutionStatus.RESOLVED, ("identity-criterion",))},
-        {"name": "same_semantics_different_id", "expected": expected, "observed": ObservedSemanticSnapshot("genome_identity", "target-b", ResolutionStatus.RESOLVED, ("identity-criterion",))},
-        {"name": "wrong_semantics_correct_id", "expected": expected, "observed": ObservedSemanticSnapshot("numerical_count", "target-a", ResolutionStatus.RESOLVED, ("identity-criterion",))},
-        {"name": "ambiguity_genuinely_resolved", "expected": expected, "observed": ObservedSemanticSnapshot("genome_identity", "target-a", ResolutionStatus.RESOLVED, ("identity-criterion",))},
-        {"name": "ambiguity_merely_omitted", "expected": expected, "observed": ObservedSemanticSnapshot("genome_identity", "target-a", ResolutionStatus.OMITTED)},
-        {"name": "semantic_relationship_indeterminate", "expected": expected, "observed": ObservedSemanticSnapshot("genome_identity", "target-a", ResolutionStatus.INDETERMINATE)},
+        {"name": "same_semantics_same_id", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.RESOLVED)},
+        {"name": "same_semantics_different_id", "expected": expected, "observed": observed("genome_identity", "target-b", ResolutionStatus.RESOLVED)},
+        {"name": "wrong_semantics_correct_id", "expected": expected, "observed": observed("numerical_count", "target-a", ResolutionStatus.RESOLVED)},
+        {"name": "ambiguity_genuinely_resolved", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.RESOLVED)},
+        {"name": "ambiguity_merely_omitted", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.OMITTED)},
+        {"name": "semantic_relationship_indeterminate", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.INDETERMINATE)},
+        {"name": "untrusted_observation", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.RESOLVED, verified=False)},
     )
 
 
@@ -121,6 +198,7 @@ def run_offline_protocol() -> dict[str, Any]:
             "literal_id_retention": result.literal_id_retention,
             "ambiguity_resolution": result.ambiguity_resolution.value,
             "reason": result.reason,
+            "synthetic_oracle_fixture": True,
         })
     return {
         "record_type": "pr60_independent_semantic_verification_protocol",
