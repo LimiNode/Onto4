@@ -155,8 +155,8 @@ def default_contract() -> tuple[tuple[ConditionSpec, ...], tuple[ScenarioSpec, .
             "case-0",
             "Does sharing a genome make two people one person?",
             "identity_and_genome",
-            "numerical_identity",
-            "target-genome-identity",
+            "Meaning",
+            "ambiguity-genome",
             "Meaning",
             (
                 "I mean numerical identity: they are one and the same individual.",
@@ -169,8 +169,8 @@ def default_contract() -> tuple[tuple[ConditionSpec, ...], tuple[ScenarioSpec, .
             "case-1",
             "Does the sequence have an intrinsic present?",
             "intrinsic_time",
-            "observer_independent_present",
-            "target-intrinsic-present",
+            "Meaning",
+            "ambiguity-present",
             "Meaning",
             (
                 "I mean an observer-independent present in the sequence itself.",
