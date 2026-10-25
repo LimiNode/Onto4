@@ -1,0 +1,206 @@
+"""Run the deterministic offline conformance gate for PR #56."""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+from dataclasses import replace
+from pathlib import Path
+import sys
+from typing import Any, Mapping
+
+from onto4.pipeline.semantic_binding import (
+    BindingTransition,
+    CheckStatus,
+    evaluate_binding_claim,
+    evaluate_binding_claims,
+)
+from onto4.providers.openai_adapters import ProviderSchemaError
+from onto4.reasoning import Ambiguity
+
+
+_PROTOCOL_SPEC = importlib.util.spec_from_file_location(
+    "pr56_target_binding_protocol_for_pr57",
+    Path(__file__).with_name("pr56_target_binding_protocol.py"),
+)
+assert _PROTOCOL_SPEC is not None and _PROTOCOL_SPEC.loader is not None
+protocol = importlib.util.module_from_spec(_PROTOCOL_SPEC)
+sys.modules[_PROTOCOL_SPEC.name] = protocol
+_PROTOCOL_SPEC.loader.exec_module(protocol)
+
+_BASE_SPEC = importlib.util.spec_from_file_location(
+    "pr40_semantic_binding_runner_for_pr57",
+    Path(__file__).with_name("pr40_semantic_binding_runner.py"),
+)
+assert _BASE_SPEC is not None and _BASE_SPEC.loader is not None
+base = importlib.util.module_from_spec(_BASE_SPEC)
+sys.modules[_BASE_SPEC.name] = base
+_BASE_SPEC.loader.exec_module(base)
+
+
+SOURCE_SHA = "7611b989376ceac9a81237efff06aab5b63dc571"
+GATE_VERSION = "pr57-binding-conformance-v1"
+
+EXPECTED_FIXTURES: dict[str, dict[str, Any]] = {
+    "exact_target_preservation": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "valid", "structurally_admissible": True, "rejection_category": "none"},
+    "target_reorder": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "valid", "structurally_admissible": True, "rejection_category": "none"},
+    "missing_target_id": {"schema": "invalid", "catalog": "not_applicable", "lineage": "not_applicable", "transition": "not_applicable", "structurally_admissible": False, "rejection_category": "schema"},
+    "unknown_target_id": {"schema": "valid", "catalog": "invalid", "lineage": "valid", "transition": "invalid", "structurally_admissible": False, "rejection_category": "catalog"},
+    "catalog_valid_wrong_target": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "invalid", "structurally_admissible": False, "rejection_category": "transition"},
+    "correct_id_wrong_object": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "invalid", "structurally_admissible": False, "rejection_category": "transition"},
+    "stale_lineage": {"schema": "valid", "catalog": "valid", "lineage": "invalid", "transition": "valid", "structurally_admissible": False, "rejection_category": "lineage"},
+    "structurally_resolved_ambiguity": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "invalid", "structurally_admissible": False, "rejection_category": "transition"},
+    "unsupported_relation": {"schema": "invalid", "catalog": "not_applicable", "lineage": "not_applicable", "transition": "not_applicable", "structurally_admissible": False, "rejection_category": "schema"},
+    "duplicate_claims": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "invalid", "structurally_admissible": False, "rejection_category": "transition"},
+    "malformed_envelope": {"schema": "invalid", "catalog": "not_applicable", "lineage": "not_applicable", "transition": "not_applicable", "structurally_admissible": False, "rejection_category": "schema"},
+    "injected_provider_output": {"schema": "invalid", "catalog": "not_applicable", "lineage": "not_applicable", "transition": "not_applicable", "structurally_admissible": False, "rejection_category": "schema"},
+}
+
+
+def _transition(index: int, *, mode: str = "preserve") -> tuple[BindingTransition, str]:
+    spec = base.CASES[index]
+    initial = base._initial(spec)
+    question = base._question(spec)
+    question = replace(
+        question,
+        target_family=protocol.default_protocol()[1][index].target_family,
+    )
+    current = replace(initial, id=f"{initial.id}-successor")
+    if mode == "missing_target":
+        current = replace(current, ambiguities=())
+    elif mode == "wrong_object":
+        current = replace(
+            current,
+            ambiguities=(),
+            ontologies=(replace(current.ontologies[0], target_id=spec.target_id),),
+        )
+    elif mode == "reordered":
+        extra = Ambiguity("ambiguity-1", "ambiguity-criterion", "second host target", "ambiguity-criterion")
+        initial = replace(initial, ambiguities=(initial.ambiguities[0], extra))
+        current = replace(initial, id=f"{initial.id}-successor", ambiguities=tuple(reversed(initial.ambiguities)))
+    return BindingTransition(initial, current, question), spec.target_id
+
+
+def _claim(transition: BindingTransition, target_id: str, relation: str = "preserve") -> dict[str, Any]:
+    return {
+        "relation": relation,
+        "target_id": target_id,
+        "target_kind": transition.question.kind.value,
+        "source_target_id": target_id if relation in {"preserve", "anchored_update"} else None,
+        "previous_snapshot_id": transition.previous.id,
+        "current_snapshot_id": transition.current.id,
+    }
+
+
+def _fixture(name: str, index: int, *, mode: str = "preserve", payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    transition, target_id = _transition(index, mode=mode)
+    catalog = base.CATALOGS[base.CASES[index].case_id]
+    if payload is None:
+        payload = _claim(transition, target_id)
+    evaluation = evaluate_binding_claim(payload, transition=transition, catalog=catalog)
+    return {
+        "fixture": name,
+        "schema": evaluation.schema.value,
+        "catalog": evaluation.catalog.value,
+        "lineage": evaluation.lineage.value,
+        "transition": evaluation.transition.value,
+        "semantic_identity": evaluation.semantic_identity.value,
+        "structurally_admissible": evaluation.structurally_admissible,
+        "error_count": len(evaluation.errors),
+        "rejection_category": "none" if evaluation.structurally_admissible else (
+            "schema" if evaluation.schema is CheckStatus.INVALID else
+            "catalog" if evaluation.catalog is CheckStatus.INVALID else
+            "lineage" if evaluation.lineage is CheckStatus.INVALID else "transition"
+        ),
+    }
+
+
+def _envelope_fixture(name: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        base._parse_explicit_envelope(payload)
+    except ProviderSchemaError:
+        return {
+            "fixture": name,
+            "schema": "invalid",
+            "catalog": "not_applicable",
+            "lineage": "not_applicable",
+            "transition": "not_applicable",
+            "semantic_identity": "unverified",
+            "structurally_admissible": False,
+            "error_count": 1,
+            "rejection_category": "schema",
+        }
+    raise AssertionError("negative envelope fixture unexpectedly passed parser")
+
+
+def run_gate() -> dict[str, Any]:
+    scenarios = protocol.default_protocol()[1]
+    rows = [
+        _fixture("exact_target_preservation", 0),
+        _fixture("target_reorder", 0, mode="reordered"),
+        _fixture("missing_target_id", 0, payload={"relation": "preserve"}),
+        _fixture("unknown_target_id", 0, payload=_claim(_transition(0)[0], "unknown-target")),
+        _fixture("catalog_valid_wrong_target", 0, payload=_claim(_transition(0)[0], "ambiguity-criterion")),
+        _fixture("correct_id_wrong_object", 0, mode="wrong_object"),
+        _fixture("stale_lineage", 0, payload={**_claim(_transition(0)[0], "ambiguity-genome"), "previous_snapshot_id": "stale"}),
+        _fixture("structurally_resolved_ambiguity", 0, mode="missing_target", payload=_claim(_transition(0, mode="missing_target")[0], "ambiguity-genome")),
+        _fixture("unsupported_relation", 0, payload={**_claim(_transition(0)[0], "ambiguity-genome"), "relation": "unsupported"}),
+    ]
+    duplicate_transition, duplicate_target = _transition(0)
+    duplicate = evaluate_binding_claims(
+        (_claim(duplicate_transition, duplicate_target), _claim(duplicate_transition, duplicate_target)),
+        transition=duplicate_transition,
+        catalog=base.CATALOGS[base.CASES[0].case_id],
+    )
+    rows.append({
+        "fixture": "duplicate_claims",
+        "schema": "valid",
+        "catalog": "valid",
+        "lineage": "valid",
+        "transition": "invalid" if all(item.transition is CheckStatus.INVALID for item in duplicate) else "unknown",
+        "semantic_identity": "unverified",
+        "structurally_admissible": False,
+        "error_count": sum(len(item.errors) for item in duplicate),
+        "rejection_category": "transition",
+    })
+    rows.append(_envelope_fixture("malformed_envelope", {"successor": {}}))
+    rows.append(_envelope_fixture("injected_provider_output", {"successor": {}, "binding_claim": {}, "untrusted": True}))
+    rows = [row for row in rows]
+    return {
+        "record_type": "pr57_redaction_safe_binding_conformance",
+        "gate_version": GATE_VERSION,
+        "source_sha": SOURCE_SHA,
+        "protocol_version": protocol.PROTOCOL_VERSION,
+        "scenario_count": len(scenarios),
+        "rows": rows,
+        "offline_gate_passed": validate_gate_rows(rows),
+        "semantic_oracle": "none",
+        "semantic_correctness": "not_evaluated",
+        "live_run_performed": False,
+        "production_admission_changed": False,
+    }
+
+
+def validate_gate_rows(rows: list[dict[str, Any]]) -> bool:
+    """Require every named fixture to match its frozen expected outcome."""
+    if len(rows) != len(EXPECTED_FIXTURES) or {row.get("fixture") for row in rows} != set(EXPECTED_FIXTURES):
+        return False
+    for row in rows:
+        expected = EXPECTED_FIXTURES[row["fixture"]]
+        for key in ("schema", "catalog", "lineage", "transition", "structurally_admissible", "rejection_category"):
+            if row.get(key) != expected[key]:
+                return False
+    return True
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(run_gate(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,146 @@
+{
+  "record_type": "pr57_redaction_safe_binding_conformance",
+  "gate_version": "pr57-binding-conformance-v1",
+  "source_sha": "7611b989376ceac9a81237efff06aab5b63dc571",
+  "protocol_version": "pr56-target-binding-v2",
+  "scenario_count": 2,
+  "rows": [
+    {
+      "fixture": "exact_target_preservation",
+      "schema": "valid",
+      "catalog": "valid",
+      "lineage": "valid",
+      "transition": "valid",
+      "semantic_identity": "unverified",
+      "structurally_admissible": true,
+      "error_count": 0,
+      "rejection_category": "none"
+    },
+    {
+      "fixture": "target_reorder",
+      "schema": "valid",
+      "catalog": "valid",
+      "lineage": "valid",
+      "transition": "valid",
+      "semantic_identity": "unverified",
+      "structurally_admissible": true,
+      "error_count": 0,
+      "rejection_category": "none"
+    },
+    {
+      "fixture": "missing_target_id",
+      "schema": "invalid",
+      "catalog": "not_applicable",
+      "lineage": "not_applicable",
+      "transition": "not_applicable",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 1,
+      "rejection_category": "schema"
+    },
+    {
+      "fixture": "unknown_target_id",
+      "schema": "valid",
+      "catalog": "invalid",
+      "lineage": "valid",
+      "transition": "invalid",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 2,
+      "rejection_category": "catalog"
+    },
+    {
+      "fixture": "catalog_valid_wrong_target",
+      "schema": "valid",
+      "catalog": "valid",
+      "lineage": "valid",
+      "transition": "invalid",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 1,
+      "rejection_category": "transition"
+    },
+    {
+      "fixture": "correct_id_wrong_object",
+      "schema": "valid",
+      "catalog": "valid",
+      "lineage": "valid",
+      "transition": "invalid",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 1,
+      "rejection_category": "transition"
+    },
+    {
+      "fixture": "stale_lineage",
+      "schema": "valid",
+      "catalog": "valid",
+      "lineage": "invalid",
+      "transition": "valid",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 1,
+      "rejection_category": "lineage"
+    },
+    {
+      "fixture": "structurally_resolved_ambiguity",
+      "schema": "valid",
+      "catalog": "valid",
+      "lineage": "valid",
+      "transition": "invalid",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 1,
+      "rejection_category": "transition"
+    },
+    {
+      "fixture": "unsupported_relation",
+      "schema": "invalid",
+      "catalog": "not_applicable",
+      "lineage": "not_applicable",
+      "transition": "not_applicable",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 1,
+      "rejection_category": "schema"
+    },
+    {
+      "fixture": "duplicate_claims",
+      "schema": "valid",
+      "catalog": "valid",
+      "lineage": "valid",
+      "transition": "invalid",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 2,
+      "rejection_category": "transition"
+    },
+    {
+      "fixture": "malformed_envelope",
+      "schema": "invalid",
+      "catalog": "not_applicable",
+      "lineage": "not_applicable",
+      "transition": "not_applicable",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 1,
+      "rejection_category": "schema"
+    },
+    {
+      "fixture": "injected_provider_output",
+      "schema": "invalid",
+      "catalog": "not_applicable",
+      "lineage": "not_applicable",
+      "transition": "not_applicable",
+      "semantic_identity": "unverified",
+      "structurally_admissible": false,
+      "error_count": 1,
+      "rejection_category": "schema"
+    }
+  ],
+  "offline_gate_passed": true,
+  "semantic_oracle": "none",
+  "semantic_correctness": "not_evaluated",
+  "live_run_performed": false,
+  "production_admission_changed": false
+}
