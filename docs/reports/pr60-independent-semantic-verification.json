@@ -1,7 +1,7 @@
 {
   "record_type": "pr60_independent_semantic_verification_protocol",
   "protocol_version": "pr60-independent-semantic-verification-v1",
-  "source_sha": "26cbe6a",
+  "source_sha": "efacadadda84c84dc1c4ada37cb44fb216c70fcf",
   "rows": [
     {"fixture": "same_semantics_same_id", "semantic_alignment": "correct", "literal_id_retention": true, "ambiguity_resolution": "correct", "reason": "resolved with independent evidence"},
     {"fixture": "same_semantics_different_id", "semantic_alignment": "correct", "literal_id_retention": false, "ambiguity_resolution": "correct", "reason": "resolved with independent evidence"},
