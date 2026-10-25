@@ -1,21 +1,21 @@
-"""Deterministic offline calibration for the independent semantic protocol.
+"""Deterministic offline calibration and readiness gate for PR #63.
 
-The runner composes frozen packet/annotation inputs with the existing PR60
-host-evidence verifier. It reports calibration mechanics and readiness only;
-fixture labels are never promoted to independent semantic truth.
+The runner composes frozen packets, submitted annotations and a separately
+maintained host registry with the existing PR60 verifier. It reports readiness
+and research-only outcomes; fixture labels are never promoted to semantic gold.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import importlib.util
 import json
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, Iterable
 
 
-PROTOCOL_VERSION = "pr63-offline-evaluation-v1"
+PROTOCOL_VERSION = "pr63-offline-evaluation-v2"
 READINESS_STATUS = "pending_independent_annotations"
 
 
@@ -50,11 +50,8 @@ def _trusted_resolver(expected, observed):
     provenance = observed.provenance
     assert provenance is not None
     attestation = _PR60.HostEvidenceAttestation(
-        expected.target_key,
-        provenance.observation_id,
-        provenance.normalizer_id,
-        provenance.normalizer_version,
-        provenance.source_id,
+        expected.target_key, provenance.observation_id, provenance.normalizer_id,
+        provenance.normalizer_version, provenance.source_id,
         tuple(evidence.source_id for evidence in observed.evidence),
         tuple(evidence.statement_key for evidence in observed.evidence),
         _PR60._observation_digest(expected, observed),
@@ -64,15 +61,8 @@ def _trusted_resolver(expected, observed):
 
 def _verified_observation(target_key: str = "x", target_id: str = "id-x", *, resolution=None):
     resolution = resolution or _PR60.ResolutionStatus.RESOLVED
-    provenance = _PR60.ObservationProvenance(
-        "obs", "normalizer", "v1", "source", _PR60.EvidenceAuthority.HOST_INDEPENDENT
-    )
-    evidence = (
-        _PR60.EvidenceReference(
-            "source", _PR60.EvidenceAuthority.HOST_INDEPENDENT,
-            _PR60.EvidenceStatus.VERIFIED, "evidence",
-        ),
-    )
+    provenance = _PR60.ObservationProvenance("obs", "normalizer", "v1", "source", _PR60.EvidenceAuthority.HOST_INDEPENDENT)
+    evidence = (_PR60.EvidenceReference("source", _PR60.EvidenceAuthority.HOST_INDEPENDENT, _PR60.EvidenceStatus.VERIFIED, "evidence"),)
     return _PR60.ObservedSemanticSnapshot(target_key, target_id, resolution, evidence, provenance)
 
 
@@ -81,21 +71,18 @@ def _control(name: str, condition: bool, detail: str) -> dict[str, Any]:
 
 
 def run_negative_controls() -> tuple[dict[str, Any], ...]:
-    """Run deterministic controls for common evaluator and provenance failures."""
-
     expected = _PR60.SemanticExpectation("x", "id-x", ("evidence",))
     observed = _verified_observation()
     resolver = _trusted_resolver(expected, observed)
     exact = _PR60.verify_independent(expected, observed, resolver=resolver)
-    changed_id = _PR60.verify_independent(
-        expected, _verified_observation(target_id="other"), resolver=resolver
+    wrong_meaning_same_id = _PR60.verify_independent(
+        expected, _verified_observation(target_key="other", target_id="id-x"), resolver=resolver
     )
-    omitted = _PR60.verify_independent(
-        expected, _verified_observation(resolution=_PR60.ResolutionStatus.OMITTED), resolver=resolver
+    changed_id_same_meaning = _PR60.verify_independent(
+        expected, _verified_observation(target_key="x", target_id="other"), resolver=resolver
     )
-    invalid_mode = _PR60.verify_independent(
-        expected, observed, mode="real_observation", resolver=resolver
-    )
+    omitted = _PR60.verify_independent(expected, _verified_observation(resolution=_PR60.ResolutionStatus.OMITTED), resolver=resolver)
+    invalid_mode = _PR60.verify_independent(expected, observed, mode="real_observation", resolver=resolver)
     provider_only = _PR60.verify_independent(
         expected,
         _PR60.ObservedSemanticSnapshot(
@@ -104,69 +91,136 @@ def run_negative_controls() -> tuple[dict[str, Any], ...]:
             _PR60.ObservationProvenance("obs", "normalizer", "v1", "provider", _PR60.EvidenceAuthority.PROVIDER),
         ),
     )
-    packet = _PR62.make_blinded_packet(_PR61.corpus()[0])
+    case = _PR61.development_cases()[0]
+    packet = _PR62.make_blinded_packet(case)
     candidate = _PR62.AnnotationRecord(
-        "candidate-a", packet.case_alias, packet.rubric_version, packet.packet_version,
-        "aligned", "resolved", "sufficient", 0.5,
+        "candidate-a", packet.case_alias, packet.content_digest, packet.rubric_version,
+        packet.packet_version, "aligned", "resolved", "sufficient", 0.5,
     )
     candidate.validate(packet)
-    disagreement = _PR62.compare_reviewers((
-        candidate,
-        _PR62.AnnotationRecord(
-            "reviewer-b", packet.case_alias, packet.rubric_version, packet.packet_version,
-            "misaligned", "resolved", "sufficient", 0.5,
-        ),
-    ))[0]
+    altered_packet = replace(packet, proposed_successor="tampered")
+    packet_mutation_rejected = False
+    try:
+        candidate.validate(altered_packet)
+    except ValueError:
+        packet_mutation_rejected = True
+    disagreement = _PR62.compare_reviewers((candidate, replace(candidate, reviewer_alias="reviewer-b", semantic_alignment="misaligned")))[0]
     controls = (
         _control("exact_trusted_observation", exact.semantic_alignment is _PR60.SemanticStatus.CORRECT, "exact attestation is accepted"),
-        _control("correct_id_wrong_meaning", changed_id.semantic_alignment is _PR60.SemanticStatus.UNVERIFIED, "changed snapshot cannot reuse attestation"),
+        _control("correct_id_wrong_meaning", wrong_meaning_same_id.semantic_alignment is _PR60.SemanticStatus.UNVERIFIED, "same ID cannot hide a changed semantic target"),
+        _control("changed_id_same_meaning", changed_id_same_meaning.semantic_alignment is _PR60.SemanticStatus.UNVERIFIED, "changed snapshot cannot reuse attestation"),
         _control("omission_is_not_resolution", omitted.ambiguity_resolution is _PR60.SemanticStatus.UNVERIFIED, "omitted ambiguity remains unverified"),
         _control("invalid_mode_fails_closed", invalid_mode.semantic_alignment is _PR60.SemanticStatus.UNVERIFIED, "plain string mode is rejected"),
         _control("provider_evidence_is_not_independent", provider_only.ambiguity_resolution is _PR60.SemanticStatus.UNVERIFIED, "provider evidence is rejected"),
+        _control("same_packet_alias_changed_content", packet_mutation_rejected, "content-bound packet rejects mutation"),
         _control("candidate_labels_are_not_gold", candidate.annotation_kind is _PR62.AnnotationKind.CANDIDATE, "fixture annotations remain candidate-scoped"),
         _control("no_automatic_adjudication", disagreement["unresolved_disagreement"] and not disagreement["adjudicated"], "disagreement is retained as unresolved"),
+        _control("private_holdout_required", _PR61.holdout_manifest()["private_holdout_ready"] is False, "disclosed fixtures cannot satisfy private holdout gate"),
     )
     return controls
 
 
-def run_offline_evaluation() -> dict[str, Any]:
+def _default_packets() -> dict[str, Any]:
+    return {case.case_id: _PR62.make_blinded_packet(case) for case in _PR61.development_cases()}
+
+
+def evaluate_annotations(
+    annotations: Iterable[Any] = (),
+    *,
+    packets: Iterable[Any] = (),
+    registry: Any | None = None,
+    verification_records: Iterable[Any] = (),
+) -> dict[str, Any]:
+    """Accept only registry-verified independent records and compute metrics."""
+
+    packet_map = {packet.case_alias: packet for packet in packets}
+    if not packet_map:
+        packet_map = {packet.case_alias: packet for packet in _default_packets().values()}
+    record_map = {(record.packet_id, record.annotation_digest): record for record in verification_records}
+    accepted: list[Any] = []
+    rejected = 0
+    for annotation in annotations:
+        packet = packet_map.get(annotation.case_alias)
+        if packet is None or registry is None:
+            rejected += 1
+            continue
+        record = next((value for (packet_id, digest), value in record_map.items() if packet_id == packet.packet_id and digest == _PR62.annotation_digest(annotation)), None)
+        if record is None:
+            rejected += 1
+            continue
+        try:
+            _PR62.attest_host_annotation(record, packet=packet, annotation=annotation, registry=registry)
+        except ValueError:
+            rejected += 1
+        else:
+            accepted.append(annotation)
+    return {"accepted": tuple(accepted), "rejected": rejected, "attestation_accepted": len(accepted), "attestation_rejected": rejected}
+
+
+def _metric(accepted: list[Any], field: str, value: str, development_count: int) -> dict[str, int]:
+    reviewable = {record.case_alias for record in accepted if not record.abstained and getattr(record, field) == value and record.evidence_sufficiency == "sufficient"}
+    denominator = len({record.case_alias for record in accepted if not record.abstained and record.evidence_sufficiency == "sufficient"})
+    return {"numerator": len(reviewable), "denominator": denominator, "missing": max(0, development_count - denominator)}
+
+
+def run_offline_evaluation(
+    annotations: Iterable[Any] = (),
+    *,
+    registry: Any | None = None,
+    verification_records: Iterable[Any] = (),
+    private_holdout_ready: bool | None = None,
+) -> dict[str, Any]:
+    annotation_list = list(annotations)
     cases = _PR61.corpus()
     for case in cases:
         _PR61.validate_case(case)
-    development = [case for case in cases if not case.holdout]
+    development = _PR61.development_cases()
     controls = run_negative_controls()
+    accepted_data = evaluate_annotations(annotation_list, registry=registry, verification_records=verification_records)
+    accepted = list(accepted_data["accepted"])
+    alignment = _metric(accepted, "semantic_alignment", "aligned", len(development))
+    resolution = _metric(accepted, "ambiguity_resolution", "resolved", len(development))
+    reviewers = registry.independent_reviewer_count() if registry is not None else 0
+    disagreement = _PR62.compare_reviewers(accepted)
+    private_ready = _PR61.holdout_manifest()["private_holdout_ready"] if private_holdout_ready is None else private_holdout_ready
+    negative_passed = all(control["passed"] for control in controls)
+    ready = bool(private_ready and reviewers >= 2 and negative_passed and accepted)
     return {
         "record_type": "pr63_offline_evaluation",
         "protocol_version": PROTOCOL_VERSION,
         "corpus_version": _PR61.CORPUS_VERSION,
         "case_count": len(cases),
         "development_count": len(development),
-        "holdout_count": len(cases) - len(development),
-        "primary_metric": {
-            "name": "semantic_target_alignment",
-            "numerator": 0,
-            "denominator": 0,
-            "missing": len(development),
-            "status": "not_evaluated",
-        },
+        "disclosed_fixture_count": len(cases) - len(development),
+        "primary_metric": {"name": "semantic_target_alignment", **alignment, "status": "evaluated" if alignment["denominator"] else "not_evaluated"},
         "secondary_metrics": {
-            "ambiguity_resolution": {"numerator": 0, "denominator": 0, "missing": len(development)},
+            "ambiguity_resolution": resolution,
             "literal_target_retention": {"numerator": 0, "denominator": 0, "missing": len(development)},
             "structural_binding_conformance": {"numerator": 0, "denominator": 0, "missing": len(development)},
             "unsupported_assertion_rate": {"numerator": 0, "denominator": 0, "missing": len(development)},
         },
+        "annotation_counts": {
+            "submitted": len(annotation_list),
+            "accepted": len(accepted),
+            "rejected": accepted_data["rejected"],
+            "abstained": sum(record.abstained for record in accepted),
+            "indeterminate": sum(record.semantic_alignment == "indeterminate" for record in accepted),
+        },
+        "reviewer_disagreement": list(disagreement),
+        "attestation": {"accepted": accepted_data["attestation_accepted"], "rejected": accepted_data["attestation_rejected"]},
         "negative_controls": list(controls),
-        "negative_controls_passed": all(control["passed"] for control in controls),
+        "negative_controls_passed": negative_passed,
         "readiness": {
-            "status": READINESS_STATUS,
+            "status": "ready_for_live_evaluation" if ready else READINESS_STATUS,
             "frozen_rubric": True,
             "corpus_integrity": True,
             "condition_leakage_tested": True,
             "independent_gold_available": False,
-            "independent_reviewer_count": 0,
-            "attestation_integrity": True,
+            "independent_reviewer_count": reviewers,
+            "private_holdout_ready": bool(private_ready),
+            "attestation_integrity": accepted_data["rejected"] == 0,
             "real_model_calls": False,
-            "ready_for_live_evaluation": False,
+            "ready_for_live_evaluation": ready,
         },
         "real_model_calls": False,
         "production_authority_changed": False,

@@ -14,15 +14,21 @@ provider-only evidence and the distinction between candidate annotations and
 independent gold. Reviewer disagreement remains unresolved rather than being
 converted into a majority truth.
 
-The development corpus has 12 cases and the frozen holdout has four. Since no
-independent reviewer annotations or independently established gold reference
-are present, all semantic denominators are explicitly missing:
+The historical fixture corpus has 12 development cases and four disclosed
+synthetic cases that were originally labelled holdout. Those four are not a
+blind holdout. No private holdout or independent reviewer annotations are
+present, so all semantic denominators are explicitly missing:
 
 ```text
 semantic_target_alignment: numerator 0 / denominator 0 / missing 12
 status: not_evaluated
 readiness: pending_independent_annotations
+private_holdout_ready: false
 ```
 
-This is a readiness result, not a semantic score. The live-evaluation gate is
-false, no Bonsai calls were made, and production authority is unchanged.
+The runner accepts annotation records only when a host registry verifies the
+reviewer identity, assignment, exact packet digest, rubric and evidence. It
+computes reviewer counts, accepted/rejected attestations, disagreement and
+metric denominators from those records rather than constants. This is a
+readiness result, not a semantic score. The live-evaluation gate is false, no
+Bonsai calls were made, and production authority is unchanged.
