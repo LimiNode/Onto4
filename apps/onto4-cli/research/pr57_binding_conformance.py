@@ -16,6 +16,8 @@ from onto4.pipeline.semantic_binding import (
     evaluate_binding_claim,
     evaluate_binding_claims,
 )
+from onto4.providers.openai_adapters import ProviderSchemaError
+from onto4.reasoning import Ambiguity
 
 
 _PROTOCOL_SPEC = importlib.util.spec_from_file_location(
@@ -68,9 +70,15 @@ def _transition(index: int, *, mode: str = "preserve") -> tuple[BindingTransitio
     if mode == "missing_target":
         current = replace(current, ambiguities=())
     elif mode == "wrong_object":
-        current = replace(current, ontologies=tuple(current.ontologies), ambiguities=())
+        current = replace(
+            current,
+            ambiguities=(),
+            ontologies=(replace(current.ontologies[0], target_id=spec.target_id),),
+        )
     elif mode == "reordered":
-        current = replace(current, ambiguities=tuple(reversed(current.ambiguities)))
+        extra = Ambiguity("ambiguity-1", "ambiguity-criterion", "second host target", "ambiguity-criterion")
+        initial = replace(initial, ambiguities=(initial.ambiguities[0], extra))
+        current = replace(initial, id=f"{initial.id}-successor", ambiguities=tuple(reversed(initial.ambiguities)))
     return BindingTransition(initial, current, question), spec.target_id
 
 
@@ -108,6 +116,24 @@ def _fixture(name: str, index: int, *, mode: str = "preserve", payload: Mapping[
     }
 
 
+def _envelope_fixture(name: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        base._parse_explicit_envelope(payload)
+    except ProviderSchemaError:
+        return {
+            "fixture": name,
+            "schema": "invalid",
+            "catalog": "not_applicable",
+            "lineage": "not_applicable",
+            "transition": "not_applicable",
+            "semantic_identity": "unverified",
+            "structurally_admissible": False,
+            "error_count": 1,
+            "rejection_category": "schema",
+        }
+    raise AssertionError("negative envelope fixture unexpectedly passed parser")
+
+
 def run_gate() -> dict[str, Any]:
     scenarios = protocol.default_protocol()[1]
     rows = [
@@ -138,8 +164,8 @@ def run_gate() -> dict[str, Any]:
         "error_count": sum(len(item.errors) for item in duplicate),
         "rejection_category": "transition",
     })
-    rows.append(_fixture("malformed_envelope", 0, payload={"relation": "preserve"}))
-    rows.append(_fixture("injected_provider_output", 0, payload={**_claim(duplicate_transition, duplicate_target), "untrusted": True}))
+    rows.append(_envelope_fixture("malformed_envelope", {"successor": {}}))
+    rows.append(_envelope_fixture("injected_provider_output", {"successor": {}, "binding_claim": {}, "untrusted": True}))
     rows = [row for row in rows]
     return {
         "record_type": "pr57_redaction_safe_binding_conformance",
@@ -158,7 +184,7 @@ def run_gate() -> dict[str, Any]:
 
 def validate_gate_rows(rows: list[dict[str, Any]]) -> bool:
     """Require every named fixture to match its frozen expected outcome."""
-    if {row.get("fixture") for row in rows} != set(EXPECTED_FIXTURES):
+    if len(rows) != len(EXPECTED_FIXTURES) or {row.get("fixture") for row in rows} != set(EXPECTED_FIXTURES):
         return False
     for row in rows:
         expected = EXPECTED_FIXTURES[row["fixture"]]
