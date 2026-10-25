@@ -4,6 +4,12 @@ This synthesis is based only on the reviewed offline gate and the single
 bounded live receipt in `pr58-binding-live-pilot.json`. It does not alter
 production admission, clarification policy, or semantic adjudication.
 
+The original PR #57 gate was permissive: it accepted broad status enumerations
+and therefore was not sufficient evidence by itself. The corrected gate now
+freezes the expected status tuple for every fixture and includes a negative
+control that must fail when a valid outcome is tampered with. Historical gate
+output is retained as evidence of the earlier protocol, not silently rewritten.
+
 ## Evidence boundary
 
 The offline conformance gate established that binding validators distinguish
@@ -35,9 +41,13 @@ can be attached to the wrong semantic object, and a missing identifier does not
 prove that the clarification was misunderstood. Since there is no independent
 semantic oracle here, the three conditions are not semantically comparable.
 
-The C failures are a protocol/schema finding, not a semantic failure. The run
-was not repeated to seek a more favorable outcome. Historical receipts and the
-separate PR #39 line remain unchanged.
+The C failures are a protocol/schema finding, not a semantic failure. C-v1 was
+under-specified because its prompt omitted the source text and current
+interpretation needed to construct a validated successor. This is a limitation
+of that historical intervention, not evidence that Bonsai cannot support a
+compact target-focused protocol. The run was not repeated to seek a more
+favorable outcome. Historical receipts and the separate PR #39 line remain
+unchanged.
 
 ## Decision
 
