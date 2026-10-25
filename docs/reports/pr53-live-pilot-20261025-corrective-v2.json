@@ -1,0 +1,131 @@
+{
+  "record_type": "pr53_redaction_safe_bounded_live_pilot",
+  "pilot_version": "pr53-bounded-live-pilot-v2",
+  "source_sha": "495ea38",
+  "provider_protocol_version": "pr40-full-snapshot-v1",
+  "condition_order": [
+    "A",
+    "B"
+  ],
+  "max_cases": 2,
+  "max_turns": 3,
+  "cases": [
+    {
+      "case_alias": "case-0",
+      "A": {
+        "condition": "A",
+        "turns": 1,
+        "provider_calls": 1,
+        "stop_reason": "unverified_retarget",
+        "question_intent_status": "question_intent_match",
+        "target_preservation_count": 0,
+        "unverified_retarget_count": 1,
+        "structural_reduction_observed": false,
+        "structural_churn_observed": true,
+        "semantic_identity": "not_evaluated",
+        "events": [
+          {
+            "turn": 0,
+            "question_issued": true,
+            "target_preserved": false,
+            "target_relation": "lost",
+            "provider_successor_valid": true,
+            "transition_provenance_valid": true,
+            "elapsed_seconds": 4.618
+          }
+        ]
+      },
+      "B": {
+        "condition": "B",
+        "turns": 1,
+        "provider_calls": 1,
+        "stop_reason": "unverified_retarget",
+        "question_intent_status": "question_intent_match",
+        "target_preservation_count": 0,
+        "unverified_retarget_count": 1,
+        "structural_reduction_observed": false,
+        "structural_churn_observed": true,
+        "semantic_identity": "not_evaluated",
+        "events": [
+          {
+            "turn": 0,
+            "question_issued": true,
+            "target_preserved": false,
+            "target_relation": "lost",
+            "provider_successor_valid": true,
+            "transition_provenance_valid": true,
+            "elapsed_seconds": 3.949
+          }
+        ]
+      },
+      "pair_comparability": "initial_matched_continuation_not_comparable",
+      "semantic_oracle": "none"
+    },
+    {
+      "case_alias": "case-1",
+      "A": {
+        "condition": "A",
+        "turns": 1,
+        "provider_calls": 1,
+        "stop_reason": "unverified_retarget",
+        "question_intent_status": "question_intent_match",
+        "target_preservation_count": 0,
+        "unverified_retarget_count": 1,
+        "structural_reduction_observed": false,
+        "structural_churn_observed": true,
+        "semantic_identity": "not_evaluated",
+        "events": [
+          {
+            "turn": 0,
+            "question_issued": true,
+            "target_preserved": false,
+            "target_relation": "lost",
+            "provider_successor_valid": true,
+            "transition_provenance_valid": true,
+            "elapsed_seconds": 3.799
+          }
+        ]
+      },
+      "B": {
+        "condition": "B",
+        "turns": 1,
+        "provider_calls": 1,
+        "stop_reason": "unverified_retarget",
+        "question_intent_status": "question_intent_match",
+        "target_preservation_count": 0,
+        "unverified_retarget_count": 1,
+        "structural_reduction_observed": false,
+        "structural_churn_observed": true,
+        "semantic_identity": "not_evaluated",
+        "events": [
+          {
+            "turn": 0,
+            "question_issued": true,
+            "target_preserved": false,
+            "target_relation": "lost",
+            "provider_successor_valid": true,
+            "transition_provenance_valid": true,
+            "elapsed_seconds": 3.535
+          }
+        ]
+      },
+      "pair_comparability": "initial_matched_continuation_not_comparable",
+      "semantic_oracle": "none"
+    }
+  ],
+  "aggregate_verdict": "not_comparable",
+  "semantic_identity": "not_evaluated",
+  "production_admission_changed": false,
+  "semantic_adjudication_receipt_created": false,
+  "provider_payloads_recorded": false,
+  "run_id": "pr53-bounded-20261025-corrective-v2",
+  "model": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+  "model_artifact_digest": null,
+  "backend": "llama.cpp OpenAI-compatible /v1",
+  "endpoint": "http://127.0.0.1:8080",
+  "sampling": {
+    "temperature": 0,
+    "thinking_enabled": false,
+    "max_output_tokens": 1024
+  }
+}
