@@ -289,13 +289,17 @@ def run_pilot(client: OpenAICompatibleClient) -> dict[str, Any]:
     rows = []
     for index, spec in enumerate(base.CASES[:2]):
         scenario = scenarios[index]
-        adapter.validate_runner_inputs(
+        input_attestation = adapter.validate_runner_inputs(
             condition_names=CONDITION_ORDER,
             source_ids=(spec.source_text, spec.source_text),
             context_ids=(scenario.context_id, scenario.context_id),
             expected_source_id=scenario.source_text,
             expected_context_id=scenario.context_id,
             max_turns=MAX_TURNS,
+            invocation_inputs=(
+                {"condition": "A", "source_text": spec.source_text, "context_id": scenario.context_id},
+                {"condition": "B", "source_text": spec.source_text, "context_id": scenario.context_id},
+            ),
         )
         result_a = run_condition(client, spec, "A", scenario=scenario, adapter=adapter)
         result_b = run_condition(client, spec, "B", scenario=scenario, adapter=adapter)
@@ -304,6 +308,7 @@ def run_pilot(client: OpenAICompatibleClient) -> dict[str, Any]:
                 "case_alias": f"case-{index}",
                 "A": result_a,
                 "B": result_b,
+                "input_attestation": input_attestation,
                 "pair_comparability": _pair_comparability(result_a, result_b),
                 "semantic_oracle": "none",
             }

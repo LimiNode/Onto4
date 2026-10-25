@@ -65,6 +65,11 @@ def test_pilot_uses_frozen_obligations_and_computes_pair_status(monkeypatch):
     assert all(case["pair_comparability"] == "initial_matched_only" for case in payload["cases"])
     assert all(case["A"]["provider_calls"] == 3 for case in payload["cases"])
     assert all(case["B"]["provider_calls"] == 1 for case in payload["cases"])
+    assert all(
+        case["input_attestation"]["host_scenario_consistent"] is True
+        and case["input_attestation"]["provider_invocation_inputs_verified"] is False
+        for case in payload["cases"]
+    )
 
 
 def test_runner_rejects_wrong_semantic_family_even_when_kind_and_id_match(monkeypatch):

@@ -23,6 +23,8 @@ def test_default_contract_freezes_two_matched_policy_conditions():
 
     assert [item["name"] for item in manifest["conditions"]] == ["A", "B"]
     assert manifest["conditions"][0]["provider_protocol_version"] == manifest["conditions"][1]["provider_protocol_version"]
+    assert manifest["protocol_version"] == "pr51-matched-clarification-v2"
+    assert manifest["previous_protocol_version"] == "pr51-matched-clarification-v1"
     assert len(manifest["scenarios"]) == 2
     assert manifest["live_run_performed"] is False
     assert manifest["aggregate_verdict"] == "not_run"
@@ -159,3 +161,26 @@ def test_adapter_metadata_is_safe_and_stable():
     assert metadata["contract_version"] == _SCRIPT.PROTOCOL_VERSION
     assert len(metadata["scenario_digests"]) == 2
     assert "target-genome-identity" not in json.dumps(metadata)
+
+
+def test_runner_attestation_distinguishes_host_consistency_from_provider_attestation():
+    conditions, scenarios = _SCRIPT.default_contract()
+    adapter = _SCRIPT.MatchedContractAdapter(conditions, scenarios)
+    scenario = scenarios[0]
+    status = adapter.validate_runner_inputs(
+        condition_names=("A", "B"),
+        source_ids=(scenario.source_text, scenario.source_text),
+        context_ids=(scenario.context_id, scenario.context_id),
+        expected_source_id=scenario.source_text,
+        expected_context_id=scenario.context_id,
+        max_turns=3,
+        invocation_inputs=(
+            {"source_text": scenario.source_text, "context_id": scenario.context_id},
+            {"source_text": scenario.source_text, "context_id": scenario.context_id},
+        ),
+    )
+    assert status == {
+        "host_scenario_consistent": True,
+        "provider_invocation_inputs_verified": False,
+        "provider_context_not_independently_verified": True,
+    }

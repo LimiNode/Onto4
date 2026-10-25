@@ -7,6 +7,11 @@
     "merged_prs": [49, 50, 51, 52, 53, 54],
     "open_draft_prs": [39]
   },
+  "matched_contract": {
+    "current_version": "pr51-matched-clarification-v2",
+    "historical_receipt_version": "pr51-matched-clarification-v1",
+    "provider_context_independently_verified": false
+  },
   "overall_verdict": "not_comparable",
   "semantic_identity": "not_evaluated",
   "evidence": [

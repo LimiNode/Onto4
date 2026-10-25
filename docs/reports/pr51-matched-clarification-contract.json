@@ -1,7 +1,9 @@
 {
   "record_type": "pr51_matched_clarification_contract",
-  "experiment_version": 1,
-  "protocol_version": "pr51-matched-clarification-v1",
+  "experiment_version": 2,
+  "protocol_version": "pr51-matched-clarification-v2",
+  "previous_protocol_version": "pr51-matched-clarification-v1",
+  "previous_contract_source_sha": "a6ed465b25e3dd249d4cf259395fe9b1633f901c",
   "source_sha": "a6ed465b25e3dd249d4cf259395fe9b1633f901c",
   "provider_protocol": {
     "version": "shared-fixture-refinement-v1",
@@ -25,10 +27,11 @@
   "scenarios": [
     {
       "case_alias": "case-0",
-      "target_kind": "Meaning",
+      "question_kind": "Meaning",
       "max_turns": 3,
       "answer_obligation_count": 3,
-      "host_input_digest": "8d2f2e898439921b76c85c6a904f12719143faf86d11a70143d7264baf4a2c8a",
+      "host_input_digest": "c9bf0c58115ce057713fbada44c08e6179ca48649aa86c05d5edf45bf36132c8",
+      "previous_v1_host_input_digest": "9eb676f8fb94871c0479730039db5ceddf2ff79d787550fe97f14b8572cd2e51",
       "permitted_outcomes": [
         "comparable",
         "question_intent_mismatch",
@@ -47,10 +50,11 @@
     },
     {
       "case_alias": "case-1",
-      "target_kind": "Meaning",
+      "question_kind": "Meaning",
       "max_turns": 3,
       "answer_obligation_count": 3,
-      "host_input_digest": "9adbdf5eb3ad9da04642c7cdc0b94ab53abefea5a2766356e934a1c3ca5c211a",
+      "host_input_digest": "6898537860de00810e31dab87eb367bb83d2782c636fcaf97bd0758be459a4d9",
+      "previous_v1_host_input_digest": "545fa39e634f4e003cfc504dc936470e7af3ca198020e6cb95cae312ac9ee207",
       "permitted_outcomes": [
         "comparable",
         "question_intent_mismatch",
