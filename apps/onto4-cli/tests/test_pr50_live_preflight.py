@@ -96,12 +96,31 @@ def test_host_contract_mismatch_fails_closed():
     }
     right = {**left, "question_digest": "changed"}
 
-    verified = _SCRIPT._verify_host_input_contract(left, left)
+    verified = _SCRIPT._verify_host_input_contract(left, {**left})
     rejected = _SCRIPT._verify_host_input_contract(left, right)
 
     assert verified["status"] == "host_verified"
     assert rejected["status"] == "not_verified"
     assert rejected["contract_digest"] is None
+
+
+def test_host_contract_same_object_is_not_independent_evidence():
+    snapshot = {
+        "initial_snapshot_digest": "a",
+        "question_digest": "b",
+        "answer_obligation_digest": "c",
+        "context_binding_digest": "d",
+        "contract_digest": "e",
+    }
+    assert _SCRIPT._verify_host_input_contract(snapshot, snapshot)["status"] == "not_verified"
+
+
+def test_condition_cell_status_rejects_missing_and_duplicate_cells():
+    full = {"condition": "full_snapshot"}
+    explicit = {"condition": "explicit_binding"}
+    assert _SCRIPT._condition_cell_status((full, explicit)) == "host_verified"
+    assert _SCRIPT._condition_cell_status((full,)) == "not_verified"
+    assert _SCRIPT._condition_cell_status((full, explicit, explicit)) == "not_verified"
 
 
 def test_public_cell_allowlist_redacts_private_diagnostics_and_paths():

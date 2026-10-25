@@ -141,9 +141,12 @@ def _verify_host_input_contract(
         "context_binding_digest",
         "contract_digest",
     )
+    # A single object compared with itself is not independent provenance
+    # evidence.  Callers must construct one snapshot per condition invocation.
     equal = (
         left is not None
         and right is not None
+        and left is not right
         and all(left.get(field) == right.get(field) for field in fields)
     )
     return {
@@ -154,6 +157,19 @@ def _verify_host_input_contract(
         "contract_digest": left.get("contract_digest") if equal else None,
         "status": "host_verified" if equal else "not_verified",
     }
+
+
+def _condition_cell_status(cells: tuple[Mapping[str, Any], ...]) -> str:
+    """Require exactly one complete cell for every protocol condition."""
+
+    seen: list[str] = []
+    for cell in cells:
+        condition = cell.get("condition")
+        if condition in CONDITION_ORDER:
+            seen.append(condition)
+    if len(seen) != len(CONDITION_ORDER) or set(seen) != set(CONDITION_ORDER):
+        return "not_verified"
+    return "host_verified"
 
 
 def _safe_error_code(value: Any) -> str:
@@ -299,7 +315,12 @@ def _run_public_case(
     initial = base._initial(spec)
     question = base._question(spec)
     catalog = base.CATALOGS[spec.case_id]
-    contract = _host_input_contract(spec, initial, question, catalog)
+    # Build independent snapshots for each condition invocation.  They should
+    # be equal by value, but never share object identity.
+    contracts = {
+        condition: _host_input_contract(spec, initial, question, catalog)
+        for condition in CONDITION_ORDER
+    }
     cells: list[dict[str, Any]] = []
     for condition, runner in (
         ("full_snapshot", base._full_snapshot),
@@ -332,7 +353,16 @@ def _run_public_case(
         "question_target_ids": question.target_ids,
         "cells": cells,
     }
-    return _public_case(raw, alias=alias, host_contract=_verify_host_input_contract(contract, contract))
+    host_contract = _verify_host_input_contract(
+        contracts[CONDITION_ORDER[0]], contracts[CONDITION_ORDER[1]]
+    )
+    if _condition_cell_status(tuple(cells)) != "host_verified":
+        host_contract = {
+            **host_contract,
+            "status": "not_verified",
+            "contract_digest": None,
+        }
+    return _public_case(raw, alias=alias, host_contract=host_contract)
 
 
 def main() -> None:
