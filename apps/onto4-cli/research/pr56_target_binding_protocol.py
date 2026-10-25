@@ -15,9 +15,14 @@ from pathlib import Path
 from typing import Any
 
 
-PROTOCOL_VERSION = "pr56-target-binding-v1"
+PROTOCOL_VERSION = "pr56-target-binding-v2"
+HISTORICAL_PROTOCOL_VERSION = "pr56-target-binding-v1"
 SOURCE_SHA = "bf7d03ef6ababc9f7fedaea7b3e725071b4d0866"
 MAX_SCENARIOS = 2
+HISTORICAL_V1_SCENARIO_DIGESTS = (
+    "4e9fa3243362651cd352f1ee8d415ffffcf2a9c597a7a35ead90848f60423944",
+    "0e7023016fe00fe91ae052ef14607a62d91399dcd9b1a58683af7a5db615d13c",
+)
 
 
 class ProtocolError(ValueError):
@@ -30,6 +35,7 @@ class Condition:
     refinement_protocol: str
     binding_claim_required: bool
     target_focused_envelope: bool
+    response_schema: str
 
 
 @dataclass(frozen=True)
@@ -48,9 +54,9 @@ class Scenario:
 
 def default_protocol() -> tuple[tuple[Condition, ...], tuple[Scenario, ...]]:
     conditions = (
-        Condition("A", "full_snapshot", False, False),
-        Condition("B", "explicit_binding", True, False),
-        Condition("C", "minimal_target_focused", True, True),
+        Condition("A", "full_snapshot", False, False, "successor_interpretation"),
+        Condition("B", "explicit_binding", True, False, "successor_plus_binding_claim"),
+        Condition("C", "minimal_target_focused", True, True, "minimal_successor_plus_binding_claim"),
     )
     scenarios = (
         Scenario(
@@ -58,7 +64,7 @@ def default_protocol() -> tuple[tuple[Condition, ...], tuple[Scenario, ...]]:
             "Does sharing a genome make two people one person?",
             "identity_and_genome", "ambiguity-genome", "numerical_identity", "Meaning",
             "I mean numerical identity: they are one and the same individual.",
-            "successor_plus_binding_claim",
+            "condition_specific",
             ("preserve", "anchored_update", "no_binding"),
         ),
         Scenario(
@@ -66,7 +72,7 @@ def default_protocol() -> tuple[tuple[Condition, ...], tuple[Scenario, ...]]:
             "Does the sequence have an intrinsic present?",
             "intrinsic_time", "ambiguity-present", "observer_independent_present", "Meaning",
             "I mean an observer-independent present in the sequence itself.",
-            "successor_plus_binding_claim",
+            "condition_specific",
             ("preserve", "anchored_update", "no_binding"),
         ),
     )
@@ -87,6 +93,13 @@ def validate_protocol(
 ) -> None:
     if tuple(condition.name for condition in conditions) != ("A", "B", "C"):
         raise ProtocolError("Conditions must be exactly A, B, C in that order.")
+    expected_conditions = (
+        Condition("A", "full_snapshot", False, False, "successor_interpretation"),
+        Condition("B", "explicit_binding", True, False, "successor_plus_binding_claim"),
+        Condition("C", "minimal_target_focused", True, True, "minimal_successor_plus_binding_claim"),
+    )
+    if conditions != expected_conditions:
+        raise ProtocolError("Condition names, protocols and response obligations must agree.")
     if len(scenarios) != MAX_SCENARIOS:
         raise ProtocolError("Protocol must contain exactly two frozen scenarios.")
     if len({scenario.case_id for scenario in scenarios}) != len(scenarios):
@@ -103,12 +116,36 @@ def validate_protocol(
                 scenario.target_family,
                 scenario.question_kind,
                 scenario.answer,
-                scenario.response_schema,
+                    scenario.response_schema,
             )
         ):
-            raise ProtocolError("Scenario identity and answer fields must be non-empty.")
+                raise ProtocolError("Scenario identity and answer fields must be non-empty.")
+        if scenario.response_schema != "condition_specific":
+            raise ProtocolError("Scenario response schema must defer to condition-specific contracts.")
         if not scenario.permitted_claims:
             raise ProtocolError("Scenario must freeze permitted binding claims.")
+        if len(set(scenario.permitted_claims)) != len(scenario.permitted_claims):
+            raise ProtocolError("Scenario permitted claims must be unique.")
+    expected_schemas = {
+        "A": "successor_interpretation",
+        "B": "successor_plus_binding_claim",
+        "C": "minimal_successor_plus_binding_claim",
+    }
+    for condition in conditions:
+        if condition.refinement_protocol not in {"full_snapshot", "explicit_binding", "minimal_target_focused"}:
+            raise ProtocolError("Unsupported refinement protocol.")
+        if condition.name not in expected_schemas:
+            raise ProtocolError("Unknown condition name.")
+        if condition.response_schema != expected_schemas[condition.name]:
+            raise ProtocolError("Condition response schema does not match its obligations.")
+        if condition.name == "A" and condition.binding_claim_required:
+            raise ProtocolError("Full Snapshot must not require a binding claim.")
+        if condition.name != "A" and not condition.binding_claim_required:
+            raise ProtocolError("Binding conditions must require a binding claim.")
+        if condition.name == "C" and not condition.target_focused_envelope:
+            raise ProtocolError("Minimal target-focused condition must mark its envelope.")
+        if condition.name != "C" and condition.target_focused_envelope:
+            raise ProtocolError("Only condition C may use the target-focused envelope.")
 
 
 def public_manifest(
@@ -118,6 +155,10 @@ def public_manifest(
     return {
         "record_type": "pr56_target_binding_diagnostic_protocol",
         "protocol_version": PROTOCOL_VERSION,
+        "historical_protocol": {
+            "version": HISTORICAL_PROTOCOL_VERSION,
+            "scenario_digests": list(HISTORICAL_V1_SCENARIO_DIGESTS),
+        },
         "source_sha": SOURCE_SHA,
         "conditions": [asdict(condition) for condition in conditions],
         "scenarios": [

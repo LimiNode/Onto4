@@ -46,3 +46,18 @@ def test_committed_protocol_manifest_matches_runner():
     artifact = Path(__file__).parents[3] / "docs" / "reports" / "pr56-target-binding-protocol.json"
     expected = _MODULE.public_manifest(*_MODULE.default_protocol())
     assert json.loads(artifact.read_text(encoding="utf-8")) == expected
+
+
+def test_protocol_rejects_contradictory_condition_contracts():
+    conditions, scenarios = _MODULE.default_protocol()
+    contradictory = list(conditions)
+    contradictory[0] = _MODULE.Condition("A", "full_snapshot", True, False, "successor_interpretation")
+    with pytest.raises(_MODULE.ProtocolError):
+        _MODULE.validate_protocol(tuple(contradictory), scenarios)
+
+
+def test_protocol_manifest_preserves_historical_v1_digests():
+    manifest = _MODULE.public_manifest(*_MODULE.default_protocol())
+    assert manifest["protocol_version"] == "pr56-target-binding-v2"
+    assert manifest["historical_protocol"]["version"] == "pr56-target-binding-v1"
+    assert len(manifest["historical_protocol"]["scenario_digests"]) == 2

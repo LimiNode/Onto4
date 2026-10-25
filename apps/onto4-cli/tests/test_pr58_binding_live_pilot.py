@@ -73,7 +73,8 @@ def test_pilot_is_bounded_to_six_calls_and_keeps_semantics_unverified():
     assert len(client.calls) == 6
     assert len(result["cases"]) == 2
     assert all(len(case["cells"]) == 3 for case in result["cases"])
-    assert all(cell["model_calls"] == 1 for case in result["cases"] for cell in case["cells"])
+    assert all(cell["attempted_invocations"] == 1 for case in result["cases"] for cell in case["cells"])
+    assert all(cell["actual_provider_calls"] == 1 for case in result["cases"] for cell in case["cells"])
     assert result["semantic_correctness"] == "not_evaluated"
     assert result["aggregate_verdict"] == "not_comparable"
 
@@ -99,7 +100,8 @@ def test_cell_records_provider_failure_without_claiming_semantic_failure():
 
     spec = _MODULE.base.CASES[0]
     row = _MODULE._cell(Broken(), spec, "A")
-    assert row["model_calls"] == 1
+    assert row["attempted_invocations"] == 1
+    assert row["actual_provider_calls"] == 1
     assert row["provider_successor_valid"] is False
     assert row["semantic_correctness"] == "not_evaluated"
     assert row["literal_target_preserved"] is None
@@ -116,3 +118,25 @@ def test_committed_live_receipt_is_bounded_and_redacted():
     assert '"source_text"' not in serialized
     assert '"target_id"' not in serialized
     assert '"answer"' not in serialized
+
+
+def test_preflight_rejects_changed_frozen_answer_before_provider_call():
+    spec = _MODULE.base.CASES[0]
+    scenario = _MODULE._scenario_for_spec(spec)
+    question = _MODULE.base._question(spec)
+    question = _MODULE.replace(question, target_family=scenario.target_family)
+    condition = _MODULE._condition_for_name("A")
+    changed = _MODULE.replace(spec, answer="tampered answer")
+    client = _FakeClient()
+    try:
+        _MODULE._validate_frozen_invocation(changed, scenario, question, condition, client)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("changed frozen answer must be rejected")
+    assert client.calls == []
+
+
+def test_c_v1_prompt_contract_is_explicitly_under_specified():
+    assert "Current source text:" not in _MODULE._MINIMAL_TEMPLATE
+    assert "Current interpretation:" not in _MODULE._MINIMAL_TEMPLATE

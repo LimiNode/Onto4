@@ -37,8 +37,23 @@ sys.modules[_BASE_SPEC.name] = base
 _BASE_SPEC.loader.exec_module(base)
 
 
-SOURCE_SHA = "d6622ce"
+SOURCE_SHA = "370a274"
 GATE_VERSION = "pr57-binding-conformance-v1"
+
+EXPECTED_FIXTURES: dict[str, dict[str, Any]] = {
+    "exact_target_preservation": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "valid", "structurally_admissible": True, "rejection_category": "none"},
+    "target_reorder": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "valid", "structurally_admissible": True, "rejection_category": "none"},
+    "missing_target_id": {"schema": "invalid", "catalog": "not_applicable", "lineage": "not_applicable", "transition": "not_applicable", "structurally_admissible": False, "rejection_category": "schema"},
+    "unknown_target_id": {"schema": "valid", "catalog": "invalid", "lineage": "valid", "transition": "invalid", "structurally_admissible": False, "rejection_category": "catalog"},
+    "catalog_valid_wrong_target": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "invalid", "structurally_admissible": False, "rejection_category": "transition"},
+    "correct_id_wrong_object": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "invalid", "structurally_admissible": False, "rejection_category": "transition"},
+    "stale_lineage": {"schema": "valid", "catalog": "valid", "lineage": "invalid", "transition": "valid", "structurally_admissible": False, "rejection_category": "lineage"},
+    "structurally_resolved_ambiguity": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "invalid", "structurally_admissible": False, "rejection_category": "transition"},
+    "unsupported_relation": {"schema": "invalid", "catalog": "not_applicable", "lineage": "not_applicable", "transition": "not_applicable", "structurally_admissible": False, "rejection_category": "schema"},
+    "duplicate_claims": {"schema": "valid", "catalog": "valid", "lineage": "valid", "transition": "invalid", "structurally_admissible": False, "rejection_category": "transition"},
+    "malformed_envelope": {"schema": "invalid", "catalog": "not_applicable", "lineage": "not_applicable", "transition": "not_applicable", "structurally_admissible": False, "rejection_category": "schema"},
+    "injected_provider_output": {"schema": "invalid", "catalog": "not_applicable", "lineage": "not_applicable", "transition": "not_applicable", "structurally_admissible": False, "rejection_category": "schema"},
+}
 
 
 def _transition(index: int, *, mode: str = "preserve") -> tuple[BindingTransition, str]:
@@ -85,6 +100,11 @@ def _fixture(name: str, index: int, *, mode: str = "preserve", payload: Mapping[
         "semantic_identity": evaluation.semantic_identity.value,
         "structurally_admissible": evaluation.structurally_admissible,
         "error_count": len(evaluation.errors),
+        "rejection_category": "none" if evaluation.structurally_admissible else (
+            "schema" if evaluation.schema is CheckStatus.INVALID else
+            "catalog" if evaluation.catalog is CheckStatus.INVALID else
+            "lineage" if evaluation.lineage is CheckStatus.INVALID else "transition"
+        ),
     }
 
 
@@ -116,7 +136,11 @@ def run_gate() -> dict[str, Any]:
         "semantic_identity": "unverified",
         "structurally_admissible": False,
         "error_count": sum(len(item.errors) for item in duplicate),
+        "rejection_category": "transition",
     })
+    rows.append(_fixture("malformed_envelope", 0, payload={"relation": "preserve"}))
+    rows.append(_fixture("injected_provider_output", 0, payload={**_claim(duplicate_transition, duplicate_target), "untrusted": True}))
+    rows = [row for row in rows]
     return {
         "record_type": "pr57_redaction_safe_binding_conformance",
         "gate_version": GATE_VERSION,
@@ -124,12 +148,24 @@ def run_gate() -> dict[str, Any]:
         "protocol_version": protocol.PROTOCOL_VERSION,
         "scenario_count": len(scenarios),
         "rows": rows,
-        "offline_gate_passed": all(row["fixture"] and row["transition"] in {"valid", "invalid", "not_applicable"} for row in rows),
+        "offline_gate_passed": validate_gate_rows(rows),
         "semantic_oracle": "none",
         "semantic_correctness": "not_evaluated",
         "live_run_performed": False,
         "production_admission_changed": False,
     }
+
+
+def validate_gate_rows(rows: list[dict[str, Any]]) -> bool:
+    """Require every named fixture to match its frozen expected outcome."""
+    if {row.get("fixture") for row in rows} != set(EXPECTED_FIXTURES):
+        return False
+    for row in rows:
+        expected = EXPECTED_FIXTURES[row["fixture"]]
+        for key in ("schema", "catalog", "lineage", "transition", "structurally_admissible", "rejection_category"):
+            if row.get(key) != expected[key]:
+                return False
+    return True
 
 
 def main() -> None:

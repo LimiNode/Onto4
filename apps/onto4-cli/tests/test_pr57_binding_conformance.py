@@ -25,3 +25,10 @@ def test_offline_gate_covers_binding_failure_classes_and_is_non_semantic():
 def test_committed_conformance_artifact_matches_runner():
     artifact = Path(__file__).parents[3] / "docs" / "reports" / "pr57-binding-conformance.json"
     assert json.loads(artifact.read_text(encoding="utf-8")) == _MODULE.run_gate()
+
+
+def test_gate_rejects_unexpected_validator_outcome():
+    rows = _MODULE.run_gate()["rows"]
+    tampered = [dict(row) for row in rows]
+    tampered[0]["transition"] = "invalid"
+    assert _MODULE.validate_gate_rows(tampered) is False
