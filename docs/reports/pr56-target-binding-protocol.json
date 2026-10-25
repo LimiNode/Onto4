@@ -36,24 +36,24 @@
     {
       "case_alias": "case-0",
       "question_kind": "Meaning",
-      "response_schema": "successor_interpretation",
+      "response_schema": "condition_specific",
       "permitted_claims": [
         "preserve",
         "anchored_update",
         "no_binding"
       ],
-      "scenario_digest": "120f630d12db62468555493fb0a1e0f60766313d4b02fbb067a6cc402365f72f"
+      "scenario_digest": "3eb82b0c0380b13c3398817fd40ffe4ace2addc6a2d89cf80aaf047ee664ffb6"
     },
     {
       "case_alias": "case-1",
       "question_kind": "Meaning",
-      "response_schema": "successor_plus_binding_claim",
+      "response_schema": "condition_specific",
       "permitted_claims": [
         "preserve",
         "anchored_update",
         "no_binding"
       ],
-      "scenario_digest": "0e7023016fe00fe91ae052ef14607a62d91399dcd9b1a58683af7a5db615d13c"
+      "scenario_digest": "cf23933e575a7b391c0c93cc7ce30961873abe959cecb79abfa177507941b5c8"
     }
   ],
   "measured_outcomes": [
