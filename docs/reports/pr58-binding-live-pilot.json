@@ -1,0 +1,115 @@
+{
+  "record_type": "pr58_redaction_safe_binding_live_pilot",
+  "pilot_version": "pr58-binding-live-pilot-v1",
+  "source_sha": "8450d2ffe4bd09642426d8777f99b1eb0f52e0a1",
+  "protocol_version": "pr56-target-binding-v1",
+  "condition_order": [
+    "A",
+    "B",
+    "C"
+  ],
+  "scenario_order": [
+    "case-0",
+    "case-1"
+  ],
+  "max_cases": 2,
+  "calls_per_condition_and_case": 1,
+  "sampling_settings": {
+    "temperature": 0,
+    "max_output_tokens": 1024,
+    "disable_thinking": true
+  },
+  "cases": [
+    {
+      "case_alias": "case-0",
+      "cells": [
+        {
+          "condition": "A",
+          "model_calls": 1,
+          "provider_successor_valid": true,
+          "schema": "valid",
+          "catalog": "valid",
+          "lineage": "valid",
+          "transition": "valid",
+          "literal_target_preserved": false,
+          "semantic_correctness": "not_evaluated",
+          "elapsed_seconds": 4.642
+        },
+        {
+          "condition": "B",
+          "model_calls": 1,
+          "provider_successor_valid": true,
+          "schema": "valid",
+          "catalog": "valid",
+          "lineage": "valid",
+          "transition": "valid",
+          "literal_target_preserved": true,
+          "semantic_correctness": "not_evaluated",
+          "elapsed_seconds": 4.947
+        },
+        {
+          "condition": "C",
+          "model_calls": 1,
+          "provider_successor_valid": false,
+          "failure": "schema_failure",
+          "literal_target_preserved": null,
+          "semantic_correctness": "not_evaluated",
+          "elapsed_seconds": 6.431
+        }
+      ],
+      "semantic_oracle": "none",
+      "semantic_correctness": "not_evaluated"
+    },
+    {
+      "case_alias": "case-1",
+      "cells": [
+        {
+          "condition": "A",
+          "model_calls": 1,
+          "provider_successor_valid": true,
+          "schema": "valid",
+          "catalog": "valid",
+          "lineage": "valid",
+          "transition": "valid",
+          "literal_target_preserved": false,
+          "semantic_correctness": "not_evaluated",
+          "elapsed_seconds": 4.67
+        },
+        {
+          "condition": "B",
+          "model_calls": 1,
+          "provider_successor_valid": true,
+          "schema": "valid",
+          "catalog": "valid",
+          "lineage": "valid",
+          "transition": "valid",
+          "literal_target_preserved": true,
+          "semantic_correctness": "not_evaluated",
+          "elapsed_seconds": 6.37
+        },
+        {
+          "condition": "C",
+          "model_calls": 1,
+          "provider_successor_valid": false,
+          "failure": "schema_failure",
+          "literal_target_preserved": null,
+          "semantic_correctness": "not_evaluated",
+          "elapsed_seconds": 7.003
+        }
+      ],
+      "semantic_oracle": "none",
+      "semantic_correctness": "not_evaluated"
+    }
+  ],
+  "aggregate_verdict": "not_comparable",
+  "semantic_oracle": "none",
+  "semantic_correctness": "not_evaluated",
+  "production_admission_changed": false,
+  "semantic_adjudication_receipt_created": false,
+  "provider_payloads_recorded": false,
+  "run_id": "pr58-20261025-bounded-001",
+  "model": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+  "model_artifact_digest": null,
+  "backend": "llama.cpp OpenAI-compatible /v1",
+  "endpoint": "http://127.0.0.1:8080"
+}

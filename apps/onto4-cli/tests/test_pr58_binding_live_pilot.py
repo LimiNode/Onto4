@@ -103,3 +103,16 @@ def test_cell_records_provider_failure_without_claiming_semantic_failure():
     assert row["provider_successor_valid"] is False
     assert row["semantic_correctness"] == "not_evaluated"
     assert row["literal_target_preserved"] is None
+
+
+def test_committed_live_receipt_is_bounded_and_redacted():
+    artifact = Path(__file__).parents[3] / "docs" / "reports" / "pr58-binding-live-pilot.json"
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    assert payload["record_type"] == "pr58_redaction_safe_binding_live_pilot"
+    assert sum(len(case["cells"]) for case in payload["cases"]) == 6
+    assert payload["semantic_correctness"] == "not_evaluated"
+    assert payload["model_artifact_digest"] is None
+    serialized = json.dumps(payload, ensure_ascii=False)
+    assert '"source_text"' not in serialized
+    assert '"target_id"' not in serialized
+    assert '"answer"' not in serialized
