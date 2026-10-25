@@ -1,0 +1,826 @@
+{
+  "record_type": "pr52_redaction_safe_multiturn_offline_harness",
+  "harness_version": "pr52-multiturn-harness-v1",
+  "source_sha": "13db595a1851ab0d71ea9cf78ecce89bda213b60",
+  "max_turns": 3,
+  "conditions": [
+    "A",
+    "B"
+  ],
+  "rows": [
+    {
+      "case_alias": "case-0",
+      "A": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": true,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": true,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": true,
+      "expected_outcomes": [
+        "target_preserved",
+        "target_preserved"
+      ]
+    },
+    {
+      "case_alias": "case-1",
+      "A": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": true,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": true,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": true,
+      "expected_outcomes": [
+        "target_preserved",
+        "target_preserved"
+      ]
+    },
+    {
+      "case_alias": "case-2",
+      "A": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": true,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": true,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": true,
+      "expected_outcomes": [
+        "target_preserved",
+        "target_preserved"
+      ]
+    },
+    {
+      "case_alias": "case-3",
+      "A": {
+        "outcome": "unverified_retarget",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unverified_retarget",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "unverified_retarget",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unverified_retarget",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "unverified_retarget",
+        "unverified_retarget"
+      ]
+    },
+    {
+      "case_alias": "case-4",
+      "A": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": true,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": true,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": true,
+      "expected_outcomes": [
+        "target_preserved",
+        "target_preserved"
+      ]
+    },
+    {
+      "case_alias": "case-5",
+      "A": {
+        "outcome": "unbound_target",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "unbound_target",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unbound",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "unbound_target",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "unbound_target",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unbound",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "unbound_target",
+        "unbound_target"
+      ]
+    },
+    {
+      "case_alias": "case-6",
+      "A": {
+        "outcome": "unbound_target",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "unbound_target",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unbound",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "unbound_target",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "unbound_target",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unbound",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "unbound_target",
+        "unbound_target"
+      ]
+    },
+    {
+      "case_alias": "case-7",
+      "A": {
+        "outcome": "no_new_admissible_target",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "no_new_admissible_target",
+        "structural_churn": false,
+        "structural_reduction": false,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": true
+          }
+        ]
+      },
+      "B": {
+        "outcome": "no_new_admissible_target",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "no_new_admissible_target",
+        "structural_churn": false,
+        "structural_reduction": false,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": true
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "no_new_admissible_target",
+        "no_new_admissible_target"
+      ]
+    },
+    {
+      "case_alias": "case-8",
+      "A": {
+        "outcome": "no_progress",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "no_progress",
+        "structural_churn": false,
+        "structural_reduction": false,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "no_progress",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "no_progress",
+        "structural_churn": false,
+        "structural_reduction": false,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "no_progress",
+        "no_progress"
+      ]
+    },
+    {
+      "case_alias": "case-9",
+      "A": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": true,
+        "structural_reduction": false,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": true,
+        "structural_reduction": false,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": true,
+      "expected_outcomes": [
+        "target_preserved",
+        "target_preserved"
+      ]
+    },
+    {
+      "case_alias": "case-10",
+      "A": {
+        "outcome": "no_new_admissible_target",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "no_new_admissible_target",
+        "structural_churn": false,
+        "structural_reduction": false,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "no_new_admissible_target",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "no_new_admissible_target",
+        "structural_churn": false,
+        "structural_reduction": false,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "no_new_admissible_target",
+        "no_new_admissible_target"
+      ]
+    },
+    {
+      "case_alias": "case-11",
+      "A": {
+        "outcome": "question_intent_mismatch",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "question_intent_mismatch",
+        "trace": [
+          {
+            "question_intent": "mismatch",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": true,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "question_intent_mismatch",
+        "target_preserved"
+      ]
+    },
+    {
+      "case_alias": "case-12",
+      "A": {
+        "outcome": "unbound_target",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "unbound_target",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unbound",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "unbound_target",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "unbound_target",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unbound",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "unbound_target",
+        "unbound_target"
+      ]
+    },
+    {
+      "case_alias": "case-13",
+      "A": {
+        "outcome": "unverified_retarget",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unverified_retarget",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "unverified_retarget",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unverified_retarget",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "unverified_retarget",
+        "unverified_retarget"
+      ]
+    },
+    {
+      "case_alias": "case-14",
+      "A": {
+        "outcome": "schema_failure",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "provider_failure",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "schema_failure",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "schema_failure",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "provider_failure",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "schema_failure",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "schema_failure",
+        "schema_failure"
+      ]
+    },
+    {
+      "case_alias": "case-15",
+      "A": {
+        "outcome": "transport_failure",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "provider_failure",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "transport_failure",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "transport_failure",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "provider_failure",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "transport_failure",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "transport_failure",
+        "transport_failure"
+      ]
+    },
+    {
+      "case_alias": "case-16",
+      "A": {
+        "outcome": "unverified_retarget",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unverified_retarget",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "unverified_retarget",
+        "comparison_status": "not_comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "unverified_retarget",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": false,
+      "expected_outcomes": [
+        "unverified_retarget",
+        "unverified_retarget"
+      ]
+    },
+    {
+      "case_alias": "case-17",
+      "A": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": false,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "B": {
+        "outcome": "target_preserved",
+        "comparison_status": "comparable",
+        "turns": 1,
+        "stop_reason": "complete",
+        "structural_churn": false,
+        "structural_reduction": false,
+        "epistemic_comparable": false,
+        "trace": [
+          {
+            "question_intent": "match",
+            "target_relation": "preserve",
+            "provider_status": "valid",
+            "repeated_target": false
+          }
+        ]
+      },
+      "pair_comparable": true,
+      "expected_outcomes": [
+        "target_preserved",
+        "target_preserved"
+      ]
+    }
+  ],
+  "fixture_count": 18,
+  "offline_gate_passed": true,
+  "classifier_fixture_gate": {
+    "passed": true,
+    "fixture_count": 18
+  },
+  "policy_integration_gate": {
+    "gate": "policy_integration_gate",
+    "provider": "deterministic_fake_provider",
+    "rows": [
+      {
+        "case_id": "preserve",
+        "outcome": "target_preserved",
+        "expected": "target_preserved",
+        "before_count": 1,
+        "after_count": 1,
+        "target_preserved": true,
+        "structural_churn": false,
+        "structural_reduction": false,
+        "question_selection_effect": false,
+        "grounding_verified": true,
+        "turns": 1
+      },
+      {
+        "case_id": "reordered",
+        "outcome": "target_preserved",
+        "expected": "target_preserved",
+        "before_count": 2,
+        "after_count": 2,
+        "target_preserved": false,
+        "structural_churn": true,
+        "structural_reduction": false,
+        "question_selection_effect": false,
+        "grounding_verified": true,
+        "turns": 1
+      },
+      {
+        "case_id": "retarget",
+        "outcome": "unverified_retarget",
+        "expected": "unverified_retarget",
+        "before_count": 1,
+        "after_count": 1,
+        "target_preserved": false,
+        "structural_churn": true,
+        "structural_reduction": false,
+        "question_selection_effect": false,
+        "grounding_verified": true,
+        "turns": 1
+      },
+      {
+        "case_id": "intent_mismatch",
+        "outcome": "question_intent_mismatch",
+        "expected": "question_intent_mismatch",
+        "before_count": 1,
+        "after_count": 1,
+        "target_preserved": true,
+        "structural_churn": false,
+        "structural_reduction": false,
+        "question_selection_effect": true,
+        "grounding_verified": true,
+        "turns": 1
+      },
+      {
+        "case_id": "missing_grounding",
+        "outcome": "unbound_target",
+        "expected": "unbound_target",
+        "before_count": 1,
+        "after_count": 1,
+        "target_preserved": true,
+        "structural_churn": false,
+        "structural_reduction": false,
+        "question_selection_effect": false,
+        "grounding_verified": false,
+        "turns": 1
+      },
+      {
+        "case_id": "repeated",
+        "outcome": "no_new_admissible_target",
+        "expected": "no_new_admissible_target",
+        "before_count": 1,
+        "after_count": 1,
+        "target_preserved": true,
+        "structural_churn": false,
+        "structural_reduction": false,
+        "question_selection_effect": false,
+        "grounding_verified": true,
+        "turns": 1
+      },
+      {
+        "case_id": "bounded",
+        "outcome": "max_turns_reached",
+        "expected": "max_turns_reached",
+        "before_count": 1,
+        "after_count": 1,
+        "target_preserved": true,
+        "structural_churn": false,
+        "structural_reduction": false,
+        "question_selection_effect": false,
+        "grounding_verified": true,
+        "turns": 3
+      }
+    ],
+    "passed": true
+  },
+  "live_run_performed": false,
+  "semantic_identity": "not_evaluated",
+  "aggregate_verdict": "not_run",
+  "production_admission_changed": false,
+  "semantic_adjudication_receipt_created": false
+}
