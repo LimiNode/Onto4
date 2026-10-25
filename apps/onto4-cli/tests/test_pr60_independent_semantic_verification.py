@@ -1,5 +1,6 @@
 import importlib.util
 import json
+from dataclasses import replace
 from pathlib import Path
 import sys
 
@@ -75,6 +76,74 @@ def test_provider_authority_cannot_become_independent_evidence():
     observed = _MODULE.ObservedSemanticSnapshot("x", "id-x", _MODULE.ResolutionStatus.RESOLVED, evidence, provenance)
     result = _MODULE.verify_independent(expected, observed)
     assert result.ambiguity_resolution == _MODULE.SemanticStatus.UNVERIFIED
+
+
+def _apparently_verified_observation(*, source="source-a", normalizer="normalizer"):
+    provenance = _MODULE.ObservationProvenance(
+        "obs", normalizer, "v1", "source-a", _MODULE.EvidenceAuthority.HOST_INDEPENDENT
+    )
+    evidence = (
+        _MODULE.EvidenceReference(
+            source,
+            _MODULE.EvidenceAuthority.HOST_INDEPENDENT,
+            _MODULE.EvidenceStatus.VERIFIED,
+            "evidence",
+        ),
+    )
+    return _MODULE.ObservedSemanticSnapshot(
+        "x", "id-x", _MODULE.ResolutionStatus.RESOLVED, evidence, provenance
+    )
+
+
+def test_forged_verified_fields_without_resolver_fail_closed():
+    expected = _MODULE.SemanticExpectation("x", "id-x", ("evidence",))
+    result = _MODULE.verify_independent(expected, _apparently_verified_observation())
+    assert result.semantic_alignment == _MODULE.SemanticStatus.UNVERIFIED
+    assert "resolver" in result.reason
+
+
+def test_trusted_resolver_attests_exact_observation_evidence_relationship():
+    expected = _MODULE.SemanticExpectation("x", "id-x", ("evidence",))
+    observed = _apparently_verified_observation()
+    attestation = _MODULE.HostEvidenceAttestation(
+        "x", "obs", "normalizer", "v1", "source-a", ("source-a",), ("evidence",)
+    )
+    resolver = _MODULE.TrustedHostEvidenceResolver(frozenset((attestation,)))
+    result = _MODULE.verify_independent(expected, observed, resolver=resolver)
+    assert result.semantic_alignment == _MODULE.SemanticStatus.CORRECT
+    assert result.result_scope == "trusted_host_evidence"
+
+
+def test_unrelated_evidence_source_and_unverifiable_normalizer_fail_closed():
+    expected = _MODULE.SemanticExpectation("x", "id-x", ("evidence",))
+    attestation = _MODULE.HostEvidenceAttestation(
+        "x", "obs", "normalizer", "v1", "source-a", ("source-a",), ("evidence",)
+    )
+    resolver = _MODULE.TrustedHostEvidenceResolver(frozenset((attestation,)))
+    unrelated = _MODULE.verify_independent(
+        expected, _apparently_verified_observation(source="source-b"), resolver=resolver
+    )
+    bad_normalizer = _MODULE.verify_independent(
+        expected, _apparently_verified_observation(normalizer="unknown"), resolver=resolver
+    )
+    assert unrelated.semantic_alignment == _MODULE.SemanticStatus.UNVERIFIED
+    assert bad_normalizer.semantic_alignment == _MODULE.SemanticStatus.UNVERIFIED
+
+
+def test_contradictory_evidence_has_specific_fail_closed_reason():
+    expected = _MODULE.SemanticExpectation("x", "id-x", ("evidence",))
+    observed = _apparently_verified_observation()
+    contradictory = replace(
+        observed,
+        evidence=(
+            replace(
+                observed.evidence[0], status=_MODULE.EvidenceStatus.CONTRADICTORY
+            ),
+        ),
+    )
+    result = _MODULE.verify_independent(expected, contradictory)
+    assert result.semantic_alignment == _MODULE.SemanticStatus.UNVERIFIED
+    assert result.reason == "evidence is contradictory"
 
 
 def test_committed_protocol_artifact_matches_deterministic_runner():

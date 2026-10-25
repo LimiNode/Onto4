@@ -9,6 +9,13 @@ normalizer identity/version, source identity, authority and evidence status.
 Provider self-reports are deliberately ignored. The current matrix is labelled
 `synthetic_oracle_fixture`; its `correct` rows demonstrate verifier mechanics,
 not semantic truth about Bonsai output.
+
+Evaluation has two explicit modes. `synthetic_fixture` preserves deterministic
+fixture mechanics. `real_observation` is the default and cannot return a
+positive semantic result unless a separate `TrustedHostEvidenceResolver`
+attests the exact relationship among expectation, observation, normalizer,
+observation source, evidence sources and statement keys. Caller-supplied
+`HOST_INDEPENDENT` or `VERIFIED` labels alone therefore fail closed.
 The deterministic matrix distinguishes:
 
 - same semantic target with the same identifier;

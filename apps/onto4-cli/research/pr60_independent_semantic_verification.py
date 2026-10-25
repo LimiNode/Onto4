@@ -13,7 +13,7 @@ from typing import Any
 
 
 PROTOCOL_VERSION = "pr60-independent-semantic-verification-v1"
-SOURCE_SHA = "d4e4616ec61228977128bed92d77ccd5db09ccff"
+SOURCE_SHA = "dd7be787408090ae5b7e5a381c0dbb406cc94648"
 
 
 class SemanticStatus(str, Enum):
@@ -41,6 +41,11 @@ class EvidenceStatus(str, Enum):
     CONTRADICTORY = "contradictory"
 
 
+class VerificationMode(str, Enum):
+    REAL_OBSERVATION = "real_observation"
+    SYNTHETIC_FIXTURE = "synthetic_fixture"
+
+
 @dataclass(frozen=True)
 class EvidenceReference:
     source_id: str
@@ -56,6 +61,45 @@ class ObservationProvenance:
     normalizer_version: str
     source_id: str
     authority: EvidenceAuthority
+
+
+@dataclass(frozen=True)
+class HostEvidenceAttestation:
+    """Frozen host-owned relationship absent from a provider observation."""
+
+    expectation_target_key: str
+    observation_id: str
+    normalizer_id: str
+    normalizer_version: str
+    observation_source_id: str
+    evidence_source_ids: tuple[str, ...]
+    evidence_statement_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TrustedHostEvidenceResolver:
+    """Resolve only relationships in an independently maintained reference set."""
+
+    attestations: frozenset[HostEvidenceAttestation]
+
+    def verifies(
+        self,
+        expected: "SemanticExpectation",
+        observed: "ObservedSemanticSnapshot",
+    ) -> bool:
+        provenance = observed.provenance
+        if provenance is None:
+            return False
+        candidate = HostEvidenceAttestation(
+            expected.target_key,
+            provenance.observation_id,
+            provenance.normalizer_id,
+            provenance.normalizer_version,
+            provenance.source_id,
+            tuple(evidence.source_id for evidence in observed.evidence),
+            tuple(evidence.statement_key for evidence in observed.evidence),
+        )
+        return candidate in self.attestations
 
 
 @dataclass(frozen=True)
@@ -82,6 +126,7 @@ class VerificationResult:
     literal_id_retention: bool | None
     ambiguity_resolution: SemanticStatus
     reason: str
+    result_scope: str = "unverified"
 
 
 def verify_independent(
@@ -89,6 +134,8 @@ def verify_independent(
     observed: ObservedSemanticSnapshot,
     *,
     provider_claim: Any = None,
+    mode: VerificationMode = VerificationMode.REAL_OBSERVATION,
+    resolver: TrustedHostEvidenceResolver | None = None,
 ) -> VerificationResult:
     """Evaluate host-owned evidence without trusting ``provider_claim``."""
 
@@ -117,6 +164,13 @@ def verify_independent(
             SemanticStatus.UNVERIFIED,
             "observation lacks verified independent provenance",
         )
+    if any(evidence.status is EvidenceStatus.CONTRADICTORY for evidence in observed.evidence):
+        return VerificationResult(
+            SemanticStatus.UNVERIFIED,
+            None,
+            SemanticStatus.UNVERIFIED,
+            "evidence is contradictory",
+        )
     if not observed.evidence or any(
         evidence.authority is not EvidenceAuthority.HOST_INDEPENDENT
         or evidence.status is not EvidenceStatus.VERIFIED
@@ -135,12 +189,14 @@ def verify_independent(
             SemanticStatus.UNVERIFIED,
             "evidence sources are not independently distinct",
         )
-    if any(evidence.status is EvidenceStatus.CONTRADICTORY for evidence in observed.evidence):
+    if mode is VerificationMode.REAL_OBSERVATION and (
+        resolver is None or not resolver.verifies(expected, observed)
+    ):
         return VerificationResult(
             SemanticStatus.UNVERIFIED,
             None,
             SemanticStatus.UNVERIFIED,
-            "evidence is contradictory",
+            "trusted host evidence resolver did not attest the observation binding",
         )
     alignment = (
         SemanticStatus.CORRECT
@@ -162,7 +218,12 @@ def verify_independent(
     else:
         resolution = SemanticStatus.UNVERIFIED
         reason = "ambiguity resolution is indeterminate"
-    return VerificationResult(alignment, literal, resolution, reason)
+    scope = (
+        "synthetic_oracle_fixture"
+        if mode is VerificationMode.SYNTHETIC_FIXTURE
+        else "trusted_host_evidence"
+    )
+    return VerificationResult(alignment, literal, resolution, reason, scope)
 
 
 def fixture_matrix() -> tuple[dict[str, Any], ...]:
@@ -202,13 +263,19 @@ def fixture_matrix() -> tuple[dict[str, Any], ...]:
 def run_offline_protocol() -> dict[str, Any]:
     rows = []
     for fixture in fixture_matrix():
-        result = verify_independent(fixture["expected"], fixture["observed"], provider_claim={"semantic": "self-reported"})
+        result = verify_independent(
+            fixture["expected"],
+            fixture["observed"],
+            provider_claim={"semantic": "self-reported"},
+            mode=VerificationMode.SYNTHETIC_FIXTURE,
+        )
         rows.append({
             "fixture": fixture["name"],
             "semantic_alignment": result.semantic_alignment.value,
             "literal_id_retention": result.literal_id_retention,
             "ambiguity_resolution": result.ambiguity_resolution.value,
             "reason": result.reason,
+            "result_scope": result.result_scope,
             "synthetic_oracle_fixture": True,
         })
     return {
