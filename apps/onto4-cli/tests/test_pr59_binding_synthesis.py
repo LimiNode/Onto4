@@ -2,8 +2,10 @@ from pathlib import Path
 
 
 def test_synthesis_keeps_protocol_and_semantics_separate():
-    report = (Path(__file__).parents[3] / "docs" / "reports" / "pr59-binding-synthesis.md").read_text(
-        encoding="utf-8"
+    report = " ".join(
+        (Path(__file__).parents[3] / "docs" / "reports" / "pr59-binding-synthesis.md")
+        .read_text(encoding="utf-8")
+        .split()
     )
     assert "literal target retained" in report
     assert "semantic correctness" in report
