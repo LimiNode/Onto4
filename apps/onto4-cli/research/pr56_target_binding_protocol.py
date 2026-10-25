@@ -64,7 +64,7 @@ def default_protocol() -> tuple[tuple[Condition, ...], tuple[Scenario, ...]]:
             "Does sharing a genome make two people one person?",
             "identity_and_genome", "ambiguity-genome", "numerical_identity", "Meaning",
             "I mean numerical identity: they are one and the same individual.",
-            "successor_interpretation",
+            "condition_specific",
             ("preserve", "anchored_update", "no_binding"),
         ),
         Scenario(
@@ -72,7 +72,7 @@ def default_protocol() -> tuple[tuple[Condition, ...], tuple[Scenario, ...]]:
             "Does the sequence have an intrinsic present?",
             "intrinsic_time", "ambiguity-present", "observer_independent_present", "Meaning",
             "I mean an observer-independent present in the sequence itself.",
-            "successor_plus_binding_claim",
+            "condition_specific",
             ("preserve", "anchored_update", "no_binding"),
         ),
     )
@@ -116,10 +116,12 @@ def validate_protocol(
                 scenario.target_family,
                 scenario.question_kind,
                 scenario.answer,
-                scenario.response_schema,
+                    scenario.response_schema,
             )
         ):
-            raise ProtocolError("Scenario identity and answer fields must be non-empty.")
+                raise ProtocolError("Scenario identity and answer fields must be non-empty.")
+        if scenario.response_schema != "condition_specific":
+            raise ProtocolError("Scenario response schema must defer to condition-specific contracts.")
         if not scenario.permitted_claims:
             raise ProtocolError("Scenario must freeze permitted binding claims.")
         if len(set(scenario.permitted_claims)) != len(scenario.permitted_claims):
