@@ -95,6 +95,22 @@ def _apparently_verified_observation(*, source="source-a", normalizer="normalize
     )
 
 
+def _trusted_resolver(expected, observed):
+    provenance = observed.provenance
+    assert provenance is not None
+    attestation = _MODULE.HostEvidenceAttestation(
+        expected.target_key,
+        provenance.observation_id,
+        provenance.normalizer_id,
+        provenance.normalizer_version,
+        provenance.source_id,
+        tuple(evidence.source_id for evidence in observed.evidence),
+        tuple(evidence.statement_key for evidence in observed.evidence),
+        _MODULE._observation_digest(expected, observed),
+    )
+    return _MODULE.TrustedHostEvidenceResolver(frozenset((attestation,)))
+
+
 def test_forged_verified_fields_without_resolver_fail_closed():
     expected = _MODULE.SemanticExpectation("x", "id-x", ("evidence",))
     result = _MODULE.verify_independent(expected, _apparently_verified_observation())
@@ -105,10 +121,7 @@ def test_forged_verified_fields_without_resolver_fail_closed():
 def test_trusted_resolver_attests_exact_observation_evidence_relationship():
     expected = _MODULE.SemanticExpectation("x", "id-x", ("evidence",))
     observed = _apparently_verified_observation()
-    attestation = _MODULE.HostEvidenceAttestation(
-        "x", "obs", "normalizer", "v1", "source-a", ("source-a",), ("evidence",)
-    )
-    resolver = _MODULE.TrustedHostEvidenceResolver(frozenset((attestation,)))
+    resolver = _trusted_resolver(expected, observed)
     result = _MODULE.verify_independent(expected, observed, resolver=resolver)
     assert result.semantic_alignment == _MODULE.SemanticStatus.CORRECT
     assert result.result_scope == "trusted_host_evidence"
@@ -116,10 +129,7 @@ def test_trusted_resolver_attests_exact_observation_evidence_relationship():
 
 def test_unrelated_evidence_source_and_unverifiable_normalizer_fail_closed():
     expected = _MODULE.SemanticExpectation("x", "id-x", ("evidence",))
-    attestation = _MODULE.HostEvidenceAttestation(
-        "x", "obs", "normalizer", "v1", "source-a", ("source-a",), ("evidence",)
-    )
-    resolver = _MODULE.TrustedHostEvidenceResolver(frozenset((attestation,)))
+    resolver = _trusted_resolver(expected, _apparently_verified_observation())
     unrelated = _MODULE.verify_independent(
         expected, _apparently_verified_observation(source="source-b"), resolver=resolver
     )
@@ -128,6 +138,38 @@ def test_unrelated_evidence_source_and_unverifiable_normalizer_fail_closed():
     )
     assert unrelated.semantic_alignment == _MODULE.SemanticStatus.UNVERIFIED
     assert bad_normalizer.semantic_alignment == _MODULE.SemanticStatus.UNVERIFIED
+
+
+def test_invalid_mode_values_fail_closed_before_resolver_validation():
+    expected = _MODULE.SemanticExpectation("x", "id-x", ("evidence",))
+    observed = _apparently_verified_observation()
+    resolver = _trusted_resolver(expected, observed)
+    for invalid_mode in ("real_observation", "synthetic_fixture", "unknown", None, object()):
+        result = _MODULE.verify_independent(
+            expected, observed, mode=invalid_mode, resolver=resolver
+        )
+        assert result.semantic_alignment == _MODULE.SemanticStatus.UNVERIFIED
+        assert result.result_scope == "unverified"
+        assert result.reason == "verification mode is invalid"
+
+
+def test_attestation_cannot_be_reused_for_changed_observation_content():
+    expected = _MODULE.SemanticExpectation("x", "id-x", ("evidence",))
+    original = _apparently_verified_observation()
+    resolver = _trusted_resolver(expected, original)
+    assert _MODULE.verify_independent(expected, original, resolver=resolver).semantic_alignment is _MODULE.SemanticStatus.CORRECT
+
+    variants = (
+        replace(original, target_key="other"),
+        replace(original, resolution=_MODULE.ResolutionStatus.OMITTED),
+        replace(original, target_id="other-id"),
+        replace(original, evidence=(replace(original.evidence[0], statement_key="other"),)),
+        replace(original, evidence=(replace(original.evidence[0], status=_MODULE.EvidenceStatus.UNVERIFIED),)),
+    )
+    for altered in variants:
+        result = _MODULE.verify_independent(expected, altered, resolver=resolver)
+        assert result.semantic_alignment == _MODULE.SemanticStatus.UNVERIFIED
+        assert result.result_scope == "unverified"
 
 
 def test_contradictory_evidence_has_specific_fail_closed_reason():

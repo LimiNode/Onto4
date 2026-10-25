@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import hashlib
+import json
 from typing import Any
 
 
@@ -74,6 +76,53 @@ class HostEvidenceAttestation:
     observation_source_id: str
     evidence_source_ids: tuple[str, ...]
     evidence_statement_keys: tuple[str, ...]
+    observation_digest: str
+
+
+def _observation_digest(
+    expected: "SemanticExpectation",
+    observed: "ObservedSemanticSnapshot",
+) -> str:
+    """Return a canonical host-owned fingerprint of the bound observation."""
+
+    provenance = observed.provenance
+    payload = {
+        "expected": {
+            "target_key": expected.target_key,
+            "target_id": expected.target_id,
+            "required_evidence": list(expected.required_evidence),
+        },
+        "observed": {
+            "target_key": observed.target_key,
+            "target_id": observed.target_id,
+            "resolution": observed.resolution.value,
+            "provenance": None
+            if provenance is None
+            else {
+                "observation_id": provenance.observation_id,
+                "normalizer_id": provenance.normalizer_id,
+                "normalizer_version": provenance.normalizer_version,
+                "source_id": provenance.source_id,
+                "authority": provenance.authority.value,
+            },
+            "evidence": [
+                {
+                    "source_id": evidence.source_id,
+                    "authority": evidence.authority.value,
+                    "status": evidence.status.value,
+                    "statement_key": evidence.statement_key,
+                }
+                for evidence in observed.evidence
+            ],
+        },
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -98,6 +147,7 @@ class TrustedHostEvidenceResolver:
             provenance.source_id,
             tuple(evidence.source_id for evidence in observed.evidence),
             tuple(evidence.statement_key for evidence in observed.evidence),
+            _observation_digest(expected, observed),
         )
         return candidate in self.attestations
 
@@ -140,6 +190,13 @@ def verify_independent(
     """Evaluate host-owned evidence without trusting ``provider_claim``."""
 
     del provider_claim
+    if not isinstance(mode, VerificationMode):
+        return VerificationResult(
+            SemanticStatus.UNVERIFIED,
+            None,
+            SemanticStatus.UNVERIFIED,
+            "verification mode is invalid",
+        )
     if not expected.target_key or not expected.target_id:
         return VerificationResult(
             SemanticStatus.NOT_COMPARABLE,

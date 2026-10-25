@@ -14,8 +14,13 @@ Evaluation has two explicit modes. `synthetic_fixture` preserves deterministic
 fixture mechanics. `real_observation` is the default and cannot return a
 positive semantic result unless a separate `TrustedHostEvidenceResolver`
 attests the exact relationship among expectation, observation, normalizer,
-observation source, evidence sources and statement keys. Caller-supplied
-`HOST_INDEPENDENT` or `VERIFIED` labels alone therefore fail closed.
+observation source, evidence sources, statement keys and the canonical digest
+of the complete normalized observation. Caller-supplied `HOST_INDEPENDENT` or
+`VERIFIED` labels alone therefore fail closed. The attestation set is
+host-maintained research input and must be established separately from the
+provider observation; the resolver does not create an independent semantic
+oracle by itself. Invalid verification modes are rejected before any semantic
+evaluation.
 The deterministic matrix distinguishes:
 
 - same semantic target with the same identifier;
