@@ -1,8 +1,8 @@
 """Minimal blinded annotation and host-evidence boundary for PR #62.
 
-The tool emits reviewer-safe packets and immutable annotation records.  It is
+The tool emits reviewer-safe packets and immutable annotation records. It is
 not an annotation service, a semantic adjudicator or a source of production
-authority.  Provider payloads cannot create host attestations.
+authority. Provider payloads cannot create host attestations.
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ import re
 from typing import Any, Iterable
 
 
-PROTOCOL_VERSION = "pr62-blinded-annotation-v1"
-RUBRIC_VERSION = "pr61-rubric-v1"
-PACKET_VERSION = "pr62-packet-v1"
+PROTOCOL_VERSION = "pr62-blinded-annotation-v2"
+RUBRIC_VERSION = "pr61-rubric-v2"
+PACKET_VERSION = "pr62-packet-v2"
 
 
 class VerificationStage(str, Enum):
@@ -41,8 +41,26 @@ _EVIDENCE = {"sufficient", "insufficient", "contradictory", "not_available"}
 _ALIAS = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def _safe_alias(case_id: str) -> str:
-    return "packet-" + hashlib.sha256(case_id.encode("utf-8")).hexdigest()[:12]
+def _canonical(value: Any) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _packet_content_digest(packet: "BlindedPacket") -> str:
+    return hashlib.sha256(_canonical(packet.content_payload())).hexdigest()
+
+
+def _semantic_description(case: Any) -> str:
+    if case.family == "genome_identity":
+        return (
+            "The ambiguity concerns whether sharing a genome establishes numerical "
+            "identity, distinct from genetic similarity or ancestry."
+        )
+    if case.family == "intrinsic_time":
+        return (
+            "The ambiguity concerns whether a present belongs intrinsically to the "
+            "sequence, distinct from observer-relative coordinate time."
+        )
+    raise ValueError("unsupported case family for blinded packet")
 
 
 @dataclass(frozen=True)
@@ -56,10 +74,10 @@ class BlindedPacket:
     intended_target_description: str
     proposed_successor: str
     neutral_target_alias: str
+    content_digest: str
 
-    def public_dict(self) -> dict[str, Any]:
+    def content_payload(self) -> dict[str, Any]:
         return {
-            "packet_id": self.packet_id,
             "case_alias": self.case_alias,
             "rubric_version": self.rubric_version,
             "packet_version": self.packet_version,
@@ -70,12 +88,33 @@ class BlindedPacket:
             "neutral_target_alias": self.neutral_target_alias,
         }
 
+    def public_dict(self) -> dict[str, Any]:
+        return {"packet_id": self.packet_id, **self.content_payload(), "content_digest": self.content_digest}
 
-def make_blinded_packet(case: Any, *, condition: str | None = None, model_name: str | None = None, target_id: str | None = None) -> BlindedPacket:
-    """Create a packet while deliberately discarding technical condition data."""
+
+def make_blinded_packet(
+    case: Any,
+    *,
+    condition: str | None = None,
+    model_name: str | None = None,
+    target_id: str | None = None,
+) -> BlindedPacket:
+    """Create a content-bound packet while discarding technical condition data."""
 
     del condition, model_name, target_id
-    packet_id = _safe_alias(case.case_id)
+    description = _semantic_description(case)
+    content = {
+        "case_alias": "case-under-review",
+        "rubric_version": RUBRIC_VERSION,
+        "packet_version": PACKET_VERSION,
+        "initial_interpretation": case.initial_interpretation,
+        "clarification_question": case.clarification_question,
+        "intended_target_description": description,
+        "proposed_successor": case.proposed_successor,
+        "neutral_target_alias": "target-under-review",
+    }
+    digest = hashlib.sha256(_canonical(content)).hexdigest()
+    packet_id = "packet-" + hashlib.sha256((case.case_id + ":" + digest).encode()).hexdigest()[:16]
     return BlindedPacket(
         packet_id,
         packet_id,
@@ -83,9 +122,10 @@ def make_blinded_packet(case: Any, *, condition: str | None = None, model_name: 
         PACKET_VERSION,
         case.initial_interpretation,
         case.clarification_question,
-        "The packet's intended semantic target, described without a technical identifier.",
+        description,
         case.proposed_successor,
         "target-under-review",
+        hashlib.sha256(_canonical({**content, "case_alias": packet_id})).hexdigest(),
     )
 
 
@@ -93,6 +133,7 @@ def make_blinded_packet(case: Any, *, condition: str | None = None, model_name: 
 class AnnotationRecord:
     reviewer_alias: str
     case_alias: str
+    packet_content_digest: str
     rubric_version: str
     packet_version: str
     semantic_alignment: str
@@ -105,10 +146,14 @@ class AnnotationRecord:
     annotation_kind: AnnotationKind = AnnotationKind.CANDIDATE
 
     def validate(self, packet: BlindedPacket) -> None:
+        if packet.content_digest != _packet_content_digest(packet):
+            raise ValueError("packet content digest does not match packet content")
         if not _ALIAS.fullmatch(self.reviewer_alias) or not _ALIAS.fullmatch(self.case_alias):
             raise ValueError("reviewer and case aliases must be redaction-safe")
         if self.case_alias != packet.case_alias:
             raise ValueError("annotation case does not match blinded packet")
+        if self.packet_content_digest != packet.content_digest:
+            raise ValueError("annotation is bound to different packet content")
         if self.rubric_version != packet.rubric_version or self.packet_version != packet.packet_version:
             raise ValueError("annotation version does not match packet")
         if self.semantic_alignment not in _ALIGNMENTS:
@@ -123,14 +168,13 @@ class AnnotationRecord:
             raise ValueError("rationale span references must be unique")
         if self.abstained and not (self.abstention_reason or "").strip():
             raise ValueError("abstention requires a reason")
-        if self.annotation_kind is AnnotationKind.INDEPENDENT and self.reviewer_alias.startswith("candidate-"):
-            raise ValueError("candidate alias cannot claim independent annotation")
 
     def public_dict(self) -> dict[str, Any]:
         return {
             "record_type": "pr62_blinded_annotation",
             "reviewer_alias": self.reviewer_alias,
             "case_alias": self.case_alias,
+            "packet_content_digest": self.packet_content_digest,
             "rubric_version": self.rubric_version,
             "packet_version": self.packet_version,
             "semantic_alignment": self.semantic_alignment,
@@ -145,10 +189,81 @@ class AnnotationRecord:
 
 
 @dataclass(frozen=True)
-class HostVerificationRecord:
+class ReviewerIdentity:
+    reviewer_alias: str
+    identity_key: str
+    independent: bool
+    approved: bool = True
+
+
+@dataclass(frozen=True)
+class PacketAssignment:
     packet_id: str
+    packet_content_digest: str
+    reviewer_alias: str
+
+
+@dataclass(frozen=True)
+class VerifiedEvidenceRecord:
+    packet_id: str
+    packet_content_digest: str
+    reviewer_alias: str
     annotation_digest: str
     rubric_version: str
+    source_id: str
+    normalizer_id: str
+    normalizer_version: str
+    verified: bool
+
+
+@dataclass(frozen=True)
+class HostRegistry:
+    """Separately maintained research registry, not provider-supplied data."""
+
+    registry_id: str
+    reviewers: tuple[ReviewerIdentity, ...]
+    assignments: tuple[PacketAssignment, ...]
+    evidence: tuple[VerifiedEvidenceRecord, ...]
+    host_controlled: bool = True
+
+    def verify(self, packet: BlindedPacket, annotation: AnnotationRecord, record: "HostVerificationRecord") -> bool:
+        if not self.host_controlled or annotation.annotation_kind is not AnnotationKind.INDEPENDENT:
+            return False
+        identities = [reviewer for reviewer in self.reviewers if reviewer.reviewer_alias == record.reviewer_alias]
+        if len(identities) != 1 or not identities[0].independent or not identities[0].approved:
+            return False
+        if len({reviewer.identity_key for reviewer in self.reviewers}) != len(self.reviewers):
+            return False
+        if not any(
+            assignment.packet_id == packet.packet_id
+            and assignment.packet_content_digest == packet.content_digest
+            and assignment.reviewer_alias == record.reviewer_alias
+            for assignment in self.assignments
+        ):
+            return False
+        digest = annotation_digest(annotation)
+        return any(
+            evidence.packet_id == packet.packet_id
+            and evidence.packet_content_digest == packet.content_digest
+            and evidence.reviewer_alias == record.reviewer_alias
+            and evidence.annotation_digest == digest
+            and evidence.rubric_version == packet.rubric_version
+            and evidence.verified
+            for evidence in self.evidence
+        )
+
+    def independent_reviewer_count(self) -> int:
+        keys = {reviewer.identity_key for reviewer in self.reviewers if reviewer.independent and reviewer.approved}
+        return len(keys) if len(keys) == len(self.reviewers) else 0
+
+
+@dataclass(frozen=True)
+class HostVerificationRecord:
+    packet_id: str
+    packet_content_digest: str
+    annotation_digest: str
+    rubric_version: str
+    reviewer_alias: str
     source_id: str
     normalizer_id: str
     normalizer_version: str
@@ -160,7 +275,9 @@ class HostVerificationRecord:
 @dataclass(frozen=True)
 class AnnotationAttestation:
     packet_id: str
+    packet_content_digest: str
     annotation_digest: str
+    reviewer_alias: str
     rubric_version: str
     source_id: str
     normalizer_id: str
@@ -168,23 +285,36 @@ class AnnotationAttestation:
 
 
 def annotation_digest(annotation: AnnotationRecord) -> str:
-    payload = annotation.public_dict()
-    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(_canonical(annotation.public_dict())).hexdigest()
 
 
-def attest_host_annotation(record: HostVerificationRecord) -> AnnotationAttestation:
-    """Create a research attestation only after host verification is complete."""
+def attest_host_annotation(
+    record: HostVerificationRecord,
+    *,
+    packet: BlindedPacket,
+    annotation: AnnotationRecord,
+    registry: HostRegistry,
+) -> AnnotationAttestation:
+    """Attest only an annotation present in the independently maintained registry."""
 
     if record.provider_payload_used:
         raise ValueError("provider payload cannot create host attestation")
     if record.stage is not VerificationStage.EVIDENCE_VERIFIED:
         raise ValueError("host evidence must be verified before attestation")
-    if not all((record.packet_id, record.annotation_digest, record.rubric_version, record.source_id, record.normalizer_id, record.normalizer_version, record.independent_basis)):
-        raise ValueError("host verification record is incomplete")
+    annotation.validate(packet)
+    digest = annotation_digest(annotation)
+    if digest != record.annotation_digest or record.packet_id != packet.packet_id or record.packet_content_digest != packet.content_digest:
+        raise ValueError("verification record does not bind exact packet and annotation")
+    if record.rubric_version != packet.rubric_version or record.reviewer_alias != annotation.reviewer_alias:
+        raise ValueError("verification record provenance does not match annotation")
+    if not registry.verify(packet, annotation, record):
+        raise ValueError("host registry did not verify reviewer, assignment and evidence")
     return AnnotationAttestation(
-        record.packet_id,
-        record.annotation_digest,
-        record.rubric_version,
+        packet.packet_id,
+        packet.content_digest,
+        digest,
+        annotation.reviewer_alias,
+        packet.rubric_version,
         record.source_id,
         record.normalizer_id,
         record.normalizer_version,

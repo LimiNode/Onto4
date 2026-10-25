@@ -1,12 +1,13 @@
 {
   "record_type": "pr62_blinded_annotation_protocol",
-  "protocol_version": "pr62-blinded-annotation-v1",
-  "rubric_version": "pr61-rubric-v1",
-  "packet_version": "pr62-packet-v1",
+  "protocol_version": "pr62-blinded-annotation-v2",
+  "rubric_version": "pr61-rubric-v2",
+  "packet_version": "pr62-packet-v2",
   "raw_provider_payload_public": false,
   "condition_metadata_public": false,
   "automatic_adjudication": false,
   "provider_can_create_attestation": false,
+  "host_registry_required": true,
   "real_model_calls": false,
   "production_authority_changed": false
 }

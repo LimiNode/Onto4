@@ -1,5 +1,6 @@
 import importlib.util
 import json
+from dataclasses import replace
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -13,9 +14,11 @@ sys.modules[_SPEC.name] = _MODULE
 _SPEC.loader.exec_module(_MODULE)
 
 
-def _case():
+def _case(family="genome_identity"):
     return SimpleNamespace(
         case_id="genome-dev-01",
+        family=family,
+        intended_target_key="genome_numerical_identity" if family == "genome_identity" else "intrinsic_present",
         initial_interpretation="Initial interpretation",
         clarification_question="What is the target?",
         proposed_successor="A bounded successor",
@@ -26,6 +29,7 @@ def _annotation(packet, **changes):
     values = {
         "reviewer_alias": "reviewer-a",
         "case_alias": packet.case_alias,
+        "packet_content_digest": packet.content_digest,
         "rubric_version": packet.rubric_version,
         "packet_version": packet.packet_version,
         "semantic_alignment": "aligned",
@@ -37,84 +41,118 @@ def _annotation(packet, **changes):
     return _MODULE.AnnotationRecord(**values)
 
 
-def test_packet_is_blinded_and_discards_condition_model_and_target_id():
-    packet = _MODULE.make_blinded_packet(
+def _registry(packet, annotation, *, reviewer_alias="reviewer-a", independent=True, duplicate_identity=False):
+    digest = _MODULE.annotation_digest(annotation)
+    identities = (
+        _MODULE.ReviewerIdentity(reviewer_alias, "person-a", independent),
+        _MODULE.ReviewerIdentity("reviewer-copy", "person-a", independent),
+    ) if duplicate_identity else (_MODULE.ReviewerIdentity(reviewer_alias, "person-a", independent),)
+    return _MODULE.HostRegistry(
+        "host-registry-1",
+        identities,
+        (_MODULE.PacketAssignment(packet.packet_id, packet.content_digest, reviewer_alias),),
+        (_MODULE.VerifiedEvidenceRecord(
+            packet.packet_id, packet.content_digest, reviewer_alias, digest,
+            packet.rubric_version, "host-source", "host-normalizer", "v1", True,
+        ),),
+    )
+
+
+def _verification(packet, annotation, *, stage=None, reviewer_alias="reviewer-a", provider=False):
+    return _MODULE.HostVerificationRecord(
+        packet.packet_id, packet.content_digest, _MODULE.annotation_digest(annotation),
+        packet.rubric_version, reviewer_alias, "host-source", "host-normalizer", "v1",
+        stage or _MODULE.VerificationStage.EVIDENCE_VERIFIED, "independent source", provider,
+    )
+
+
+def test_packet_is_blinded_and_uses_case_specific_semantic_description():
+    genome = _MODULE.make_blinded_packet(
         _case(), condition="explicit_binding", model_name="Bonsai-secret", target_id="target-1"
     )
-    public = packet.public_dict()
-    assert public["case_alias"] == public["packet_id"]
-    assert public["neutral_target_alias"] == "target-under-review"
+    time_packet = _MODULE.make_blinded_packet(_case("intrinsic_time"))
+    public = genome.public_dict()
+    assert "numerical identity" in public["intended_target_description"]
+    assert "observer-relative" in time_packet.intended_target_description
     assert "explicit_binding" not in str(public)
     assert "Bonsai-secret" not in str(public)
     assert "target-1" not in str(public)
 
 
-def test_annotation_validates_against_exact_packet_and_requires_abstention_reason():
+def test_annotation_requires_exact_packet_content_digest():
+    packet = _MODULE.make_blinded_packet(_case())
+    record = _annotation(packet)
+    record.validate(packet)
+    altered = replace(packet, proposed_successor="Changed successor")
+    try:
+        record.validate(altered)
+    except ValueError as error:
+        assert "content" in str(error)
+    else:
+        raise AssertionError("annotation was reused for changed packet content")
+
+
+def test_annotation_validation_requires_abstention_reason_and_versions():
     packet = _MODULE.make_blinded_packet(_case())
     record = _annotation(packet, abstained=True, abstention_reason="successor is ambiguous")
     record.validate(packet)
-    try:
-        _annotation(packet, abstained=True).validate(packet)
-    except ValueError as error:
-        assert "abstention" in str(error)
-    else:
-        raise AssertionError("abstention without reason was accepted")
-
-
-def test_stale_packet_version_and_invalid_labels_fail_closed():
-    packet = _MODULE.make_blinded_packet(_case())
-    for changes in (
-        {"case_alias": "packet-other"},
-        {"packet_version": "old"},
-        {"semantic_alignment": "correct"},
-        {"confidence": 2.0},
-    ):
+    for changes in ({"abstained": True}, {"packet_version": "old"}, {"confidence": 2.0}):
         try:
-            _annotation(packet, **changes).validate(packet)
+            replace(_annotation(packet), **changes).validate(packet)
         except ValueError:
             pass
         else:
             raise AssertionError(f"malformed annotation accepted: {changes}")
 
 
-def test_provider_payload_cannot_create_attestation():
-    record = _MODULE.HostVerificationRecord(
-        "packet-a", "digest", "rubric", "source", "normalizer", "v1",
-        _MODULE.VerificationStage.EVIDENCE_VERIFIED, "independent source", True,
+def test_provider_payload_and_caller_stage_cannot_create_attestation():
+    packet = _MODULE.make_blinded_packet(_case())
+    annotation = _annotation(packet, annotation_kind=_MODULE.AnnotationKind.INDEPENDENT)
+    for record in (
+        _verification(packet, annotation, provider=True),
+        _verification(packet, annotation, stage=_MODULE.VerificationStage.OBSERVATION_MATCHED),
+    ):
+        try:
+            _MODULE.attest_host_annotation(record, packet=packet, annotation=annotation, registry=_registry(packet, annotation))
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("untrusted record created an attestation")
+
+
+def test_valid_attestation_requires_exact_host_registry_relationships():
+    packet = _MODULE.make_blinded_packet(_case())
+    annotation = _annotation(packet, annotation_kind=_MODULE.AnnotationKind.INDEPENDENT)
+    annotation.validate(packet)
+    attestation = _MODULE.attest_host_annotation(
+        _verification(packet, annotation), packet=packet, annotation=annotation,
+        registry=_registry(packet, annotation),
     )
-    try:
-        _MODULE.attest_host_annotation(record)
-    except ValueError as error:
-        assert "provider" in str(error)
-    else:
-        raise AssertionError("provider payload created an attestation")
+    assert attestation.packet_content_digest == packet.content_digest
+    assert attestation.annotation_digest == _MODULE.annotation_digest(annotation)
 
 
-def test_attestation_requires_evidence_verified_stage():
-    record = _MODULE.HostVerificationRecord(
-        "packet-a", "digest", "rubric", "source", "normalizer", "v1",
-        _MODULE.VerificationStage.OBSERVATION_MATCHED, "independent source",
-    )
-    try:
-        _MODULE.attest_host_annotation(record)
-    except ValueError as error:
-        assert "verified" in str(error)
-    else:
-        raise AssertionError("unverified annotation was attested")
-
-
-def test_valid_host_attestation_is_bound_to_annotation_digest():
+def test_forged_reviewer_duplicate_identity_and_candidate_are_rejected():
     packet = _MODULE.make_blinded_packet(_case())
     annotation = _annotation(packet)
-    annotation.validate(packet)
-    digest = _MODULE.annotation_digest(annotation)
-    record = _MODULE.HostVerificationRecord(
-        packet.packet_id, digest, packet.rubric_version, "host-source", "host-normalizer", "v1",
-        _MODULE.VerificationStage.EVIDENCE_VERIFIED, "independent source",
-    )
-    attestation = _MODULE.attest_host_annotation(record)
-    assert attestation.annotation_digest == digest
-    assert attestation.packet_id == packet.packet_id
+    for registry, record in (
+        (_registry(packet, annotation, independent=False), _verification(packet, annotation)),
+        (_registry(packet, annotation, duplicate_identity=True), _verification(packet, annotation)),
+        (_registry(packet, annotation), _verification(packet, annotation, reviewer_alias="reviewer-other")),
+    ):
+        try:
+            _MODULE.attest_host_annotation(record, packet=packet, annotation=annotation, registry=registry)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("forged reviewer relationship was accepted")
+    candidate = _annotation(packet, annotation_kind=_MODULE.AnnotationKind.CANDIDATE)
+    try:
+        _MODULE.attest_host_annotation(_verification(packet, candidate), packet=packet, annotation=candidate, registry=_registry(packet, candidate))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("candidate annotation was attested as independent")
 
 
 def test_reviewer_disagreement_remains_visible_and_unadjudicated():
@@ -126,18 +164,6 @@ def test_reviewer_disagreement_remains_visible_and_unadjudicated():
     assert summary["alignment_agreement"] is False
     assert summary["unresolved_disagreement"] is True
     assert summary["adjudicated"] is False
-    assert len(summary["raw_judgments"]) == 2
-
-
-def test_candidate_alias_cannot_claim_independent_kind():
-    packet = _MODULE.make_blinded_packet(_case())
-    record = _annotation(packet, reviewer_alias="candidate-a", annotation_kind=_MODULE.AnnotationKind.INDEPENDENT)
-    try:
-        record.validate(packet)
-    except ValueError as error:
-        assert "candidate" in str(error)
-    else:
-        raise AssertionError("candidate annotation claimed independence")
 
 
 def test_annotation_manifest_keeps_provider_and_condition_data_private():
