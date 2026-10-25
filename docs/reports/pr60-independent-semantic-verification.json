@@ -58,6 +58,46 @@
       "ambiguity_resolution": "unverified",
       "reason": "observation lacks verified independent provenance",
       "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "provider_self_report_without_evidence",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "observation lacks verified independent provenance",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "missing_normalizer_provenance",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "observation lacks verified independent provenance",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "duplicate_evidence_source",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "evidence sources are not independently distinct",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "contradictory_evidence",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "evidence is absent or not independently verified",
+      "synthetic_oracle_fixture": true
+    },
+    {
+      "fixture": "apparent_resolution_without_evidence",
+      "semantic_alignment": "unverified",
+      "literal_id_retention": null,
+      "ambiguity_resolution": "unverified",
+      "reason": "observation lacks verified independent provenance",
+      "synthetic_oracle_fixture": true
     }
   ],
   "semantic_adjudication_receipt_created": false,

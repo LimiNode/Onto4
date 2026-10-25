@@ -169,13 +169,19 @@ def fixture_matrix() -> tuple[dict[str, Any], ...]:
     expected = SemanticExpectation("genome_identity", "target-a", ("identity-criterion",))
     provenance = ObservationProvenance("observation-1", "host-normalizer", "v1", "evidence-a", EvidenceAuthority.HOST_INDEPENDENT)
     evidence = (EvidenceReference("evidence-a", EvidenceAuthority.HOST_INDEPENDENT, EvidenceStatus.VERIFIED, "identity-criterion"),)
-    def observed(key: str | None, target_id: str | None, resolution: ResolutionStatus, *, verified: bool = True, source: str = "evidence-a") -> ObservedSemanticSnapshot:
+    def observed(key: str | None, target_id: str | None, resolution: ResolutionStatus, *, verified: bool = True, source: str = "evidence-a", normalizer: str = "host-normalizer", contradictory: bool = False, duplicate_source: bool = False) -> ObservedSemanticSnapshot:
+        local_provenance = ObservationProvenance("observation-1", normalizer, "v1", source, EvidenceAuthority.HOST_INDEPENDENT) if verified else None
+        local_evidence = (
+            EvidenceReference(source, EvidenceAuthority.HOST_INDEPENDENT, EvidenceStatus.CONTRADICTORY if contradictory else EvidenceStatus.VERIFIED, "identity-criterion"),
+        ) if verified else ()
+        if duplicate_source:
+            local_evidence = local_evidence + local_evidence
         return ObservedSemanticSnapshot(
             key,
             target_id,
             resolution,
-            evidence if verified else (),
-            provenance if verified else None,
+            local_evidence,
+            local_provenance,
         )
     return (
         {"name": "same_semantics_same_id", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.RESOLVED)},
@@ -185,6 +191,11 @@ def fixture_matrix() -> tuple[dict[str, Any], ...]:
         {"name": "ambiguity_merely_omitted", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.OMITTED)},
         {"name": "semantic_relationship_indeterminate", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.INDETERMINATE)},
         {"name": "untrusted_observation", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.RESOLVED, verified=False)},
+        {"name": "provider_self_report_without_evidence", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.RESOLVED, verified=False)},
+        {"name": "missing_normalizer_provenance", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.RESOLVED, normalizer="")},
+        {"name": "duplicate_evidence_source", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.RESOLVED, duplicate_source=True)},
+        {"name": "contradictory_evidence", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.RESOLVED, contradictory=True)},
+        {"name": "apparent_resolution_without_evidence", "expected": expected, "observed": observed("genome_identity", "target-a", ResolutionStatus.RESOLVED, verified=False)},
     )
 
 

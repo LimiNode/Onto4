@@ -18,6 +18,10 @@ The deterministic matrix distinguishes:
 - ambiguity merely omitted;
 - indeterminate semantic relationship.
 
+The negative-control matrix also covers provider-only claims, missing normalizer
+provenance, duplicate evidence sources, contradictory evidence and apparent
+resolution without admissible evidence.
+
 Literal identifier retention, semantic target alignment and ambiguity resolution
 are recorded as separate measures. A matching identifier can therefore still be
 semantically incorrect, while a different identifier can remain semantically

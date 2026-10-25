@@ -23,6 +23,11 @@ def test_fixture_matrix_covers_independent_semantic_cases():
         "ambiguity_merely_omitted",
         "semantic_relationship_indeterminate",
         "untrusted_observation",
+        "provider_self_report_without_evidence",
+        "missing_normalizer_provenance",
+        "duplicate_evidence_source",
+        "contradictory_evidence",
+        "apparent_resolution_without_evidence",
     }
     assert result["semantic_adjudication_receipt_created"] is False
     assert all(row["synthetic_oracle_fixture"] is True for row in result["rows"])
