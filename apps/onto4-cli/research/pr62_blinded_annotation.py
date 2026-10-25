@@ -253,8 +253,9 @@ class HostRegistry:
         )
 
     def independent_reviewer_count(self) -> int:
-        keys = {reviewer.identity_key for reviewer in self.reviewers if reviewer.independent and reviewer.approved}
-        return len(keys) if len(keys) == len(self.reviewers) else 0
+        independent = [reviewer for reviewer in self.reviewers if reviewer.independent and reviewer.approved]
+        keys = {reviewer.identity_key for reviewer in independent}
+        return len(keys) if len(keys) == len(independent) else 0
 
 
 @dataclass(frozen=True)
