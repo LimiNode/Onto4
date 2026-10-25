@@ -1,0 +1,62 @@
+{
+  "record_type": "pr56_target_binding_diagnostic_protocol",
+  "protocol_version": "pr56-target-binding-v1",
+  "source_sha": "bf7d03ef6ababc9f7fedaea7b3e725071b4d0866",
+  "conditions": [
+    {
+      "name": "A",
+      "refinement_protocol": "full_snapshot",
+      "binding_claim_required": false,
+      "target_focused_envelope": false
+    },
+    {
+      "name": "B",
+      "refinement_protocol": "explicit_binding",
+      "binding_claim_required": true,
+      "target_focused_envelope": false
+    },
+    {
+      "name": "C",
+      "refinement_protocol": "minimal_target_focused",
+      "binding_claim_required": true,
+      "target_focused_envelope": true
+    }
+  ],
+  "scenarios": [
+    {
+      "case_alias": "case-0",
+      "question_kind": "Meaning",
+      "response_schema": "successor_plus_binding_claim",
+      "permitted_claims": [
+        "preserve",
+        "anchored_update",
+        "no_binding"
+      ],
+      "scenario_digest": "4e9fa3243362651cd352f1ee8d415ffffcf2a9c597a7a35ead90848f60423944"
+    },
+    {
+      "case_alias": "case-1",
+      "question_kind": "Meaning",
+      "response_schema": "successor_plus_binding_claim",
+      "permitted_claims": [
+        "preserve",
+        "anchored_update",
+        "no_binding"
+      ],
+      "scenario_digest": "0e7023016fe00fe91ae052ef14607a62d91399dcd9b1a58683af7a5db615d13c"
+    }
+  ],
+  "measured_outcomes": [
+    "schema_validity",
+    "binding_claim_validity",
+    "literal_target_preservation",
+    "catalog_validity",
+    "lineage_validity",
+    "structural_ambiguity_counts",
+    "independent_semantic_evidence",
+    "semantic_correctness_not_evaluated"
+  ],
+  "semantic_oracle": "none",
+  "live_run_performed": false,
+  "production_admission_changed": false
+}
