@@ -28,7 +28,7 @@
       "target_kind": "Meaning",
       "max_turns": 3,
       "answer_obligation_count": 3,
-      "host_input_digest": "b789e15af85a4861840d2bcdf7498365f1543b06fef810fc0f8024cd076f9c87",
+      "host_input_digest": "8d2f2e898439921b76c85c6a904f12719143faf86d11a70143d7264baf4a2c8a",
       "permitted_outcomes": [
         "comparable",
         "question_intent_mismatch",
@@ -50,7 +50,7 @@
       "target_kind": "Meaning",
       "max_turns": 3,
       "answer_obligation_count": 3,
-      "host_input_digest": "f24d4de1cd078c89f6dca06e9a5f7146851291f37d4e02e14500cc8cbfb3cfe5",
+      "host_input_digest": "9adbdf5eb3ad9da04642c7cdc0b94ab53abefea5a2766356e934a1c3ca5c211a",
       "permitted_outcomes": [
         "comparable",
         "question_intent_mismatch",

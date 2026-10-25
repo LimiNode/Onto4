@@ -98,15 +98,19 @@ class MatchedContractAdapter:
         self,
         scenario: ScenarioSpec,
         *,
+        question_kind: str | None,
         target_family: str | None,
         target_ids: tuple[str, ...] | None,
     ) -> str:
-        return classify_question_intent(
-            expected_target_family=scenario.target_family,
-            actual_target_family=target_family,
-            expected_target_id=scenario.target_id,
-            actual_target_ids=target_ids,
-        )
+        if question_kind is None or target_family is None or target_ids is None:
+            return "question_intent_unverified"
+        if (
+            question_kind != scenario.target_kind
+            or target_family != scenario.target_family
+            or target_ids != (scenario.target_id,)
+        ):
+            return "question_intent_mismatch"
+        return "question_intent_match"
 
     def validate_runner_inputs(
         self,
@@ -114,12 +118,21 @@ class MatchedContractAdapter:
         condition_names: tuple[str, ...],
         source_ids: tuple[str, ...],
         context_ids: tuple[str, ...],
+        expected_source_id: str,
+        expected_context_id: str,
         max_turns: int,
     ) -> None:
         if condition_names != ("A", "B"):
             raise ContractError("Runner must execute conditions A then B exactly once.")
-        if len(set(source_ids)) != 1 or len(set(context_ids)) != 1:
-            raise ContractError("Conditions must share source and context identity.")
+        if (
+            not expected_source_id
+            or not expected_context_id
+            or len(source_ids) != 2
+            or len(context_ids) != 2
+            or any(value != expected_source_id for value in source_ids)
+            or any(value != expected_context_id for value in context_ids)
+        ):
+            raise ContractError("Conditions must use the actual frozen source and context identity.")
         if max_turns != MAX_TURNS:
             raise ContractError("Runner max_turns must match the frozen contract.")
 
@@ -155,7 +168,7 @@ def default_contract() -> tuple[tuple[ConditionSpec, ...], tuple[ScenarioSpec, .
             "case-0",
             "Does sharing a genome make two people one person?",
             "identity_and_genome",
-            "Meaning",
+            "numerical_identity",
             "ambiguity-genome",
             "Meaning",
             (
@@ -169,7 +182,7 @@ def default_contract() -> tuple[tuple[ConditionSpec, ...], tuple[ScenarioSpec, .
             "case-1",
             "Does the sequence have an intrinsic present?",
             "intrinsic_time",
-            "Meaning",
+            "observer_independent_present",
             "ambiguity-present",
             "Meaning",
             (

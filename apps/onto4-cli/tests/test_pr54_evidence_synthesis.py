@@ -16,6 +16,8 @@ def test_pr54_synthesis_is_conservative_and_non_semantic():
     assert payload["architectural_decision"] == "investigate_provider_target_binding_independently"
     assert payload["production_admission_changed"] is False
     assert payload["semantic_adjudication_receipt_created"] is False
+    assert payload["integration_status"]["merged_prs"] == [49, 50, 51, 52, 53, 54]
+    assert payload["integration_status"]["open_draft_prs"] == [39]
     stages = {item["stage"]: item for item in payload["evidence"]}
     assert stages["pr50"]["result"] == "independent_host_contract_verification"
     assert stages["pr51"]["matched"] is True
@@ -33,5 +35,6 @@ def test_pr54_does_not_claim_live_semantic_success():
 
     assert "not_comparable" in text
     assert "initial_matched_continuation_not_comparable" in text
+    assert "PR #49–#54" in text
     assert "semantic_identity" in text
     assert "не оправдывают production promotion" in text

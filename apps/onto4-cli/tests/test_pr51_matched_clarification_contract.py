@@ -96,12 +96,22 @@ def test_executable_adapter_enforces_frozen_turn_and_question_contract():
     assert adapter.answer_obligation(scenario, 0).startswith("I mean numerical identity")
     assert adapter.validate_issued_question(
         scenario,
+        question_kind=scenario.target_kind,
         target_family=scenario.target_family,
         target_ids=(scenario.target_id,),
     ) == "question_intent_match"
     assert adapter.validate_issued_question(
-        scenario, target_family="wrong", target_ids=(scenario.target_id,)
+        scenario,
+        question_kind=scenario.target_kind,
+        target_family="wrong",
+        target_ids=(scenario.target_id,),
     ) == "question_intent_mismatch"
+    assert adapter.validate_issued_question(
+        scenario,
+        question_kind=scenario.target_kind,
+        target_family=None,
+        target_ids=(scenario.target_id,),
+    ) == "question_intent_unverified"
     with pytest.raises(_SCRIPT.ContractError):
         adapter.answer_obligation(scenario, 3)
 
@@ -109,13 +119,37 @@ def test_executable_adapter_enforces_frozen_turn_and_question_contract():
 def test_executable_adapter_rejects_runner_identity_mismatch():
     conditions, scenarios = _SCRIPT.default_contract()
     adapter = _SCRIPT.MatchedContractAdapter(conditions, scenarios)
+    scenario = scenarios[0]
     with pytest.raises(_SCRIPT.ContractError, match="source and context"):
         adapter.validate_runner_inputs(
             condition_names=("A", "B"),
             source_ids=("same", "different"),
             context_ids=("context", "context"),
+            expected_source_id="same",
+            expected_context_id="context",
             max_turns=3,
         )
+    with pytest.raises(_SCRIPT.ContractError, match="actual frozen"):
+        adapter.validate_runner_inputs(
+            condition_names=("A", "B"),
+            source_ids=(scenario.source_text, scenario.source_text),
+            context_ids=("wrong", "wrong"),
+            expected_source_id=scenario.source_text,
+            expected_context_id=scenario.context_id,
+            max_turns=3,
+        )
+
+
+def test_executable_adapter_rejects_wrong_kind_even_with_matching_family_and_id():
+    conditions, scenarios = _SCRIPT.default_contract()
+    adapter = _SCRIPT.MatchedContractAdapter(conditions, scenarios)
+    scenario = scenarios[0]
+    assert adapter.validate_issued_question(
+        scenario,
+        question_kind="Ontology",
+        target_family=scenario.target_family,
+        target_ids=(scenario.target_id,),
+    ) == "question_intent_mismatch"
 
 
 def test_adapter_metadata_is_safe_and_stable():

@@ -4,6 +4,8 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 
 _SCRIPT_PATH = Path(__file__).parents[1] / "research" / "pr53_bounded_live_pilot.py"
 _SPEC = importlib.util.spec_from_file_location("pr53_bounded_live_pilot", _SCRIPT_PATH)
@@ -63,6 +65,38 @@ def test_pilot_uses_frozen_obligations_and_computes_pair_status(monkeypatch):
     assert all(case["pair_comparability"] == "initial_matched_only" for case in payload["cases"])
     assert all(case["A"]["provider_calls"] == 3 for case in payload["cases"])
     assert all(case["B"]["provider_calls"] == 1 for case in payload["cases"])
+
+
+def test_runner_rejects_wrong_semantic_family_even_when_kind_and_id_match(monkeypatch):
+    spec = _SCRIPT.base.CASES[0]
+    scenario = _SCRIPT.contract_module.default_contract()[1][0]
+
+    def wrong_family_policy(_spec, _condition, _scenario):
+        question = _SCRIPT.replace(
+            _SCRIPT.base._question(_spec), target_family="wrong-family"
+        )
+        return (lambda _snapshot: question), set()
+
+    monkeypatch.setattr(_SCRIPT, "_policy", wrong_family_policy)
+    result = _SCRIPT.run_condition(
+        object(),
+        spec,
+        "A",
+        scenario=scenario,
+        adapter=_SCRIPT.contract_module.MatchedContractAdapter(
+            *_SCRIPT.contract_module.default_contract()
+        ),
+    )
+    assert result["question_intent_status"] == "question_intent_mismatch"
+    assert result["provider_calls"] == 0
+
+
+def test_runner_rejects_source_mismatch_before_provider_invocation(monkeypatch):
+    conditions, scenarios = _SCRIPT.contract_module.default_contract()
+    adapter = _SCRIPT.contract_module.MatchedContractAdapter(conditions, scenarios)
+    altered = _SCRIPT.replace(_SCRIPT.base.CASES[0], source_text="different source")
+    with pytest.raises(_SCRIPT.contract_module.ContractError, match="source"):
+        _SCRIPT.run_condition(object(), altered, "A", scenario=scenarios[0], adapter=adapter)
 
 
 def test_public_event_is_bounded():
