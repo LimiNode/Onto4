@@ -132,6 +132,20 @@ def test_valid_attestation_requires_exact_host_registry_relationships():
     assert attestation.annotation_digest == _MODULE.annotation_digest(annotation)
 
 
+def test_source_and_normalizer_mismatch_cannot_reuse_registry_evidence():
+    packet = _MODULE.make_blinded_packet(_case())
+    annotation = _annotation(packet, annotation_kind=_MODULE.AnnotationKind.INDEPENDENT)
+    bad_record = replace(_verification(packet, annotation), source_id="other-source")
+    try:
+        _MODULE.attest_host_annotation(
+            bad_record, packet=packet, annotation=annotation, registry=_registry(packet, annotation)
+        )
+    except ValueError as error:
+        assert "registry" in str(error)
+    else:
+        raise AssertionError("source mismatch reused verified evidence")
+
+
 def test_forged_reviewer_duplicate_identity_and_candidate_are_rejected():
     packet = _MODULE.make_blinded_packet(_case())
     annotation = _annotation(packet)
