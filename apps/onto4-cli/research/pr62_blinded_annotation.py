@@ -248,6 +248,9 @@ class HostRegistry:
             and evidence.reviewer_alias == record.reviewer_alias
             and evidence.annotation_digest == digest
             and evidence.rubric_version == packet.rubric_version
+            and evidence.source_id == record.source_id
+            and evidence.normalizer_id == record.normalizer_id
+            and evidence.normalizer_version == record.normalizer_version
             and evidence.verified
             for evidence in self.evidence
         )
@@ -302,6 +305,8 @@ def attest_host_annotation(
         raise ValueError("provider payload cannot create host attestation")
     if record.stage is not VerificationStage.EVIDENCE_VERIFIED:
         raise ValueError("host evidence must be verified before attestation")
+    if not all((record.independent_basis, record.source_id, record.normalizer_id, record.normalizer_version)):
+        raise ValueError("host verification provenance is incomplete")
     annotation.validate(packet)
     digest = annotation_digest(annotation)
     if digest != record.annotation_digest or record.packet_id != packet.packet_id or record.packet_content_digest != packet.content_digest:
