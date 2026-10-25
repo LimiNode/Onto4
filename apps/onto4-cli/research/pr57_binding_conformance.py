@@ -37,7 +37,7 @@ sys.modules[_BASE_SPEC.name] = base
 _BASE_SPEC.loader.exec_module(base)
 
 
-SOURCE_SHA = "370a274"
+SOURCE_SHA = "7611b989376ceac9a81237efff06aab5b63dc571"
 GATE_VERSION = "pr57-binding-conformance-v1"
 
 EXPECTED_FIXTURES: dict[str, dict[str, Any]] = {

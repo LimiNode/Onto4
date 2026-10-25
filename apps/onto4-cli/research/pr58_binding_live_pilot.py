@@ -38,7 +38,7 @@ _PROTOCOL_SPEC.loader.exec_module(protocol)
 
 # Exact source revision for reproducibility; this pilot is deliberately tied to
 # the reviewed conformance gate rather than to a moving branch label.
-SOURCE_SHA = "8450d2ffe4bd09642426d8777f99b1eb0f52e0a1"
+SOURCE_SHA = "a557cf7bb55bf0c5ca56294c5fcb789351b13184"
 PILOT_VERSION = "pr58-binding-live-pilot-v1"
 CONDITIONS = ("A", "B", "C")
 _EXPECTED_SETTINGS = {"temperature": 0, "max_output_tokens": 1024, "disable_thinking": True}

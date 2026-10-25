@@ -1,7 +1,7 @@
 {
   "record_type": "pr57_redaction_safe_binding_conformance",
   "gate_version": "pr57-binding-conformance-v1",
-  "source_sha": "370a274",
+  "source_sha": "7611b989376ceac9a81237efff06aab5b63dc571",
   "protocol_version": "pr56-target-binding-v2",
   "scenario_count": 2,
   "rows": [

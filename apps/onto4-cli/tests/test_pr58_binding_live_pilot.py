@@ -83,7 +83,7 @@ def test_pilot_output_is_redaction_safe_and_reproducible():
     client = _FakeClient()
     result = _MODULE.run_pilot(client)
     serialized = json.dumps(result, ensure_ascii=False)
-    assert result["source_sha"] == "8450d2ffe4bd09642426d8777f99b1eb0f52e0a1"
+    assert result["source_sha"] == "a557cf7bb55bf0c5ca56294c5fcb789351b13184"
     assert result["sampling_settings"]["temperature"] == 0
     assert "ambiguity-genome" not in serialized
     assert "identity_and_genome" not in serialized
