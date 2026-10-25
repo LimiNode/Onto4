@@ -1,38 +1,48 @@
 {
   "record_type": "pr56_target_binding_diagnostic_protocol",
-  "protocol_version": "pr56-target-binding-v1",
+  "protocol_version": "pr56-target-binding-v2",
+  "historical_protocol": {
+    "version": "pr56-target-binding-v1",
+    "scenario_digests": [
+      "4e9fa3243362651cd352f1ee8d415ffffcf2a9c597a7a35ead90848f60423944",
+      "0e7023016fe00fe91ae052ef14607a62d91399dcd9b1a58683af7a5db615d13c"
+    ]
+  },
   "source_sha": "bf7d03ef6ababc9f7fedaea7b3e725071b4d0866",
   "conditions": [
     {
       "name": "A",
       "refinement_protocol": "full_snapshot",
       "binding_claim_required": false,
-      "target_focused_envelope": false
+      "target_focused_envelope": false,
+      "response_schema": "successor_interpretation"
     },
     {
       "name": "B",
       "refinement_protocol": "explicit_binding",
       "binding_claim_required": true,
-      "target_focused_envelope": false
+      "target_focused_envelope": false,
+      "response_schema": "successor_plus_binding_claim"
     },
     {
       "name": "C",
       "refinement_protocol": "minimal_target_focused",
       "binding_claim_required": true,
-      "target_focused_envelope": true
+      "target_focused_envelope": true,
+      "response_schema": "minimal_successor_plus_binding_claim"
     }
   ],
   "scenarios": [
     {
       "case_alias": "case-0",
       "question_kind": "Meaning",
-      "response_schema": "successor_plus_binding_claim",
+      "response_schema": "successor_interpretation",
       "permitted_claims": [
         "preserve",
         "anchored_update",
         "no_binding"
       ],
-      "scenario_digest": "4e9fa3243362651cd352f1ee8d415ffffcf2a9c597a7a35ead90848f60423944"
+      "scenario_digest": "120f630d12db62468555493fb0a1e0f60766313d4b02fbb067a6cc402365f72f"
     },
     {
       "case_alias": "case-1",
