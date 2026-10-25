@@ -13,7 +13,7 @@ from typing import Any
 
 
 PROTOCOL_VERSION = "pr60-independent-semantic-verification-v1"
-SOURCE_SHA = "05316ad22582fa90b7dcf08e921c11d6b46a0558"
+SOURCE_SHA = "d4e4616ec61228977128bed92d77ccd5db09ccff"
 
 
 class SemanticStatus(str, Enum):

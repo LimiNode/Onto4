@@ -1,7 +1,7 @@
 {
   "record_type": "pr60_independent_semantic_verification_protocol",
   "protocol_version": "pr60-independent-semantic-verification-v1",
-  "source_sha": "05316ad22582fa90b7dcf08e921c11d6b46a0558",
+  "source_sha": "d4e4616ec61228977128bed92d77ccd5db09ccff",
   "rows": [
     {
       "fixture": "same_semantics_same_id",
