@@ -1,0 +1,75 @@
+{
+  "record_type": "pr51_matched_clarification_contract",
+  "experiment_version": 1,
+  "protocol_version": "pr51-matched-clarification-v1",
+  "source_sha": "a6ed465b25e3dd249d4cf259395fe9b1633f901c",
+  "provider_protocol": {
+    "version": "shared-fixture-refinement-v1",
+    "model": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+    "temperature": 0.0,
+    "max_output_tokens": 1024,
+    "thinking_enabled": false
+  },
+  "conditions": [
+    {
+      "name": "A",
+      "selection_policy": "fixture_policy",
+      "provider_protocol_version": "shared-fixture-refinement-v1"
+    },
+    {
+      "name": "B",
+      "selection_policy": "host_bound_target_policy",
+      "provider_protocol_version": "shared-fixture-refinement-v1"
+    }
+  ],
+  "scenarios": [
+    {
+      "case_alias": "case-0",
+      "target_kind": "Meaning",
+      "max_turns": 3,
+      "answer_obligation_count": 3,
+      "host_input_digest": "b789e15af85a4861840d2bcdf7498365f1543b06fef810fc0f8024cd076f9c87",
+      "permitted_outcomes": [
+        "comparable",
+        "question_intent_mismatch",
+        "question_intent_unverified",
+        "unbound_target",
+        "unverified_retarget",
+        "target_preserved",
+        "no_new_admissible_target",
+        "no_progress",
+        "schema_failure",
+        "transport_failure",
+        "max_turns_reached",
+        "not_comparable",
+        "inconclusive"
+      ]
+    },
+    {
+      "case_alias": "case-1",
+      "target_kind": "Meaning",
+      "max_turns": 3,
+      "answer_obligation_count": 3,
+      "host_input_digest": "f24d4de1cd078c89f6dca06e9a5f7146851291f37d4e02e14500cc8cbfb3cfe5",
+      "permitted_outcomes": [
+        "comparable",
+        "question_intent_mismatch",
+        "question_intent_unverified",
+        "unbound_target",
+        "unverified_retarget",
+        "target_preserved",
+        "no_new_admissible_target",
+        "no_progress",
+        "schema_failure",
+        "transport_failure",
+        "max_turns_reached",
+        "not_comparable",
+        "inconclusive"
+      ]
+    }
+  ],
+  "live_run_performed": false,
+  "aggregate_verdict": "not_run",
+  "semantic_identity": "not_evaluated",
+  "production_admission_changed": false
+}
