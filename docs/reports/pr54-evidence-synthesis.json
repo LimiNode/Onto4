@@ -1,0 +1,70 @@
+{
+  "record_type": "pr54_research_evidence_synthesis",
+  "synthesis_version": "pr54-evidence-synthesis-v2",
+  "source_sha": "df9a16d",
+  "overall_verdict": "not_comparable",
+  "semantic_identity": "not_evaluated",
+  "evidence": [
+    {
+      "stage": "pr39",
+      "kind": "historical_target_binding_observation",
+      "matched": false,
+      "semantic_oracle": false,
+      "result": "operational_only"
+    },
+    {
+      "stage": "pr48",
+      "kind": "live_multiturn_baseline",
+      "matched": false,
+      "semantic_oracle": false,
+      "result": "structural_churn_without_reduction"
+    },
+    {
+      "stage": "pr49",
+      "kind": "offline_clarification_strategy_gate",
+      "matched": true,
+      "semantic_oracle": false,
+      "result": "one_control_comparable_seven_not_comparable"
+    },
+    {
+      "stage": "pr50",
+      "kind": "provider_protocol_preflight",
+      "matched": true,
+      "semantic_oracle": false,
+      "result": "independent_host_contract_verification"
+    },
+    {
+      "stage": "pr51",
+      "kind": "executable_matched_clarification_contract",
+      "matched": true,
+      "semantic_oracle": false,
+      "result": "frozen_obligations_and_question_provenance_enforced"
+    },
+    {
+      "stage": "pr52",
+      "kind": "deterministic_multiturn_offline_gate",
+      "matched": true,
+      "semantic_oracle": false,
+      "result": "classifier_and_policy_integration_gates_passed"
+    },
+    {
+      "stage": "pr53",
+      "kind": "matched_live_pilot",
+      "matched": false,
+      "semantic_oracle": false,
+      "result": "initial_inputs_matched_target_lost_on_first_transition"
+    }
+  ],
+  "research_questions": {
+    "target_binding_prevents_repeat": "offline_only",
+    "repeat_prevention_reduces_churn": "unidentified",
+    "successive_live_target_preservation": "not_observed",
+    "live_structural_reduction": "not_observed",
+    "epistemic_u_to_tf": "not_evaluated",
+    "dialogue_informativeness": "not_comparable",
+    "remaining_uncertainty": "semantic_oracle_and_matched_live_progress_absent"
+  },
+  "architectural_decision": "investigate_provider_target_binding_independently",
+  "production_admission_changed": false,
+  "semantic_adjudication_receipt_created": false
+}
