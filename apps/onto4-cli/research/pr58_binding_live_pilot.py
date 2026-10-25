@@ -38,7 +38,7 @@ _PROTOCOL_SPEC.loader.exec_module(protocol)
 
 # Exact source revision for reproducibility; this pilot is deliberately tied to
 # the reviewed conformance gate rather than to a moving branch label.
-SOURCE_SHA = "0463972"
+SOURCE_SHA = "0463972fe5751bab812105bd2a2297196eaa9f1b"
 HISTORICAL_PILOT_VERSION = "pr58-binding-live-pilot-v1"
 PILOT_VERSION = "pr58-binding-live-pilot-v2-runner"
 CONDITIONS = ("A", "B", "C")
