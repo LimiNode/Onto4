@@ -340,7 +340,7 @@ def run_offline_evaluation(
     resolution = _metric(accepted, "ambiguity_resolution", "resolved", len(development), consensus_cases)
     reviewers = _verified_reviewer_count(accepted, registry)
     disagreement = _PR62.compare_reviewers(accepted)
-    mode_valid = readiness_mode in READINESS_MODES
+    mode_valid = isinstance(readiness_mode, str) and readiness_mode in READINESS_MODES
     synthetic_mode = mode_valid and readiness_mode == "synthetic" and synthetic_gate_test
     trusted_private_ready = _holdout_is_trusted(
         holdout_attestation,

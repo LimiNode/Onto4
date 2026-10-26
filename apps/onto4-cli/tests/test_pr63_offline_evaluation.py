@@ -280,9 +280,10 @@ def test_authenticated_holdout_manifest_is_explicit_but_does_not_skip_coverage()
 
 
 def test_invalid_readiness_mode_fails_closed():
-    report = _MODULE.run_offline_evaluation(readiness_mode="caller-claimed")
-    assert report["readiness"]["status"] == "invalid_readiness_mode"
-    assert report["readiness"]["ready_for_live_evaluation"] is False
+    for mode in ("caller-claimed", ["real"]):
+        report = _MODULE.run_offline_evaluation(readiness_mode=mode)
+        assert report["readiness"]["status"] == "invalid_readiness_mode"
+        assert report["readiness"]["ready_for_live_evaluation"] is False
 
 
 def test_public_report_never_contains_private_reviewer_text():
