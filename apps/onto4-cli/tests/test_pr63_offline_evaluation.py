@@ -260,6 +260,17 @@ def test_one_reviewer_on_two_cases_remains_one_verified_identity():
 
 def test_authenticated_holdout_manifest_is_explicit_but_does_not_skip_coverage():
     _packet, annotations, registry, records = _verified_pair()
+    registry = replace(
+        registry,
+        registry_attestation=_MODULE._PR62.RegistryAttestation(
+            registry.registry_id,
+            "external-host",
+            "a" * 64,
+            True,
+            registry_version=_MODULE._PR62.REGISTRY_VERSION,
+            registry_digest=registry.snapshot_digest(),
+        ),
+    )
     manifest = _MODULE.PrivateHoldoutManifest(
         "private-1",
         _MODULE._PR61.CORPUS_VERSION,
@@ -267,16 +278,52 @@ def test_authenticated_holdout_manifest_is_explicit_but_does_not_skip_coverage()
         12,
         "a" * 64,
     )
-    attestation = _MODULE.HostHoldoutAttestation(manifest, "holdout-registry", "b" * 64)
+    attestation = _MODULE.HostHoldoutAttestation(
+        manifest,
+        registry.registry_id,
+        "b" * 64,
+        True,
+        manifest.content_digest(),
+    )
+    class TrustedSource:
+        def verify_registry(self, _attestation, _registry, _digest):
+            return True
+
+        def verify_holdout(self, _attestation, _manifest, candidate, _digest):
+            return candidate.registry_id == registry.registry_id
+
     report = _MODULE.run_offline_evaluation(
         annotations,
         registry=registry,
         verification_records=records,
         holdout_attestation=attestation,
+        trusted_source=TrustedSource(),
     )
     assert report["readiness"]["holdout_attestation_verified"] is True
+    assert report["readiness"]["reviewer_registry_attested"] is True
     assert report["readiness"]["coverage_complete"] is False
     assert report["readiness"]["ready_for_live_evaluation"] is False
+    assert _MODULE._holdout_is_trusted(
+        replace(attestation, host_registry_id="other-registry"),
+        registry=registry,
+        trusted_source=TrustedSource(),
+        corpus_version=_MODULE._PR61.CORPUS_VERSION,
+        rubric_version=_MODULE._PR62.RUBRIC_VERSION,
+    ) is False
+    assert _MODULE._holdout_is_trusted(
+        replace(attestation, manifest_digest="c" * 64),
+        registry=registry,
+        trusted_source=TrustedSource(),
+        corpus_version=_MODULE._PR61.CORPUS_VERSION,
+        rubric_version=_MODULE._PR62.RUBRIC_VERSION,
+    ) is False
+    assert _MODULE._holdout_is_trusted(
+        replace(attestation, manifest=replace(manifest, case_count=13)),
+        registry=registry,
+        trusted_source=TrustedSource(),
+        corpus_version=_MODULE._PR61.CORPUS_VERSION,
+        rubric_version=_MODULE._PR62.RUBRIC_VERSION,
+    ) is False
 
 
 def test_invalid_readiness_mode_fails_closed():

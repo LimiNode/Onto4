@@ -8,6 +8,7 @@ and research-only outcomes; fixture labels are never promoted to semantic gold.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -33,6 +34,22 @@ class PrivateHoldoutManifest:
     access_state: str = "restricted"
     intended_scope: str = "live_evaluation"
 
+    def payload(self) -> dict[str, Any]:
+        return {
+            "manifest_id": self.manifest_id,
+            "corpus_version": self.corpus_version,
+            "rubric_version": self.rubric_version,
+            "case_count": self.case_count,
+            "content_commitment": self.content_commitment,
+            "access_state": self.access_state,
+            "intended_scope": self.intended_scope,
+        }
+
+    def content_digest(self) -> str:
+        return hashlib.sha256(
+            json.dumps(self.payload(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
 
 @dataclass(frozen=True)
 class HostHoldoutAttestation:
@@ -42,14 +59,31 @@ class HostHoldoutAttestation:
     host_registry_id: str
     evidence_digest: str
     verified: bool = True
+    manifest_digest: str = ""
 
 
-def _holdout_is_trusted(attestation: Any | None, *, corpus_version: str, rubric_version: str) -> bool:
-    if not isinstance(attestation, HostHoldoutAttestation) or not attestation.verified:
+def _holdout_is_trusted(
+    attestation: Any | None,
+    *,
+    registry: Any | None,
+    trusted_source: Any | None,
+    corpus_version: str,
+    rubric_version: str,
+) -> bool:
+    if not isinstance(attestation, HostHoldoutAttestation) or registry is None or trusted_source is None:
+        return False
+    verifier = getattr(trusted_source, "verify_holdout", None)
+    if verifier is None or attestation.host_registry_id != registry.registry_id:
         return False
     manifest = attestation.manifest
-    return bool(
-        attestation.host_registry_id
+    manifest_digest = manifest.content_digest()
+    try:
+        registry_trusted = registry.trusted_for_live_evaluation(trusted_source)
+    except Exception:
+        return False
+    structurally_valid = bool(
+        registry_trusted
+        and attestation.host_registry_id
         and len(attestation.evidence_digest) == 64
         and all(character in "0123456789abcdef" for character in attestation.evidence_digest.lower())
         and manifest.manifest_id
@@ -60,7 +94,14 @@ def _holdout_is_trusted(attestation: Any | None, *, corpus_version: str, rubric_
         and all(character in "0123456789abcdef" for character in manifest.content_commitment.lower())
         and manifest.access_state == "restricted"
         and manifest.intended_scope == "live_evaluation"
+        and attestation.manifest_digest == manifest_digest
     )
+    if not structurally_valid:
+        return False
+    try:
+        return bool(verifier(attestation, manifest, registry, manifest_digest))
+    except Exception:
+        return False
 
 
 def _load(name: str, filename: str):
@@ -315,6 +356,7 @@ def run_offline_evaluation(
     verification_records: Iterable[Any] = (),
     private_holdout_ready: bool | None = None,
     holdout_attestation: HostHoldoutAttestation | None = None,
+    trusted_source: Any | None = None,
     readiness_mode: str = "real",
     synthetic_gate_test: bool = False,
 ) -> dict[str, Any]:
@@ -344,12 +386,14 @@ def run_offline_evaluation(
     synthetic_mode = mode_valid and readiness_mode == "synthetic" and synthetic_gate_test
     trusted_private_ready = _holdout_is_trusted(
         holdout_attestation,
+        registry=registry,
+        trusted_source=trusted_source,
         corpus_version=_PR61.CORPUS_VERSION,
         rubric_version=_PR62.RUBRIC_VERSION,
     )
     trusted_reviewer_registry = bool(
         registry is not None
-        and getattr(registry, "trusted_for_live_evaluation", lambda: False)()
+        and getattr(registry, "trusted_for_live_evaluation", lambda *_: False)(trusted_source)
     )
     synthetic_private_ready = synthetic_mode and (
         private_holdout_ready is True or trusted_private_ready
