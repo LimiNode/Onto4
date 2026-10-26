@@ -351,7 +351,9 @@ def run_offline_evaluation(
         registry is not None
         and getattr(registry, "trusted_for_live_evaluation", lambda: False)()
     )
-    synthetic_private_ready = synthetic_mode and private_holdout_ready is True
+    synthetic_private_ready = synthetic_mode and (
+        private_holdout_ready is True or trusted_private_ready
+    )
     private_ready = trusted_private_ready
     negative_passed = all(control["passed"] for control in controls)
     no_unresolved_disagreement = not any(item["unresolved_disagreement"] for item in disagreement)
