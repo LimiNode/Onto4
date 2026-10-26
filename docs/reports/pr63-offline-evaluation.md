@@ -40,7 +40,9 @@ those records rather than constants. This is a readiness result, not a
 semantic score. The live-evaluation gate is false, no Bonsai calls were made,
 and production authority is unchanged. Real readiness additionally requires a
 separate attestation of the host registry itself; `host_controlled=true` is
-not sufficient evidence.
+not sufficient evidence. The committed artifact has no configured external
+trusted host source, so structurally valid caller metadata cannot change the
+published false readiness result.
 
 The optional synthetic gate mode exists only to exercise readiness mechanics;
 its result is marked `synthetic_gate_test` and can never authorize live
