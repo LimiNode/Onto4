@@ -180,6 +180,30 @@ def test_reviewer_disagreement_remains_visible_and_unadjudicated():
     assert summary["adjudicated"] is False
 
 
+def test_public_disagreement_summary_redacts_private_reviewer_material():
+    packet = _MODULE.make_blinded_packet(_case())
+    first = _annotation(
+        packet,
+        annotation_kind=_MODULE.AnnotationKind.INDEPENDENT,
+        abstained=True,
+        abstention_reason="PRIVATE-ABSTENTION-MARKER",
+        rationale_span_refs=("PRIVATE-RATIONALE-MARKER",),
+    )
+    second = _annotation(
+        packet,
+        reviewer_alias="reviewer-b",
+        annotation_kind=_MODULE.AnnotationKind.INDEPENDENT,
+    )
+    public = _MODULE.compare_reviewers((first, second))
+    serialized = json.dumps(public, sort_keys=True)
+    assert "PRIVATE-ABSTENTION-MARKER" not in serialized
+    assert "PRIVATE-RATIONALE-MARKER" not in serialized
+    assert "raw_judgments" not in serialized
+    assert public[0]["abstention_reason_codes"] == ["abstained", "not_abstained"]
+    private = _MODULE.compare_reviewers_private((first, second))
+    assert "PRIVATE-ABSTENTION-MARKER" in json.dumps(private, sort_keys=True)
+
+
 def test_annotation_manifest_keeps_provider_and_condition_data_private():
     path = Path(__file__).parents[3] / "docs" / "reports" / "pr62-annotation-manifest.json"
     manifest = json.loads(path.read_text(encoding="utf-8"))

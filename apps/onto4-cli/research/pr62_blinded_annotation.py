@@ -328,7 +328,48 @@ def attest_host_annotation(
 
 
 def compare_reviewers(records: Iterable[AnnotationRecord]) -> tuple[dict[str, Any], ...]:
-    """Return raw disagreement summaries without majority-vote adjudication."""
+    """Return a redaction-safe disagreement summary for public reports.
+
+    Reviewer rationale, abstention explanations and span references remain
+    private inputs.  They are deliberately not serialized at this boundary.
+    """
+
+    grouped: dict[str, list[AnnotationRecord]] = {}
+    for record in records:
+        if not _ALIAS.fullmatch(record.reviewer_alias) or not _ALIAS.fullmatch(record.case_alias):
+            raise ValueError("public disagreement aliases must be redaction-safe")
+        if record.semantic_alignment not in _ALIGNMENTS:
+            raise ValueError("public disagreement contains invalid alignment")
+        if record.ambiguity_resolution not in _RESOLUTIONS:
+            raise ValueError("public disagreement contains invalid resolution")
+        if record.evidence_sufficiency not in _EVIDENCE:
+            raise ValueError("public disagreement contains invalid evidence status")
+        grouped.setdefault(record.case_alias, []).append(record)
+    summaries = []
+    for case_alias, judgments in sorted(grouped.items()):
+        alignments = {record.semantic_alignment for record in judgments}
+        resolutions = {record.ambiguity_resolution for record in judgments}
+        evidence = {record.evidence_sufficiency for record in judgments}
+        summaries.append({
+            "case_alias": case_alias,
+            "reviewer_count": len(judgments),
+            "reviewer_aliases": sorted(record.reviewer_alias for record in judgments),
+            "semantic_alignment_labels": sorted(alignments),
+            "ambiguity_resolution_labels": sorted(resolutions),
+            "evidence_sufficiency_labels": sorted(evidence),
+            "abstention_count": sum(record.abstained for record in judgments),
+            "abstention_reason_codes": sorted({"abstained" if record.abstained else "not_abstained" for record in judgments}),
+            "alignment_agreement": len(alignments) == 1,
+            "resolution_agreement": len(resolutions) == 1,
+            "evidence_agreement": len(evidence) == 1,
+            "unresolved_disagreement": len(alignments) > 1 or len(resolutions) > 1 or len(evidence) > 1,
+            "adjudicated": False,
+        })
+    return tuple(summaries)
+
+
+def compare_reviewers_private(records: Iterable[AnnotationRecord]) -> tuple[dict[str, Any], ...]:
+    """Keep full reviewer material in a private research boundary only."""
 
     grouped: dict[str, list[AnnotationRecord]] = {}
     for record in records:
