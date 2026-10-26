@@ -53,6 +53,7 @@ def test_readiness_gate_stops_before_live_evaluation_without_independent_reviewe
     assert readiness["independent_reviewer_count"] == 0
     assert readiness["verified_reviewer_count"] == 0
     assert readiness["no_unresolved_disagreement"] is True
+    assert readiness["reviewer_registry_attested"] is False
     assert readiness["ready_for_live_evaluation"] is False
     assert readiness["status"] == "pending_independent_annotations"
 
@@ -222,6 +223,7 @@ def test_caller_boolean_cannot_authorize_real_private_holdout():
     )
     assert report["readiness"]["private_holdout_ready"] is False
     assert report["readiness"]["holdout_attestation_verified"] is False
+    assert report["readiness"]["reviewer_registry_attested"] is False
     assert report["readiness"]["ready_for_live_evaluation"] is False
 
 

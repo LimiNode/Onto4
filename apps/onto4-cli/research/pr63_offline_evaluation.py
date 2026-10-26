@@ -8,7 +8,6 @@ and research-only outcomes; fixture labels are never promoted to semantic gold.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -348,6 +347,10 @@ def run_offline_evaluation(
         corpus_version=_PR61.CORPUS_VERSION,
         rubric_version=_PR62.RUBRIC_VERSION,
     )
+    trusted_reviewer_registry = bool(
+        registry is not None
+        and getattr(registry, "trusted_for_live_evaluation", lambda: False)()
+    )
     synthetic_private_ready = synthetic_mode and private_holdout_ready is True
     private_ready = trusted_private_ready
     negative_passed = all(control["passed"] for control in controls)
@@ -366,6 +369,7 @@ def run_offline_evaluation(
     ready = bool(
         readiness_mode == "real"
         and trusted_private_ready
+        and trusted_reviewer_registry
         and coverage_complete
         and mechanics_ready
     )
@@ -421,6 +425,7 @@ def run_offline_evaluation(
             "verified_reviewer_count": reviewers,
             "private_holdout_ready": bool(private_ready),
             "holdout_attestation_verified": trusted_private_ready,
+            "reviewer_registry_attested": trusted_reviewer_registry,
             "synthetic_private_holdout_ready": bool(synthetic_private_ready),
             "coverage_complete": coverage_complete,
             "synthetic_gate_passed": bool(synthetic_mode and mechanics_ready),
