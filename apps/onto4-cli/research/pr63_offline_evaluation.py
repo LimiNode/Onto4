@@ -16,7 +16,7 @@ import sys
 from typing import Any, Iterable
 
 
-PROTOCOL_VERSION = "pr63-offline-evaluation-v2"
+PROTOCOL_VERSION = "pr63-offline-evaluation-v3"
 READINESS_STATUS = "pending_independent_annotations"
 REQUIRED_REVIEWERS_PER_CASE = 2
 READINESS_MODES = {"real", "synthetic"}
@@ -70,7 +70,12 @@ def _holdout_is_trusted(
     corpus_version: str,
     rubric_version: str,
 ) -> bool:
-    if not isinstance(attestation, HostHoldoutAttestation) or registry is None or trusted_source is None:
+    if (
+        not isinstance(attestation, HostHoldoutAttestation)
+        or not attestation.verified
+        or registry is None
+        or trusted_source is None
+    ):
         return False
     verifier = getattr(trusted_source, "verify_holdout", None)
     if verifier is None or attestation.host_registry_id != registry.registry_id:
@@ -260,16 +265,21 @@ def _metric(
     value: str,
     development_count: int,
     consensus_case_aliases: set[str],
+    *,
+    indeterminate_case_aliases: set[str] = frozenset(),
+    covered_case_aliases: set[str] | None = None,
 ) -> dict[str, int]:
     reviewable = {
         record.case_alias
         for record in accepted
         if record.case_alias in consensus_case_aliases and getattr(record, field) == value
     }
+    covered = covered_case_aliases if covered_case_aliases is not None else consensus_case_aliases
     return {
         "numerator": len(reviewable),
         "denominator": len(consensus_case_aliases),
-        "missing": max(0, development_count - len(consensus_case_aliases)),
+        "indeterminate": len(indeterminate_case_aliases),
+        "missing": max(0, development_count - len(covered)),
     }
 
 
@@ -314,12 +324,30 @@ def _coverage(
             record.semantic_alignment == "indeterminate" or record.ambiguity_resolution == "indeterminate"
             for record in records
         )
-        sufficient = bool(records) and all(
-            not record.abstained and record.evidence_sufficiency == "sufficient"
+        review_coverage_complete = bool(records) and not any(record.abstained for record in records) and len(identities) >= REQUIRED_REVIEWERS_PER_CASE
+        reviewer_consensus = review_coverage_complete and not disagreement
+        evidence_labels = sorted(evidence)
+        evidence_status = evidence_labels[0] if len(evidence_labels) == 1 else "disagreement" if evidence_labels else "missing"
+        if not review_coverage_complete:
+            semantic_outcome = "missing"
+        elif disagreement:
+            semantic_outcome = "disagreement"
+        elif evidence_status != "sufficient":
+            # Coverage and reviewer agreement do not turn insufficient,
+            # unavailable or contradictory evidence into a positive semantic
+            # verdict.  Keep the case covered, but leave its meaning
+            # indeterminate for the primary metric.
+            semantic_outcome = "indeterminate"
+        elif any(
+            record.semantic_alignment == "indeterminate"
+            or record.ambiguity_resolution == "indeterminate"
             for record in records
-        )
-        sufficiently_reviewed = len(identities) >= REQUIRED_REVIEWERS_PER_CASE and sufficient
-        consensus_supported = sufficiently_reviewed and not disagreement
+        ):
+            semantic_outcome = "indeterminate"
+        elif all(record.semantic_alignment == "aligned" for record in records):
+            semantic_outcome = "aligned"
+        else:
+            semantic_outcome = "misaligned"
         results.append({
             "case_alias": packet.case_alias,
             "submitted_annotations": len(submitted_by_case.get(packet.case_alias, [])),
@@ -328,9 +356,13 @@ def _coverage(
             "abstentions": abstained,
             "indeterminate": indeterminate,
             "disagreement": disagreement,
-            "sufficiently_reviewed": sufficiently_reviewed,
-            "consensus_supported": consensus_supported,
-            "admissible_semantic_outcome": consensus_supported and indeterminate == 0,
+            "review_coverage_complete": review_coverage_complete,
+            "reviewer_consensus": reviewer_consensus,
+            "sufficiently_reviewed": review_coverage_complete,
+            "consensus_supported": reviewer_consensus,
+            "semantic_evidence_sufficiency": evidence_status,
+            "semantic_outcome": semantic_outcome,
+            "admissible_semantic_outcome": reviewer_consensus and semantic_outcome in {"aligned", "misaligned", "indeterminate"},
         })
     return tuple(results)
 
@@ -376,10 +408,24 @@ def run_offline_evaluation(
         development_packets=development_packets,
     )
     consensus_cases = {
-        item["case_alias"] for item in coverage if item["admissible_semantic_outcome"]
+        item["case_alias"] for item in coverage if item["reviewer_consensus"]
     }
-    alignment = _metric(accepted, "semantic_alignment", "aligned", len(development), consensus_cases)
-    resolution = _metric(accepted, "ambiguity_resolution", "resolved", len(development), consensus_cases)
+    determinate_cases = {
+        item["case_alias"] for item in coverage
+        if item["reviewer_consensus"] and item["semantic_outcome"] in {"aligned", "misaligned"}
+    }
+    indeterminate_cases = {
+        item["case_alias"] for item in coverage
+        if item["reviewer_consensus"] and item["semantic_outcome"] == "indeterminate"
+    }
+    alignment = _metric(
+        accepted, "semantic_alignment", "aligned", len(development), determinate_cases,
+        indeterminate_case_aliases=indeterminate_cases, covered_case_aliases=consensus_cases,
+    )
+    resolution = _metric(
+        accepted, "ambiguity_resolution", "resolved", len(development), determinate_cases,
+        indeterminate_case_aliases=indeterminate_cases, covered_case_aliases=consensus_cases,
+    )
     reviewers = _verified_reviewer_count(accepted, registry)
     disagreement = _PR62.compare_reviewers(accepted)
     mode_valid = isinstance(readiness_mode, str) and readiness_mode in READINESS_MODES
@@ -402,7 +448,11 @@ def run_offline_evaluation(
     negative_passed = all(control["passed"] for control in controls)
     no_unresolved_disagreement = not any(item["unresolved_disagreement"] for item in disagreement)
     attestation_integrity = accepted_data["rejected"] == 0
-    coverage_complete = len(consensus_cases) == len(development)
+    coverage_complete = all(item["review_coverage_complete"] for item in coverage)
+    evidence_distribution = {
+        label: sum(item["semantic_evidence_sufficiency"] == label for item in coverage)
+        for label in ("sufficient", "insufficient", "contradictory", "not_available", "disagreement", "missing")
+    }
     mechanics_ready = bool(
         mode_valid
         and (trusted_private_ready or synthetic_private_ready)
@@ -456,6 +506,12 @@ def run_offline_evaluation(
             "required_families": ["genome_identity", "intrinsic_time"],
             "coverage_complete": coverage_complete,
             "consensus_supported_case_count": len(consensus_cases),
+            "review_coverage_complete_case_count": sum(item["review_coverage_complete"] for item in coverage),
+            "semantic_outcome_counts": {
+                outcome: sum(item["semantic_outcome"] == outcome for item in coverage)
+                for outcome in ("aligned", "misaligned", "indeterminate", "disagreement", "missing")
+            },
+            "evidence_sufficiency_distribution": evidence_distribution,
         },
         "attestation": {"accepted": accepted_data["attestation_accepted"], "rejected": accepted_data["attestation_rejected"]},
         "negative_controls": list(controls),
@@ -474,7 +530,8 @@ def run_offline_evaluation(
             "reviewer_registry_attested": trusted_reviewer_registry,
             "synthetic_private_holdout_ready": bool(synthetic_private_ready),
             "coverage_complete": coverage_complete,
-            "synthetic_gate_passed": bool(synthetic_mode and mechanics_ready),
+            "synthetic_mechanics_passed": bool(synthetic_mode and mechanics_ready),
+            "synthetic_full_gate_passed": bool(synthetic_mode and mechanics_ready and coverage_complete),
             "attestation_integrity": attestation_integrity,
             "no_unresolved_disagreement": no_unresolved_disagreement,
             "real_model_calls": False,

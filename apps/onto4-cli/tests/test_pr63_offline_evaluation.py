@@ -35,6 +35,7 @@ def test_offline_evaluation_reports_missing_semantic_denominators():
         "name": "semantic_target_alignment",
         "numerator": 0,
         "denominator": 0,
+        "indeterminate": 0,
         "missing": 12,
         "status": "not_evaluated",
     }
@@ -162,7 +163,8 @@ def test_readiness_requires_two_verified_reviewer_identities_and_accepts_positiv
     assert report["readiness"]["independent_reviewer_count"] == 2
     assert report["readiness"]["verified_reviewer_count"] == 2
     assert report["readiness"]["no_unresolved_disagreement"] is True
-    assert report["readiness"]["synthetic_gate_passed"] is True
+    assert report["readiness"]["synthetic_mechanics_passed"] is True
+    assert report["readiness"]["synthetic_full_gate_passed"] is False
     assert report["readiness"]["coverage_complete"] is False
     assert report["readiness"]["ready_for_live_evaluation"] is False
 
@@ -359,3 +361,119 @@ def test_public_report_never_contains_private_reviewer_text():
     serialized = json.dumps(report, sort_keys=True)
     assert "PRIVATE-REPORT-MARKER" not in serialized
     assert "PRIVATE-SPAN-MARKER" not in serialized
+
+
+def test_holdout_verified_flag_is_required_even_for_trusted_source():
+    _packet, annotations, registry, records = _verified_pair()
+    registry = replace(
+        registry,
+        registry_attestation=_MODULE._PR62.RegistryAttestation(
+            registry.registry_id, "external-host", "a" * 64, True,
+            registry_version=_MODULE._PR62.REGISTRY_VERSION,
+            registry_digest=registry.snapshot_digest(),
+        ),
+    )
+    manifest = _MODULE.PrivateHoldoutManifest(
+        "private-1", _MODULE._PR61.CORPUS_VERSION, _MODULE._PR62.RUBRIC_VERSION, 12, "a" * 64
+    )
+    attestation = _MODULE.HostHoldoutAttestation(
+        manifest, registry.registry_id, "b" * 64, False, manifest.content_digest()
+    )
+
+    class TrustedSource:
+        def verify_registry(self, _attestation, _registry, _digest):
+            return True
+
+        def verify_holdout(self, *_args):
+            return True
+
+    assert _MODULE._holdout_is_trusted(
+        attestation,
+        registry=registry,
+        trusted_source=TrustedSource(),
+        corpus_version=_MODULE._PR61.CORPUS_VERSION,
+        rubric_version=_MODULE._PR62.RUBRIC_VERSION,
+    ) is False
+
+
+def test_indeterminate_consensus_is_covered_but_not_missing():
+    packet, annotations, registry, records = _verified_pair()
+    indeterminate = tuple(
+        replace(annotation, semantic_alignment="indeterminate", ambiguity_resolution="indeterminate", evidence_sufficiency="not_available")
+        for annotation in annotations
+    )
+    indeterminate_records = tuple(
+        replace(record, annotation_digest=_MODULE._PR62.annotation_digest(annotation))
+        for record, annotation in zip(records, indeterminate)
+    )
+    registry = replace(
+        registry,
+        evidence=tuple(
+            replace(evidence, annotation_digest=_MODULE._PR62.annotation_digest(indeterminate[index]))
+            for index, evidence in enumerate(registry.evidence)
+        ),
+    )
+    report = _MODULE.run_offline_evaluation(
+        indeterminate, registry=registry, verification_records=indeterminate_records
+    )
+    item = next(item for item in report["review_coverage"] if item["case_alias"] == packet.case_alias)
+    assert item["review_coverage_complete"] is True
+    assert item["reviewer_consensus"] is True
+    assert item["semantic_evidence_sufficiency"] == "not_available"
+    assert item["semantic_outcome"] == "indeterminate"
+    assert report["coverage_policy"]["review_coverage_complete_case_count"] == 1
+    assert report["coverage_policy"]["consensus_supported_case_count"] == 1
+    assert report["primary_metric"]["missing"] == 11
+
+
+def test_full_synthetic_mechanics_fixture_covers_all_development_cases():
+    annotations = []
+    identities = []
+    assignments = []
+    evidence = []
+    records = []
+    packets = tuple(_MODULE._default_packets().values())
+    labels = (
+        ("aligned", "resolved", "sufficient"),
+        ("misaligned", "not_resolved", "sufficient"),
+        ("indeterminate", "indeterminate", "not_available"),
+        ("aligned", "resolved", "insufficient"),
+    )
+    for index, packet in enumerate(packets):
+        if index >= 12:
+            break
+        for reviewer_number in range(2):
+            alias = f"synthetic-{index}-{reviewer_number}"
+            alignment, resolution, sufficiency = labels[index % len(labels)]
+            annotation = _MODULE._PR62.AnnotationRecord(
+                alias, packet.case_alias, packet.content_digest, packet.rubric_version,
+                packet.packet_version, alignment, resolution, sufficiency, 0.5,
+                annotation_kind=_MODULE._PR62.AnnotationKind.INDEPENDENT,
+            )
+            digest = _MODULE._PR62.annotation_digest(annotation)
+            annotations.append(annotation)
+            identities.append(_MODULE._PR62.ReviewerIdentity(alias, f"identity-{alias}", True))
+            assignments.append(_MODULE._PR62.PacketAssignment(packet.packet_id, packet.content_digest, alias))
+            evidence.append(_MODULE._PR62.VerifiedEvidenceRecord(
+                packet.packet_id, packet.content_digest, alias, digest,
+                packet.rubric_version, "source", "normalizer", "v1", True,
+            ))
+            records.append(_MODULE._PR62.HostVerificationRecord(
+                packet.packet_id, packet.content_digest, digest, packet.rubric_version,
+                alias, "source", "normalizer", "v1",
+                _MODULE._PR62.VerificationStage.EVIDENCE_VERIFIED, "synthetic mechanics",
+            ))
+    registry = _MODULE._PR62.HostRegistry("synthetic-registry", tuple(identities), tuple(assignments), tuple(evidence))
+    report = _MODULE.run_offline_evaluation(
+        tuple(annotations), registry=registry, verification_records=tuple(records),
+        private_holdout_ready=True, readiness_mode="synthetic", synthetic_gate_test=True,
+    )
+    assert report["annotation_counts"]["accepted"] == 24
+    assert report["coverage_policy"]["coverage_complete"] is True
+    assert report["coverage_policy"]["consensus_supported_case_count"] == 12
+    assert report["readiness"]["synthetic_mechanics_passed"] is True
+    assert report["readiness"]["synthetic_full_gate_passed"] is True
+    assert report["readiness"]["ready_for_live_evaluation"] is False
+    assert report["readiness"]["real_model_calls"] is False
+    assert report["production_authority_changed"] is False
+    assert report["coverage_policy"]["semantic_outcome_counts"]["indeterminate"] == 6
