@@ -247,6 +247,8 @@ def test_public_disagreement_summary_redacts_private_reviewer_material():
     assert "PRIVATE-ABSTENTION-MARKER" not in serialized
     assert "PRIVATE-RATIONALE-MARKER" not in serialized
     assert "raw_judgments" not in serialized
+    assert "reviewer_aliases" not in serialized
+    assert "reviewer_alias" not in json.dumps(first.public_dict(), sort_keys=True)
     assert "PRIVATE-ABSTENTION-MARKER" not in json.dumps(first.public_dict(), sort_keys=True)
     assert "PRIVATE-RATIONALE-MARKER" not in json.dumps(first.public_dict(), sort_keys=True)
     assert public[0]["abstention_reason_codes"] == ["abstained", "not_abstained"]

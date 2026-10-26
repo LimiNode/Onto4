@@ -15,7 +15,7 @@ import re
 from typing import Any, Iterable
 
 
-PROTOCOL_VERSION = "pr62-blinded-annotation-v2"
+PROTOCOL_VERSION = "pr62-blinded-annotation-v3"
 RUBRIC_VERSION = "pr61-rubric-v2"
 PACKET_VERSION = "pr62-packet-v2"
 REGISTRY_VERSION = "pr62-host-registry-v1"
@@ -193,7 +193,6 @@ class AnnotationRecord:
 
         return {
             "record_type": "pr62_blinded_annotation_public",
-            "reviewer_alias": self.reviewer_alias,
             "case_alias": self.case_alias,
             "packet_content_digest": self.packet_content_digest,
             "rubric_version": self.rubric_version,
@@ -453,7 +452,6 @@ def compare_reviewers(records: Iterable[AnnotationRecord]) -> tuple[dict[str, An
         summaries.append({
             "case_alias": case_alias,
             "reviewer_count": len(judgments),
-            "reviewer_aliases": sorted(record.reviewer_alias for record in judgments),
             "semantic_alignment_labels": sorted(alignments),
             "ambiguity_resolution_labels": sorted(resolutions),
             "evidence_sufficiency_labels": sorted(evidence),
