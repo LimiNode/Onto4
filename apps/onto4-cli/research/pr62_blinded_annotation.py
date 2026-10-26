@@ -18,6 +18,7 @@ from typing import Any, Iterable
 PROTOCOL_VERSION = "pr62-blinded-annotation-v2"
 RUBRIC_VERSION = "pr61-rubric-v2"
 PACKET_VERSION = "pr62-packet-v2"
+REGISTRY_VERSION = "pr62-host-registry-v1"
 
 
 class VerificationStage(str, Enum):
@@ -169,7 +170,7 @@ class AnnotationRecord:
         if self.abstained and not (self.abstention_reason or "").strip():
             raise ValueError("abstention requires a reason")
 
-    def public_dict(self) -> dict[str, Any]:
+    def private_dict(self) -> dict[str, Any]:
         return {
             "record_type": "pr62_blinded_annotation",
             "reviewer_alias": self.reviewer_alias,
@@ -184,6 +185,24 @@ class AnnotationRecord:
             "rationale_span_refs": list(self.rationale_span_refs),
             "abstained": self.abstained,
             "abstention_reason": self.abstention_reason,
+            "annotation_kind": self.annotation_kind.value,
+        }
+
+    def public_dict(self) -> dict[str, Any]:
+        """Return only the categorical, redaction-safe representation."""
+
+        return {
+            "record_type": "pr62_blinded_annotation_public",
+            "reviewer_alias": self.reviewer_alias,
+            "case_alias": self.case_alias,
+            "packet_content_digest": self.packet_content_digest,
+            "rubric_version": self.rubric_version,
+            "packet_version": self.packet_version,
+            "semantic_alignment": self.semantic_alignment,
+            "ambiguity_resolution": self.ambiguity_resolution,
+            "evidence_sufficiency": self.evidence_sufficiency,
+            "confidence": self.confidence,
+            "abstained": self.abstained,
             "annotation_kind": self.annotation_kind.value,
         }
 
@@ -224,6 +243,8 @@ class RegistryAttestation:
     source_id: str
     evidence_digest: str
     verified: bool = True
+    registry_version: str = REGISTRY_VERSION
+    registry_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -237,17 +258,73 @@ class HostRegistry:
     host_controlled: bool = True
     registry_attestation: RegistryAttestation | None = None
 
-    def trusted_for_live_evaluation(self) -> bool:
+    def snapshot_payload(self) -> dict[str, Any]:
+        """Canonical identity of every registry binding used by evaluation."""
+
+        return {
+            "registry_id": self.registry_id,
+            "registry_version": REGISTRY_VERSION,
+            "host_controlled": self.host_controlled,
+            "reviewers": [
+                {
+                    "reviewer_alias": reviewer.reviewer_alias,
+                    "identity_key": reviewer.identity_key,
+                    "independent": reviewer.independent,
+                    "approved": reviewer.approved,
+                }
+                for reviewer in self.reviewers
+            ],
+            "assignments": [
+                {
+                    "packet_id": assignment.packet_id,
+                    "packet_content_digest": assignment.packet_content_digest,
+                    "reviewer_alias": assignment.reviewer_alias,
+                }
+                for assignment in self.assignments
+            ],
+            "evidence": [
+                {
+                    "packet_id": evidence.packet_id,
+                    "packet_content_digest": evidence.packet_content_digest,
+                    "reviewer_alias": evidence.reviewer_alias,
+                    "annotation_digest": evidence.annotation_digest,
+                    "rubric_version": evidence.rubric_version,
+                    "source_id": evidence.source_id,
+                    "normalizer_id": evidence.normalizer_id,
+                    "normalizer_version": evidence.normalizer_version,
+                    "verified": evidence.verified,
+                }
+                for evidence in self.evidence
+            ],
+        }
+
+    def snapshot_digest(self) -> str:
+        return hashlib.sha256(_canonical(self.snapshot_payload())).hexdigest()
+
+    def trusted_for_live_evaluation(self, trusted_source: Any | None = None) -> bool:
         attestation = self.registry_attestation
-        return bool(
+        if trusted_source is None:
+            return False
+        verifier = getattr(trusted_source, "verify_registry", None)
+        if verifier is None:
+            return False
+        structurally_valid = bool(
             self.host_controlled
             and attestation is not None
             and attestation.verified
             and attestation.registry_id == self.registry_id
+            and attestation.registry_version == REGISTRY_VERSION
+            and attestation.registry_digest == self.snapshot_digest()
             and attestation.source_id
             and len(attestation.evidence_digest) == 64
             and all(character in "0123456789abcdef" for character in attestation.evidence_digest.lower())
         )
+        if not structurally_valid:
+            return False
+        try:
+            return bool(verifier(attestation, self, self.snapshot_digest()))
+        except Exception:
+            return False
 
     def verify(self, packet: BlindedPacket, annotation: AnnotationRecord, record: "HostVerificationRecord") -> bool:
         if not self.host_controlled or annotation.annotation_kind is not AnnotationKind.INDEPENDENT:
@@ -312,7 +389,7 @@ class AnnotationAttestation:
 
 
 def annotation_digest(annotation: AnnotationRecord) -> str:
-    return hashlib.sha256(_canonical(annotation.public_dict())).hexdigest()
+    return hashlib.sha256(_canonical(annotation.private_dict())).hexdigest()
 
 
 def attest_host_annotation(
@@ -405,7 +482,7 @@ def compare_reviewers_private(records: Iterable[AnnotationRecord]) -> tuple[dict
         summaries.append({
             "case_alias": case_alias,
             "reviewer_count": len(judgments),
-            "raw_judgments": [record.public_dict() for record in judgments],
+            "raw_judgments": [record.private_dict() for record in judgments],
             "alignment_agreement": len(alignments) == 1,
             "resolution_agreement": len(resolutions) == 1,
             "evidence_agreement": len(evidence) == 1,

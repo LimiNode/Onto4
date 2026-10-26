@@ -174,13 +174,47 @@ def test_registry_membership_alone_is_not_live_trust():
     annotation = _annotation(packet, annotation_kind=_MODULE.AnnotationKind.INDEPENDENT)
     registry = _registry(packet, annotation)
     assert registry.trusted_for_live_evaluation() is False
-    trusted = replace(
+    attested = replace(
         registry,
         registry_attestation=_MODULE.RegistryAttestation(
-            registry.registry_id, "external-host", "a" * 64, True
+            registry.registry_id,
+            "external-host",
+            "a" * 64,
+            True,
+            registry_version=_MODULE.REGISTRY_VERSION,
+            registry_digest=registry.snapshot_digest(),
         ),
     )
-    assert trusted.trusted_for_live_evaluation() is True
+    class TrustedSource:
+        def verify_registry(self, attestation, candidate, digest):
+            return attestation.source_id == "external-host" and candidate is attested and digest == candidate.snapshot_digest()
+
+    assert attested.trusted_for_live_evaluation(TrustedSource()) is True
+
+
+def test_registry_snapshot_changes_invalidate_prior_attestation():
+    packet = _MODULE.make_blinded_packet(_case())
+    annotation = _annotation(packet, annotation_kind=_MODULE.AnnotationKind.INDEPENDENT)
+    registry = _registry(packet, annotation)
+    attested = replace(
+        registry,
+        registry_attestation=_MODULE.RegistryAttestation(
+            registry.registry_id,
+            "external-host",
+            "a" * 64,
+            True,
+            registry_version=_MODULE.REGISTRY_VERSION,
+            registry_digest=registry.snapshot_digest(),
+        ),
+    )
+    changed = replace(attested, reviewers=(replace(attested.reviewers[0], approved=False),))
+
+    class TrustedSource:
+        def verify_registry(self, _attestation, _candidate, _digest):
+            return True
+
+    assert attested.trusted_for_live_evaluation(TrustedSource()) is True
+    assert changed.trusted_for_live_evaluation(TrustedSource()) is False
 
 
 def test_reviewer_disagreement_remains_visible_and_unadjudicated():
@@ -213,6 +247,8 @@ def test_public_disagreement_summary_redacts_private_reviewer_material():
     assert "PRIVATE-ABSTENTION-MARKER" not in serialized
     assert "PRIVATE-RATIONALE-MARKER" not in serialized
     assert "raw_judgments" not in serialized
+    assert "PRIVATE-ABSTENTION-MARKER" not in json.dumps(first.public_dict(), sort_keys=True)
+    assert "PRIVATE-RATIONALE-MARKER" not in json.dumps(first.public_dict(), sort_keys=True)
     assert public[0]["abstention_reason_codes"] == ["abstained", "not_abstained"]
     private = _MODULE.compare_reviewers_private((first, second))
     assert "PRIVATE-ABSTENTION-MARKER" in json.dumps(private, sort_keys=True)
