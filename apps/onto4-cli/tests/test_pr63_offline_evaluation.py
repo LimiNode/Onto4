@@ -245,6 +245,40 @@ def test_two_reviewers_on_one_case_do_not_complete_corpus_coverage():
     assert report["readiness"]["ready_for_live_evaluation"] is False
 
 
+def test_one_reviewer_on_two_cases_remains_one_verified_identity():
+    _packet, annotations, registry, _records = _verified_pair()
+    second_packet = _MODULE._PR62.make_blinded_packet(_MODULE._PR61.development_cases()[1])
+    second = replace(
+        annotations[0],
+        case_alias=second_packet.case_alias,
+        packet_content_digest=second_packet.content_digest,
+        rubric_version=second_packet.rubric_version,
+        packet_version=second_packet.packet_version,
+    )
+    assert _MODULE._verified_reviewer_count((annotations[0], second), registry) == 1
+
+
+def test_authenticated_holdout_manifest_is_explicit_but_does_not_skip_coverage():
+    _packet, annotations, registry, records = _verified_pair()
+    manifest = _MODULE.PrivateHoldoutManifest(
+        "private-1",
+        _MODULE._PR61.CORPUS_VERSION,
+        _MODULE._PR62.RUBRIC_VERSION,
+        12,
+        "a" * 64,
+    )
+    attestation = _MODULE.HostHoldoutAttestation(manifest, "holdout-registry", "b" * 64)
+    report = _MODULE.run_offline_evaluation(
+        annotations,
+        registry=registry,
+        verification_records=records,
+        holdout_attestation=attestation,
+    )
+    assert report["readiness"]["holdout_attestation_verified"] is True
+    assert report["readiness"]["coverage_complete"] is False
+    assert report["readiness"]["ready_for_live_evaluation"] is False
+
+
 def test_invalid_readiness_mode_fails_closed():
     report = _MODULE.run_offline_evaluation(readiness_mode="caller-claimed")
     assert report["readiness"]["status"] == "invalid_readiness_mode"
