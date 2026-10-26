@@ -8,6 +8,7 @@ and research-only outcomes; fixture labels are never promoted to semantic gold.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -17,6 +18,50 @@ from typing import Any, Iterable
 
 PROTOCOL_VERSION = "pr63-offline-evaluation-v2"
 READINESS_STATUS = "pending_independent_annotations"
+REQUIRED_REVIEWERS_PER_CASE = 2
+READINESS_MODES = {"real", "synthetic"}
+
+
+@dataclass(frozen=True)
+class PrivateHoldoutManifest:
+    """Host-owned metadata for a private holdout kept outside this repository."""
+
+    manifest_id: str
+    corpus_version: str
+    rubric_version: str
+    case_count: int
+    content_commitment: str
+    access_state: str = "restricted"
+    intended_scope: str = "live_evaluation"
+
+
+@dataclass(frozen=True)
+class HostHoldoutAttestation:
+    """Separately authenticated host record for a private holdout manifest."""
+
+    manifest: PrivateHoldoutManifest
+    host_registry_id: str
+    evidence_digest: str
+    verified: bool = True
+
+
+def _holdout_is_trusted(attestation: Any | None, *, corpus_version: str, rubric_version: str) -> bool:
+    if not isinstance(attestation, HostHoldoutAttestation) or not attestation.verified:
+        return False
+    manifest = attestation.manifest
+    return bool(
+        attestation.host_registry_id
+        and len(attestation.evidence_digest) == 64
+        and all(character in "0123456789abcdef" for character in attestation.evidence_digest.lower())
+        and manifest.manifest_id
+        and manifest.corpus_version == corpus_version
+        and manifest.rubric_version == rubric_version
+        and manifest.case_count > 0
+        and len(manifest.content_commitment) == 64
+        and all(character in "0123456789abcdef" for character in manifest.content_commitment.lower())
+        and manifest.access_state == "restricted"
+        and manifest.intended_scope == "live_evaluation"
+    )
 
 
 def _load(name: str, filename: str):
@@ -169,10 +214,85 @@ def evaluate_annotations(
     return {"accepted": tuple(accepted), "rejected": rejected, "attestation_accepted": len(accepted), "attestation_rejected": rejected}
 
 
-def _metric(accepted: list[Any], field: str, value: str, development_count: int) -> dict[str, int]:
-    reviewable = {record.case_alias for record in accepted if not record.abstained and getattr(record, field) == value and record.evidence_sufficiency == "sufficient"}
-    denominator = len({record.case_alias for record in accepted if not record.abstained and record.evidence_sufficiency == "sufficient"})
-    return {"numerator": len(reviewable), "denominator": denominator, "missing": max(0, development_count - denominator)}
+def _metric(
+    accepted: list[Any],
+    field: str,
+    value: str,
+    development_count: int,
+    consensus_case_aliases: set[str],
+) -> dict[str, int]:
+    reviewable = {
+        record.case_alias
+        for record in accepted
+        if record.case_alias in consensus_case_aliases and getattr(record, field) == value
+    }
+    return {
+        "numerator": len(reviewable),
+        "denominator": len(consensus_case_aliases),
+        "missing": max(0, development_count - len(consensus_case_aliases)),
+    }
+
+
+def _identity_map(registry: Any | None) -> dict[str, str]:
+    if registry is None:
+        return {}
+    return {
+        reviewer.reviewer_alias: reviewer.identity_key
+        for reviewer in registry.reviewers
+        if reviewer.independent and reviewer.approved
+    }
+
+
+def _coverage(
+    submitted: list[Any],
+    accepted: list[Any],
+    *,
+    registry: Any | None,
+    development_packets: Iterable[Any],
+) -> tuple[dict[str, Any], ...]:
+    identity_by_alias = _identity_map(registry)
+    submitted_by_case: dict[str, list[Any]] = {}
+    accepted_by_case: dict[str, list[Any]] = {}
+    for record in submitted:
+        submitted_by_case.setdefault(record.case_alias, []).append(record)
+    for record in accepted:
+        accepted_by_case.setdefault(record.case_alias, []).append(record)
+    results = []
+    for packet in development_packets:
+        records = accepted_by_case.get(packet.case_alias, [])
+        identities = {
+            identity_by_alias[record.reviewer_alias]
+            for record in records
+            if record.reviewer_alias in identity_by_alias
+        }
+        alignments = {record.semantic_alignment for record in records}
+        resolutions = {record.ambiguity_resolution for record in records}
+        evidence = {record.evidence_sufficiency for record in records}
+        disagreement = len(alignments) > 1 or len(resolutions) > 1 or len(evidence) > 1
+        abstained = sum(record.abstained for record in records)
+        indeterminate = sum(
+            record.semantic_alignment == "indeterminate" or record.ambiguity_resolution == "indeterminate"
+            for record in records
+        )
+        sufficient = bool(records) and all(
+            not record.abstained and record.evidence_sufficiency == "sufficient"
+            for record in records
+        )
+        sufficiently_reviewed = len(identities) >= REQUIRED_REVIEWERS_PER_CASE and sufficient
+        consensus_supported = sufficiently_reviewed and not disagreement
+        results.append({
+            "case_alias": packet.case_alias,
+            "submitted_annotations": len(submitted_by_case.get(packet.case_alias, [])),
+            "accepted_annotations": len(records),
+            "distinct_verified_reviewer_identities": len(identities),
+            "abstentions": abstained,
+            "indeterminate": indeterminate,
+            "disagreement": disagreement,
+            "sufficiently_reviewed": sufficiently_reviewed,
+            "consensus_supported": consensus_supported,
+            "admissible_semantic_outcome": consensus_supported and indeterminate == 0,
+        })
+    return tuple(results)
 
 
 def _verified_reviewer_count(accepted: Iterable[Any], registry: Any | None) -> int:
@@ -183,15 +303,10 @@ def _verified_reviewer_count(accepted: Iterable[Any], registry: Any | None) -> i
     back to stable identity keys and duplicate identity keys fail closed.
     """
 
-    if registry is None:
-        return 0
-    identities = {
-        reviewer.reviewer_alias: reviewer.identity_key
-        for reviewer in registry.reviewers
-        if reviewer.independent and reviewer.approved
-    }
-    keys = {identities[record.reviewer_alias] for record in accepted if record.reviewer_alias in identities}
-    return len(keys) if len(keys) == len({record.reviewer_alias for record in accepted if record.reviewer_alias in identities}) else 0
+    identities = _identity_map(registry)
+    aliases = {record.reviewer_alias for record in accepted if record.reviewer_alias in identities}
+    keys = {identities[alias] for alias in aliases}
+    return len(keys) if len(keys) == len(aliases) else 0
 
 
 def run_offline_evaluation(
@@ -200,6 +315,9 @@ def run_offline_evaluation(
     registry: Any | None = None,
     verification_records: Iterable[Any] = (),
     private_holdout_ready: bool | None = None,
+    holdout_attestation: HostHoldoutAttestation | None = None,
+    readiness_mode: str = "real",
+    synthetic_gate_test: bool = False,
 ) -> dict[str, Any]:
     annotation_list = list(annotations)
     cases = _PR61.corpus()
@@ -209,22 +327,56 @@ def run_offline_evaluation(
     controls = run_negative_controls()
     accepted_data = evaluate_annotations(annotation_list, registry=registry, verification_records=verification_records)
     accepted = list(accepted_data["accepted"])
-    alignment = _metric(accepted, "semantic_alignment", "aligned", len(development))
-    resolution = _metric(accepted, "ambiguity_resolution", "resolved", len(development))
+    development_packets = tuple(_default_packets().values())
+    coverage = _coverage(
+        annotation_list,
+        accepted,
+        registry=registry,
+        development_packets=development_packets,
+    )
+    consensus_cases = {
+        item["case_alias"] for item in coverage if item["admissible_semantic_outcome"]
+    }
+    alignment = _metric(accepted, "semantic_alignment", "aligned", len(development), consensus_cases)
+    resolution = _metric(accepted, "ambiguity_resolution", "resolved", len(development), consensus_cases)
     reviewers = _verified_reviewer_count(accepted, registry)
     disagreement = _PR62.compare_reviewers(accepted)
-    private_ready = _PR61.holdout_manifest()["private_holdout_ready"] if private_holdout_ready is None else private_holdout_ready
+    mode_valid = readiness_mode in READINESS_MODES
+    synthetic_mode = mode_valid and readiness_mode == "synthetic" and synthetic_gate_test
+    trusted_private_ready = _holdout_is_trusted(
+        holdout_attestation,
+        corpus_version=_PR61.CORPUS_VERSION,
+        rubric_version=_PR62.RUBRIC_VERSION,
+    )
+    synthetic_private_ready = synthetic_mode and private_holdout_ready is True
+    private_ready = trusted_private_ready
     negative_passed = all(control["passed"] for control in controls)
     no_unresolved_disagreement = not any(item["unresolved_disagreement"] for item in disagreement)
     attestation_integrity = accepted_data["rejected"] == 0
-    ready = bool(
-        private_ready
+    coverage_complete = len(consensus_cases) == len(development)
+    mechanics_ready = bool(
+        mode_valid
+        and (trusted_private_ready or synthetic_private_ready)
         and reviewers >= 2
         and negative_passed
         and no_unresolved_disagreement
         and attestation_integrity
         and accepted
     )
+    ready = bool(
+        readiness_mode == "real"
+        and trusted_private_ready
+        and coverage_complete
+        and mechanics_ready
+    )
+    if not mode_valid:
+        status = "invalid_readiness_mode"
+    elif synthetic_mode:
+        status = "synthetic_gate_test"
+    elif ready:
+        status = "ready_for_live_evaluation"
+    else:
+        status = READINESS_STATUS
     return {
         "record_type": "pr63_offline_evaluation",
         "protocol_version": PROTOCOL_VERSION,
@@ -247,11 +399,20 @@ def run_offline_evaluation(
             "indeterminate": sum(record.semantic_alignment == "indeterminate" for record in accepted),
         },
         "reviewer_disagreement": list(disagreement),
+        "review_coverage": list(coverage),
+        "coverage_policy": {
+            "required_reviewers_per_case": REQUIRED_REVIEWERS_PER_CASE,
+            "required_case_count": len(development),
+            "required_families": ["genome_identity", "intrinsic_time"],
+            "coverage_complete": coverage_complete,
+            "consensus_supported_case_count": len(consensus_cases),
+        },
         "attestation": {"accepted": accepted_data["attestation_accepted"], "rejected": accepted_data["attestation_rejected"]},
         "negative_controls": list(controls),
         "negative_controls_passed": negative_passed,
         "readiness": {
-            "status": "ready_for_live_evaluation" if ready else READINESS_STATUS,
+            "status": status,
+            "scope": "synthetic_gate_test" if synthetic_mode else "real_evaluation",
             "frozen_rubric": True,
             "corpus_integrity": True,
             "condition_leakage_tested": True,
@@ -259,6 +420,10 @@ def run_offline_evaluation(
             "independent_reviewer_count": reviewers,
             "verified_reviewer_count": reviewers,
             "private_holdout_ready": bool(private_ready),
+            "holdout_attestation_verified": trusted_private_ready,
+            "synthetic_private_holdout_ready": bool(synthetic_private_ready),
+            "coverage_complete": coverage_complete,
+            "synthetic_gate_passed": bool(synthetic_mode and mechanics_ready),
             "attestation_integrity": attestation_integrity,
             "no_unresolved_disagreement": no_unresolved_disagreement,
             "real_model_calls": False,

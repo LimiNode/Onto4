@@ -26,6 +26,7 @@ readiness: pending_independent_annotations
 private_holdout_ready: false
 verified_reviewer_count: 0
 no_unresolved_disagreement: true
+coverage: 0 / 12 consensus-supported cases
 ```
 
 The runner accepts annotation records only when a host registry verifies the
@@ -38,3 +39,9 @@ accepted/rejected attestations, disagreement and metric denominators from
 those records rather than constants. This is a readiness result, not a
 semantic score. The live-evaluation gate is false, no Bonsai calls were made,
 and production authority is unchanged.
+
+The optional synthetic gate mode exists only to exercise readiness mechanics;
+its result is marked `synthetic_gate_test` and can never authorize live
+evaluation. Real readiness requires a separately authenticated host-owned
+private holdout manifest, two independent verified judgments for every
+development case, sufficient evidence, and no unresolved disagreement.
