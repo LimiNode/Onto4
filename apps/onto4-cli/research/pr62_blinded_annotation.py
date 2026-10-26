@@ -217,6 +217,16 @@ class VerifiedEvidenceRecord:
 
 
 @dataclass(frozen=True)
+class RegistryAttestation:
+    """Separate host attestation required before registry data can gate live work."""
+
+    registry_id: str
+    source_id: str
+    evidence_digest: str
+    verified: bool = True
+
+
+@dataclass(frozen=True)
 class HostRegistry:
     """Separately maintained research registry, not provider-supplied data."""
 
@@ -225,6 +235,19 @@ class HostRegistry:
     assignments: tuple[PacketAssignment, ...]
     evidence: tuple[VerifiedEvidenceRecord, ...]
     host_controlled: bool = True
+    registry_attestation: RegistryAttestation | None = None
+
+    def trusted_for_live_evaluation(self) -> bool:
+        attestation = self.registry_attestation
+        return bool(
+            self.host_controlled
+            and attestation is not None
+            and attestation.verified
+            and attestation.registry_id == self.registry_id
+            and attestation.source_id
+            and len(attestation.evidence_digest) == 64
+            and all(character in "0123456789abcdef" for character in attestation.evidence_digest.lower())
+        )
 
     def verify(self, packet: BlindedPacket, annotation: AnnotationRecord, record: "HostVerificationRecord") -> bool:
         if not self.host_controlled or annotation.annotation_kind is not AnnotationKind.INDEPENDENT:

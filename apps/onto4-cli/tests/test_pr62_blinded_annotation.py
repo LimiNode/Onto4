@@ -169,6 +169,20 @@ def test_forged_reviewer_duplicate_identity_and_candidate_are_rejected():
         raise AssertionError("candidate annotation was attested as independent")
 
 
+def test_registry_membership_alone_is_not_live_trust():
+    packet = _MODULE.make_blinded_packet(_case())
+    annotation = _annotation(packet, annotation_kind=_MODULE.AnnotationKind.INDEPENDENT)
+    registry = _registry(packet, annotation)
+    assert registry.trusted_for_live_evaluation() is False
+    trusted = replace(
+        registry,
+        registry_attestation=_MODULE.RegistryAttestation(
+            registry.registry_id, "external-host", "a" * 64, True
+        ),
+    )
+    assert trusted.trusted_for_live_evaluation() is True
+
+
 def test_reviewer_disagreement_remains_visible_and_unadjudicated():
     packet = _MODULE.make_blinded_packet(_case())
     first = _annotation(packet, reviewer_alias="reviewer-a")
