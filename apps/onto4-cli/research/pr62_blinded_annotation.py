@@ -20,6 +20,7 @@ PROTOCOL_VERSION = "pr62-blinded-annotation-v3"
 RUBRIC_VERSION = "pr61-rubric-v2"
 PACKET_VERSION = "pr62-packet-v2"
 REGISTRY_VERSION = "pr62-host-registry-v1"
+_HOST_TRUST_CAPABILITY = object()
 
 
 class VerificationStage(str, Enum):
@@ -257,6 +258,7 @@ class HostTrustSource(ABC):
 
     host_owned_capability: bool = False
     issuer_id: str = ""
+    _capability_token: object | None = None
 
     @abstractmethod
     def verify_registry(self, attestation: RegistryAttestation, registry: "HostRegistry", digest: str) -> bool:
@@ -324,6 +326,7 @@ class HostRegistry:
         attestation = self.registry_attestation
         if (
             not isinstance(trusted_source, HostTrustSource)
+            or trusted_source._capability_token is not _HOST_TRUST_CAPABILITY
             or trusted_source.host_owned_capability is not True
             or not trusted_source.issuer_id
         ):

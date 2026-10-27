@@ -23,9 +23,11 @@ only when a host-controlled registry confirms reviewer identity and
 independence, packet assignment, exact annotation digest, source, normalizer
 and evidence checks. Caller-supplied stage labels, aliases and provider
 payloads are explicitly rejected. Live-evaluation registry trust additionally
-requires an issuer-bound `HostTrustSource` capability; an arbitrary object with
-`verify_registry()` is not accepted. The resulting attestation is research
-metadata, not an independent semantic oracle or a production
+requires an issuer-bound `HostTrustSource` capability and a module-owned
+opaque capability marker; merely subclassing the interface or defining
+`verify_registry()` is not accepted. The marker is only a local fail-closed
+boundary until a real issuer-backed host integration exists. The resulting
+attestation is research metadata, not an independent semantic oracle or a production
 `SemanticAdjudicationReceipt`.
 
 No Bonsai calls are made by this PR.

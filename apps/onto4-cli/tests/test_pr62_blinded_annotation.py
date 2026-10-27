@@ -188,6 +188,7 @@ def test_registry_membership_alone_is_not_live_trust():
     class TrustedSource(_MODULE.HostTrustSource):
         host_owned_capability = True
         issuer_id = "test-issuer"
+        _capability_token = _MODULE._HOST_TRUST_CAPABILITY
 
         def verify_registry(self, attestation, candidate, digest):
             return attestation.source_id == "external-host" and candidate is attested and digest == candidate.snapshot_digest()
@@ -215,12 +216,39 @@ def test_registry_snapshot_changes_invalidate_prior_attestation():
     class TrustedSource(_MODULE.HostTrustSource):
         host_owned_capability = True
         issuer_id = "test-issuer"
+        _capability_token = _MODULE._HOST_TRUST_CAPABILITY
 
         def verify_registry(self, _attestation, _candidate, _digest):
             return True
 
     assert attested.trusted_for_live_evaluation(TrustedSource()) is True
     assert changed.trusted_for_live_evaluation(TrustedSource()) is False
+
+
+def test_forged_host_trust_subclass_without_opaque_capability_is_rejected():
+    packet = _MODULE.make_blinded_packet(_case())
+    annotation = _annotation(packet, annotation_kind=_MODULE.AnnotationKind.INDEPENDENT)
+    registry = _registry(packet, annotation)
+    attested = replace(
+        registry,
+        registry_attestation=_MODULE.RegistryAttestation(
+            registry.registry_id, "external-host", "a" * 64, True,
+            registry_version=_MODULE.REGISTRY_VERSION,
+            registry_digest=registry.snapshot_digest(),
+        ),
+    )
+
+    class ForgedHost(_MODULE.HostTrustSource):
+        host_owned_capability = True
+        issuer_id = "arbitrary-issuer"
+
+        def verify_registry(self, *_args):
+            return True
+
+        def verify_holdout(self, *_args):
+            return True
+
+    assert attested.trusted_for_live_evaluation(ForgedHost()) is False
 
 
 def test_reviewer_disagreement_remains_visible_and_unadjudicated():
