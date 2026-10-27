@@ -73,6 +73,9 @@ def _holdout_is_trusted(
     if (
         not isinstance(attestation, HostHoldoutAttestation)
         or not attestation.verified
+        or not isinstance(trusted_source, _PR62.HostTrustSource)
+        or trusted_source.host_owned_capability is not True
+        or not trusted_source.issuer_id
         or registry is None
         or trusted_source is None
     ):
@@ -272,7 +275,11 @@ def _metric(
     reviewable = {
         record.case_alias
         for record in accepted
-        if record.case_alias in consensus_case_aliases and getattr(record, field) == value
+        if (
+            record.case_alias in consensus_case_aliases
+            and not record.abstained
+            and getattr(record, field) == value
+        )
     }
     covered = covered_case_aliases if covered_case_aliases is not None else consensus_case_aliases
     return {
@@ -310,21 +317,22 @@ def _coverage(
     results = []
     for packet in development_packets:
         records = accepted_by_case.get(packet.case_alias, [])
+        completed = [record for record in records if not record.abstained]
         identities = {
             identity_by_alias[record.reviewer_alias]
-            for record in records
+            for record in completed
             if record.reviewer_alias in identity_by_alias
         }
-        alignments = {record.semantic_alignment for record in records}
-        resolutions = {record.ambiguity_resolution for record in records}
-        evidence = {record.evidence_sufficiency for record in records}
+        alignments = {record.semantic_alignment for record in completed}
+        resolutions = {record.ambiguity_resolution for record in completed}
+        evidence = {record.evidence_sufficiency for record in completed}
         disagreement = len(alignments) > 1 or len(resolutions) > 1 or len(evidence) > 1
         abstained = sum(record.abstained for record in records)
         indeterminate = sum(
             record.semantic_alignment == "indeterminate" or record.ambiguity_resolution == "indeterminate"
-            for record in records
+            for record in completed
         )
-        review_coverage_complete = bool(records) and not any(record.abstained for record in records) and len(identities) >= REQUIRED_REVIEWERS_PER_CASE
+        review_coverage_complete = bool(completed) and len(identities) >= REQUIRED_REVIEWERS_PER_CASE
         reviewer_consensus = review_coverage_complete and not disagreement
         evidence_labels = sorted(evidence)
         evidence_status = evidence_labels[0] if len(evidence_labels) == 1 else "disagreement" if evidence_labels else "missing"
@@ -352,6 +360,7 @@ def _coverage(
             "case_alias": packet.case_alias,
             "submitted_annotations": len(submitted_by_case.get(packet.case_alias, [])),
             "accepted_annotations": len(records),
+            "completed_annotations": len(completed),
             "distinct_verified_reviewer_identities": len(identities),
             "abstentions": abstained,
             "indeterminate": indeterminate,

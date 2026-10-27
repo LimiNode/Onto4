@@ -287,7 +287,10 @@ def test_authenticated_holdout_manifest_is_explicit_but_does_not_skip_coverage()
         True,
         manifest.content_digest(),
     )
-    class TrustedSource:
+    class TrustedSource(_MODULE._PR62.HostTrustSource):
+        host_owned_capability = True
+        issuer_id = "test-issuer"
+
         def verify_registry(self, _attestation, _registry, _digest):
             return True
 
@@ -380,7 +383,10 @@ def test_holdout_verified_flag_is_required_even_for_trusted_source():
         manifest, registry.registry_id, "b" * 64, False, manifest.content_digest()
     )
 
-    class TrustedSource:
+    class TrustedSource(_MODULE._PR62.HostTrustSource):
+        host_owned_capability = True
+        issuer_id = "test-issuer"
+
         def verify_registry(self, _attestation, _registry, _digest):
             return True
 
@@ -477,3 +483,116 @@ def test_full_synthetic_mechanics_fixture_covers_all_development_cases():
     assert report["readiness"]["real_model_calls"] is False
     assert report["production_authority_changed"] is False
     assert report["coverage_policy"]["semantic_outcome_counts"]["indeterminate"] == 6
+
+
+def test_arbitrary_always_true_source_cannot_open_real_readiness():
+    annotations = []
+    identities = []
+    assignments = []
+    evidence = []
+    records = []
+    for index, packet in enumerate(tuple(_MODULE._default_packets().values())[:12]):
+        for reviewer_number in range(2):
+            alias = f"adversarial-{index}-{reviewer_number}"
+            annotation = _MODULE._PR62.AnnotationRecord(
+                alias, packet.case_alias, packet.content_digest, packet.rubric_version,
+                packet.packet_version, "aligned", "resolved", "sufficient", 0.5,
+                annotation_kind=_MODULE._PR62.AnnotationKind.INDEPENDENT,
+            )
+            digest = _MODULE._PR62.annotation_digest(annotation)
+            annotations.append(annotation)
+            identities.append(_MODULE._PR62.ReviewerIdentity(alias, f"identity-{alias}", True))
+            assignments.append(_MODULE._PR62.PacketAssignment(packet.packet_id, packet.content_digest, alias))
+            evidence.append(_MODULE._PR62.VerifiedEvidenceRecord(
+                packet.packet_id, packet.content_digest, alias, digest,
+                packet.rubric_version, "source", "normalizer", "v1", True,
+            ))
+            records.append(_MODULE._PR62.HostVerificationRecord(
+                packet.packet_id, packet.content_digest, digest, packet.rubric_version,
+                alias, "source", "normalizer", "v1",
+                _MODULE._PR62.VerificationStage.EVIDENCE_VERIFIED, "synthetic adversarial fixture",
+            ))
+    registry = _MODULE._PR62.HostRegistry(
+        "adversarial-registry", tuple(identities), tuple(assignments), tuple(evidence)
+    )
+    registry = replace(
+        registry,
+        registry_attestation=_MODULE._PR62.RegistryAttestation(
+            registry.registry_id, "caller-issuer", "a" * 64, True,
+            registry_version=_MODULE._PR62.REGISTRY_VERSION,
+            registry_digest=registry.snapshot_digest(),
+        ),
+    )
+    manifest = _MODULE.PrivateHoldoutManifest(
+        "adversarial-holdout", _MODULE._PR61.CORPUS_VERSION,
+        _MODULE._PR62.RUBRIC_VERSION, 12, "b" * 64,
+    )
+    attestation = _MODULE.HostHoldoutAttestation(
+        manifest, registry.registry_id, "c" * 64, True, manifest.content_digest()
+    )
+
+    class AlwaysTrueSource:
+        def verify_registry(self, *_args):
+            return True
+
+        def verify_holdout(self, *_args):
+            return True
+
+    report = _MODULE.run_offline_evaluation(
+        tuple(annotations), registry=registry, verification_records=tuple(records),
+        holdout_attestation=attestation, trusted_source=AlwaysTrueSource(),
+        readiness_mode="real",
+    )
+    assert report["readiness"]["holdout_attestation_verified"] is False
+    assert report["readiness"]["reviewer_registry_attested"] is False
+    assert report["readiness"]["ready_for_live_evaluation"] is False
+    assert report["real_model_calls"] is False
+    assert report["production_authority_changed"] is False
+
+
+def test_abstention_policy_counts_only_completed_reviews_for_coverage_and_consensus():
+    packet, pair, registry, _records = _verified_pair()
+    first, second = pair
+    abstained = replace(
+        second, reviewer_alias="reviewer-c", abstained=True,
+        abstention_reason="no sufficient basis",
+    )
+    registry = replace(
+        registry,
+        reviewers=registry.reviewers + (_MODULE._PR62.ReviewerIdentity("reviewer-c", "person-c", True),),
+    )
+    def coverage(records):
+        return _MODULE._coverage(
+            list(records), list(records), registry=registry,
+            development_packets=(packet,),
+        )[0]
+
+    complete = coverage((first, second, abstained))
+    assert complete["review_coverage_complete"] is True
+    assert complete["reviewer_consensus"] is True
+    assert complete["completed_annotations"] == 2
+    assert complete["abstentions"] == 1
+    assert complete["disagreement"] is False
+
+    incomplete = coverage((first, abstained))
+    assert incomplete["review_coverage_complete"] is False
+    assert incomplete["semantic_outcome"] == "missing"
+
+    disagreeing = coverage((first, replace(second, semantic_alignment="misaligned"), abstained))
+    assert disagreeing["review_coverage_complete"] is True
+    assert disagreeing["reviewer_consensus"] is False
+    assert disagreeing["disagreement"] is True
+
+    all_abstained = coverage((replace(first, abstained=True, abstention_reason="no basis"), abstained))
+    assert all_abstained["review_coverage_complete"] is False
+    assert all_abstained["semantic_outcome"] == "missing"
+    assert all_abstained["disagreement"] is False
+
+    indeterminate = coverage((
+        replace(first, semantic_alignment="indeterminate", ambiguity_resolution="indeterminate", evidence_sufficiency="not_available"),
+        replace(second, semantic_alignment="indeterminate", ambiguity_resolution="indeterminate", evidence_sufficiency="not_available"),
+        abstained,
+    ))
+    assert indeterminate["review_coverage_complete"] is True
+    assert indeterminate["reviewer_consensus"] is True
+    assert indeterminate["semantic_outcome"] == "indeterminate"
