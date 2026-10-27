@@ -185,7 +185,10 @@ def test_registry_membership_alone_is_not_live_trust():
             registry_digest=registry.snapshot_digest(),
         ),
     )
-    class TrustedSource:
+    class TrustedSource(_MODULE.HostTrustSource):
+        host_owned_capability = True
+        issuer_id = "test-issuer"
+
         def verify_registry(self, attestation, candidate, digest):
             return attestation.source_id == "external-host" and candidate is attested and digest == candidate.snapshot_digest()
 
@@ -209,7 +212,10 @@ def test_registry_snapshot_changes_invalidate_prior_attestation():
     )
     changed = replace(attested, reviewers=(replace(attested.reviewers[0], approved=False),))
 
-    class TrustedSource:
+    class TrustedSource(_MODULE.HostTrustSource):
+        host_owned_capability = True
+        issuer_id = "test-issuer"
+
         def verify_registry(self, _attestation, _candidate, _digest):
             return True
 
@@ -226,6 +232,40 @@ def test_reviewer_disagreement_remains_visible_and_unadjudicated():
     assert summary["alignment_agreement"] is False
     assert summary["unresolved_disagreement"] is True
     assert summary["adjudicated"] is False
+
+
+def test_abstentions_are_reported_without_becoming_semantic_disagreement():
+    packet = _MODULE.make_blinded_packet(_case())
+    valid_a = _annotation(packet, reviewer_alias="reviewer-a")
+    valid_b = _annotation(packet, reviewer_alias="reviewer-b")
+    abstained = _annotation(
+        packet,
+        reviewer_alias="reviewer-c",
+        abstained=True,
+        abstention_reason="insufficient context",
+        semantic_alignment="misaligned",
+        ambiguity_resolution="not_resolved",
+        evidence_sufficiency="not_available",
+    )
+    summary = _MODULE.compare_reviewers((valid_a, valid_b, abstained))[0]
+    assert summary["reviewer_count"] == 3
+    assert summary["completed_reviewer_count"] == 2
+    assert summary["abstention_count"] == 1
+    assert summary["semantic_alignment_labels"] == ["aligned"]
+    assert summary["alignment_agreement"] is True
+    assert summary["unresolved_disagreement"] is False
+
+
+def test_all_abstentions_have_no_completed_consensus():
+    packet = _MODULE.make_blinded_packet(_case())
+    first = _annotation(packet, reviewer_alias="reviewer-a", abstained=True, abstention_reason="no basis")
+    second = _annotation(packet, reviewer_alias="reviewer-b", abstained=True, abstention_reason="no basis")
+    summary = _MODULE.compare_reviewers((first, second))[0]
+    assert summary["completed_reviewer_count"] == 0
+    assert summary["abstention_count"] == 2
+    assert summary["semantic_alignment_labels"] == []
+    assert summary["alignment_agreement"] is False
+    assert summary["unresolved_disagreement"] is False
 
 
 def test_public_disagreement_summary_redacts_private_reviewer_material():

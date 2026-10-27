@@ -12,15 +12,19 @@ carry explicit alignment, ambiguity-resolution and evidence-sufficiency labels.
 Confidence is recorded separately from the labels. Abstention requires a
 reason. Raw payloads and private notes are not emitted by this module.
 
-Reviewer disagreement remains visible as raw judgments with agreement flags.
-The comparison helper never turns a majority into semantic truth and never
-performs hidden adjudication.
+Reviewer disagreement remains visible through categorical aggregate summaries
+with agreement flags. Abstentions are counted separately and do not contribute
+semantic labels or create disagreement. Full raw judgments remain available
+only through the private comparison interface. The comparison helper never
+turns a majority into semantic truth and never performs hidden adjudication.
 
 Host evidence has a separate verification boundary. An attestation is allowed
 only when a host-controlled registry confirms reviewer identity and
 independence, packet assignment, exact annotation digest, source, normalizer
 and evidence checks. Caller-supplied stage labels, aliases and provider
-payloads are explicitly rejected. The resulting attestation is research
+payloads are explicitly rejected. Live-evaluation registry trust additionally
+requires an issuer-bound `HostTrustSource` capability; an arbitrary object with
+`verify_registry()` is not accepted. The resulting attestation is research
 metadata, not an independent semantic oracle or a production
 `SemanticAdjudicationReceipt`.
 

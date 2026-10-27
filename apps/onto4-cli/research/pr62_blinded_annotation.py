@@ -12,6 +12,7 @@ from enum import Enum
 import hashlib
 import json
 import re
+from abc import ABC, abstractmethod
 from typing import Any, Iterable
 
 
@@ -246,6 +247,25 @@ class RegistryAttestation:
     registry_digest: str = ""
 
 
+class HostTrustSource(ABC):
+    """Explicit host-owned capability for live-evaluation attestations.
+
+    Research callers may subclass this type for controlled tests, but an
+    arbitrary object that merely exposes ``verify_registry`` is not a trust
+    anchor.  A real deployment must provide the issuer-bound implementation.
+    """
+
+    host_owned_capability: bool = False
+    issuer_id: str = ""
+
+    @abstractmethod
+    def verify_registry(self, attestation: RegistryAttestation, registry: "HostRegistry", digest: str) -> bool:
+        raise NotImplementedError
+
+    def verify_holdout(self, *_args: Any) -> bool:
+        return False
+
+
 @dataclass(frozen=True)
 class HostRegistry:
     """Separately maintained research registry, not provider-supplied data."""
@@ -302,7 +322,11 @@ class HostRegistry:
 
     def trusted_for_live_evaluation(self, trusted_source: Any | None = None) -> bool:
         attestation = self.registry_attestation
-        if trusted_source is None:
+        if (
+            not isinstance(trusted_source, HostTrustSource)
+            or trusted_source.host_owned_capability is not True
+            or not trusted_source.issuer_id
+        ):
             return False
         verifier = getattr(trusted_source, "verify_registry", None)
         if verifier is None:
@@ -446,20 +470,23 @@ def compare_reviewers(records: Iterable[AnnotationRecord]) -> tuple[dict[str, An
         grouped.setdefault(record.case_alias, []).append(record)
     summaries = []
     for case_alias, judgments in sorted(grouped.items()):
-        alignments = {record.semantic_alignment for record in judgments}
-        resolutions = {record.ambiguity_resolution for record in judgments}
-        evidence = {record.evidence_sufficiency for record in judgments}
+        completed = [record for record in judgments if not record.abstained]
+        alignments = {record.semantic_alignment for record in completed}
+        resolutions = {record.ambiguity_resolution for record in completed}
+        evidence = {record.evidence_sufficiency for record in completed}
+        has_completed = bool(completed)
         summaries.append({
             "case_alias": case_alias,
             "reviewer_count": len(judgments),
+            "completed_reviewer_count": len(completed),
             "semantic_alignment_labels": sorted(alignments),
             "ambiguity_resolution_labels": sorted(resolutions),
             "evidence_sufficiency_labels": sorted(evidence),
             "abstention_count": sum(record.abstained for record in judgments),
             "abstention_reason_codes": sorted({"abstained" if record.abstained else "not_abstained" for record in judgments}),
-            "alignment_agreement": len(alignments) == 1,
-            "resolution_agreement": len(resolutions) == 1,
-            "evidence_agreement": len(evidence) == 1,
+            "alignment_agreement": has_completed and len(alignments) == 1,
+            "resolution_agreement": has_completed and len(resolutions) == 1,
+            "evidence_agreement": has_completed and len(evidence) == 1,
             "unresolved_disagreement": len(alignments) > 1 or len(resolutions) > 1 or len(evidence) > 1,
             "adjudicated": False,
         })
@@ -474,16 +501,19 @@ def compare_reviewers_private(records: Iterable[AnnotationRecord]) -> tuple[dict
         grouped.setdefault(record.case_alias, []).append(record)
     summaries = []
     for case_alias, judgments in sorted(grouped.items()):
-        alignments = {record.semantic_alignment for record in judgments}
-        resolutions = {record.ambiguity_resolution for record in judgments}
-        evidence = {record.evidence_sufficiency for record in judgments}
+        completed = [record for record in judgments if not record.abstained]
+        alignments = {record.semantic_alignment for record in completed}
+        resolutions = {record.ambiguity_resolution for record in completed}
+        evidence = {record.evidence_sufficiency for record in completed}
+        has_completed = bool(completed)
         summaries.append({
             "case_alias": case_alias,
             "reviewer_count": len(judgments),
+            "completed_reviewer_count": len(completed),
             "raw_judgments": [record.private_dict() for record in judgments],
-            "alignment_agreement": len(alignments) == 1,
-            "resolution_agreement": len(resolutions) == 1,
-            "evidence_agreement": len(evidence) == 1,
+            "alignment_agreement": has_completed and len(alignments) == 1,
+            "resolution_agreement": has_completed and len(resolutions) == 1,
+            "evidence_agreement": has_completed and len(evidence) == 1,
             "unresolved_disagreement": len(alignments) > 1 or len(resolutions) > 1 or len(evidence) > 1,
             "adjudicated": False,
         })
