@@ -349,10 +349,10 @@ def _coverage(
         elif any(
             record.semantic_alignment == "indeterminate"
             or record.ambiguity_resolution == "indeterminate"
-            for record in records
+            for record in completed
         ):
             semantic_outcome = "indeterminate"
-        elif all(record.semantic_alignment == "aligned" for record in records):
+        elif all(record.semantic_alignment == "aligned" for record in completed):
             semantic_outcome = "aligned"
         else:
             semantic_outcome = "misaligned"

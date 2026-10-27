@@ -49,7 +49,8 @@ caller-supplied aliases. The live-evaluation gate is false, no Bonsai calls
 were made, and production authority is unchanged.
 
 Real readiness additionally requires a separately authenticated host registry
-and private holdout, using the issuer-bound `HostTrustSource` capability.
+and private holdout, using the issuer-bound `HostTrustSource` capability and
+its opaque host-owned marker; merely subclassing the interface is insufficient.
 `host_controlled=true`, a caller-created verifier object or a synthetic
 mechanics pass is not sufficient evidence. The committed artifact has no
 configured external trusted host source, so structurally valid caller metadata

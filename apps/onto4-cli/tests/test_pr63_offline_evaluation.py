@@ -150,6 +150,90 @@ def _verified_pair(*, disagree=False):
     return packet, annotations, registry, records
 
 
+def _verified_case_fixture(annotations, packet):
+    identities = tuple(
+        _MODULE._PR62.ReviewerIdentity(annotation.reviewer_alias, f"identity-{annotation.reviewer_alias}", True)
+        for annotation in annotations
+    )
+    assignments = tuple(
+        _MODULE._PR62.PacketAssignment(packet.packet_id, packet.content_digest, annotation.reviewer_alias)
+        for annotation in annotations
+    )
+    evidence = tuple(
+        _MODULE._PR62.VerifiedEvidenceRecord(
+            packet.packet_id, packet.content_digest, annotation.reviewer_alias,
+            _MODULE._PR62.annotation_digest(annotation), packet.rubric_version,
+            "source", "normalizer", "v1", True,
+        )
+        for annotation in annotations
+    )
+    records = tuple(
+        _MODULE._PR62.HostVerificationRecord(
+            packet.packet_id, packet.content_digest, _MODULE._PR62.annotation_digest(annotation),
+            packet.rubric_version, annotation.reviewer_alias, "source", "normalizer", "v1",
+            _MODULE._PR62.VerificationStage.EVIDENCE_VERIFIED, "independent source",
+        )
+        for annotation in annotations
+    )
+    return _MODULE._PR62.HostRegistry("registry-case", identities, assignments, evidence), records
+
+
+def test_abstentions_do_not_change_case_outcome_or_metrics_end_to_end():
+    packet, pair, _registry, _records = _verified_pair()
+    first, second = pair
+
+    def evaluate(completed, abstained):
+        annotations = tuple(completed) + (abstained,)
+        registry, records = _verified_case_fixture(annotations, packet)
+        report = _MODULE.run_offline_evaluation(
+            annotations, registry=registry, verification_records=records,
+        )
+        return report, next(item for item in report["review_coverage"] if item["case_alias"] == packet.case_alias)
+
+    abstained_misaligned = replace(
+        second, reviewer_alias="reviewer-c", abstained=True,
+        abstention_reason="no basis", semantic_alignment="misaligned",
+    )
+    aligned_report, aligned_item = evaluate((first, second), abstained_misaligned)
+    assert aligned_item["semantic_outcome"] == "aligned"
+    assert aligned_report["primary_metric"]["numerator"] == 1
+
+    completed_misaligned = replace(first, semantic_alignment="misaligned")
+    completed_misaligned_b = replace(second, semantic_alignment="misaligned")
+    abstained_aligned = replace(
+        second, reviewer_alias="reviewer-c", abstained=True,
+        abstention_reason="no basis", semantic_alignment="aligned",
+    )
+    misaligned_report, misaligned_item = evaluate(
+        (completed_misaligned, completed_misaligned_b), abstained_aligned
+    )
+    assert misaligned_item["semantic_outcome"] == "misaligned"
+    assert misaligned_report["primary_metric"]["numerator"] == 0
+
+    unresolved = replace(first, ambiguity_resolution="not_resolved")
+    unresolved_b = replace(second, ambiguity_resolution="not_resolved")
+    abstained_resolved = replace(
+        second, reviewer_alias="reviewer-c", abstained=True,
+        abstention_reason="no basis", ambiguity_resolution="resolved",
+    )
+    unresolved_report, unresolved_item = evaluate((unresolved, unresolved_b), abstained_resolved)
+    assert unresolved_item["semantic_outcome"] == "aligned"
+    assert unresolved_report["secondary_metrics"]["ambiguity_resolution"]["numerator"] == 0
+
+    indeterminate = replace(
+        first, semantic_alignment="indeterminate", ambiguity_resolution="indeterminate",
+        evidence_sufficiency="not_available",
+    )
+    indeterminate_b = replace(
+        second, semantic_alignment="indeterminate", ambiguity_resolution="indeterminate",
+        evidence_sufficiency="not_available",
+    )
+    indeterminate_report, indeterminate_item = evaluate((indeterminate, indeterminate_b), abstained_aligned)
+    assert indeterminate_item["semantic_outcome"] == "indeterminate"
+    assert indeterminate_report["primary_metric"]["numerator"] == 0
+    assert indeterminate_report["primary_metric"]["indeterminate"] == 1
+
+
 def test_readiness_requires_two_verified_reviewer_identities_and_accepts_positive_gate():
     _packet, annotations, registry, records = _verified_pair()
     report = _MODULE.run_offline_evaluation(
@@ -290,6 +374,7 @@ def test_authenticated_holdout_manifest_is_explicit_but_does_not_skip_coverage()
     class TrustedSource(_MODULE._PR62.HostTrustSource):
         host_owned_capability = True
         issuer_id = "test-issuer"
+        _capability_token = _MODULE._PR62._HOST_TRUST_CAPABILITY
 
         def verify_registry(self, _attestation, _registry, _digest):
             return True
@@ -386,6 +471,7 @@ def test_holdout_verified_flag_is_required_even_for_trusted_source():
     class TrustedSource(_MODULE._PR62.HostTrustSource):
         host_owned_capability = True
         issuer_id = "test-issuer"
+        _capability_token = _MODULE._PR62._HOST_TRUST_CAPABILITY
 
         def verify_registry(self, _attestation, _registry, _digest):
             return True
